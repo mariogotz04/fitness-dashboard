@@ -250,7 +250,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "03.10.2026 15:41";
+const APP_VERSION = "03.10.2026 15:54";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -492,35 +492,38 @@ function recoveryPlan(k){
   const n = Math.floor(dateOf(k) / 864e5);
   const pick = arr => arr[n % arr.length];
   const out = [];
-  const add = (cat, key, title, text) => out.push({cat, key, title, text});
+  const add = (cat, key, title, text, prio) => out.push({cat, key, title, text, prio});
 
   // Bewegung
-  if (hard) add("Bewegung", "walk", "Lockerer Spaziergang, 20–30 Min.", "Am besten draußen bei Tageslicht. Das fördert die Durchblutung und den Abtransport von Stoffwechselprodukten, ohne neue Belastung zu setzen.");
-  else add("Bewegung", "steps", "10.000 Schritte schaffen", "Viel Alltagsbewegung hält die Regeneration in Gang und unterstützt deinen Cut, ohne die Beine zu ermüden.");
-  if (legsY || sportY) add("Bewegung", "bike", "Locker Radfahren oder Mobility, 10–15 Min.", "Nach " + (legsY ? "dem Beintraining" : sportY.title) + " lockern leichte Tritte oder Mobility-Übungen für Hüfte und Sprunggelenk die Beine.");
+  if (hard) add("Bewegung", "walk", "Lockerer Spaziergang, 20–30 Min.", "Am besten draußen bei Tageslicht. Das fördert die Durchblutung und den Abtransport von Stoffwechselprodukten, ohne neue Belastung zu setzen.", 9);
+  else add("Bewegung", "steps", "10.000 Schritte schaffen", "Viel Alltagsbewegung hält die Regeneration in Gang und unterstützt deinen Cut, ohne die Beine zu ermüden.", 4);
+  if (legsY || sportY) add("Bewegung", "bike", "Locker Radfahren oder Mobility, 10–15 Min.", "Nach " + (legsY ? "dem Beintraining" : sportY.title) + " lockern leichte Tritte oder Mobility-Übungen für Hüfte und Sprunggelenk die Beine.", 6);
 
   // Kälte & Wärme
-  if (sportY || (ys >= 14 && !strengthY)) add("Kälte & Wärme", "icebath", "Eisbad oder kaltes Becken, 10 Min. bei 10–15 °C", "Nach " + (sportY ? sportY.title : "einem harten Tag") + " lindert Kälte Schwellungen und Muskelkater. Nicht in den 6 Stunden nach Krafttraining, weil Kälte dann den Muskelaufbau bremsen kann.");
-  else if (tired || shortSleep) add("Kälte & Wärme", "colddusch", "Kalte Dusche am Morgen, 1–3 Min.", "Macht wach und senkt das Stressgefühl. Langsam steigern: erst warm duschen, am Ende 30 Sekunden kalt, dann länger.");
-  else if (sore) add("Kälte & Wärme", "warm", "Wärme am Abend: warmes Bad oder Sauna", "Wärme entspannt verspannte Muskeln und hilft beim Runterfahren. Danach viel trinken.");
-  else add("Kälte & Wärme", "contrast", "Wechseldusche: 3× 1 Min. warm, 30 Sek. kalt", "Regt den Kreislauf an und tut den Beinen gut. Wenn heute Krafttraining ansteht, besser morgens als direkt danach.");
+  if (sportY || (ys >= 14 && !strengthY)) add("Kälte & Wärme", "icebath", "Eisbad oder kaltes Becken, 10 Min. bei 10–15 °C", "Nach " + (sportY ? sportY.title : "einem harten Tag") + " lindert Kälte Schwellungen und Muskelkater. Nicht in den 6 Stunden nach Krafttraining, weil Kälte dann den Muskelaufbau bremsen kann.", 8);
+  else if (tired || shortSleep) add("Kälte & Wärme", "colddusch", "Kalte Dusche am Morgen, 1–3 Min.", "Macht wach und senkt das Stressgefühl. Langsam steigern: erst warm duschen, am Ende 30 Sekunden kalt, dann länger.", 6);
+  else if (sore) add("Kälte & Wärme", "warm", "Wärme am Abend: warmes Bad oder Sauna", "Wärme entspannt verspannte Muskeln und hilft beim Runterfahren. Danach viel trinken.", 6);
+  else add("Kälte & Wärme", "contrast", "Wechseldusche: 3× 1 Min. warm, 30 Sek. kalt", "Regt den Kreislauf an und tut den Beinen gut. Wenn heute Krafttraining ansteht, besser morgens als direkt danach.", 3);
 
   // Entspannung
-  add("Entspannung", "acupressure", "Akupressurmatte, 15–20 Min. vor dem Schlafen", shortSleep || tired ? "Gerade nach einer kurzen Nacht hilft sie, abends schneller abzuschalten. Dabei ruhig in den Bauch atmen." : "Auf den Rücken legen, ruhig atmen. Viele schlafen danach schneller ein.");
-  if (sore || legsY || strengthY) add("Entspannung", "foam", "Faszienrolle und Dehnen, 10–15 Min.", "Langsam über die belasteten Muskeln rollen" + (legsY ? " (Oberschenkel, Waden, Gesäß)" : "") + ", danach statisch dehnen, je 30–60 Sekunden.");
-  if (shortSleep || z === "bad") add("Entspannung", "breath", "Atemübung 4-7-8, 5 Min.", "4 Sekunden einatmen, 7 halten, 8 ausatmen. Das beruhigt das Nervensystem und hilft beim Einschlafen.");
+  add("Entspannung", "acupressure", "Akupressurmatte, 15–20 Min. vor dem Schlafen", shortSleep || tired ? "Gerade nach einer kurzen Nacht hilft sie, abends schneller abzuschalten. Dabei ruhig in den Bauch atmen." : "Auf den Rücken legen, ruhig atmen. Viele schlafen danach schneller ein.", (shortSleep || tired ? 7 : 3));
+  if (sore || legsY || strengthY) add("Entspannung", "foam", "Faszienrolle und Dehnen, 10–15 Min.", "Langsam über die belasteten Muskeln rollen" + (legsY ? " (Oberschenkel, Waden, Gesäß)" : "") + ", danach statisch dehnen, je 30–60 Sekunden.", (sore || legsY ? 8 : 5));
+  if (shortSleep || z === "bad") add("Entspannung", "breath", "Atemübung 4-7-8, 5 Min.", "4 Sekunden einatmen, 7 halten, 8 ausatmen. Das beruhigt das Nervensystem und hilft beim Einschlafen.", 6);
 
   // Schlaf
-  add("Schlaf", "sleep", "Heute " + fmt(sleepNeed(k), 1) + " h Schlaf einplanen", pick(["Schlafzimmer kühl halten (etwa 18 °C) und eine Stunde vorher das Handy weglegen.", "Nach 14 Uhr keinen Kaffee oder Energydrink mehr, sonst leidet der Tiefschlaf.", "Jeden Tag zur gleichen Zeit ins Bett gehen. Ein fester Rhythmus verbessert deine HRV und den Schlafwert."]));
+  add("Schlaf", "sleep", "Heute " + fmt(sleepNeed(k), 1) + " h Schlaf einplanen", pick(["Schlafzimmer kühl halten (etwa 18 °C) und eine Stunde vorher das Handy weglegen.", "Nach 14 Uhr keinen Kaffee oder Energydrink mehr, sonst leidet der Tiefschlaf.", "Jeden Tag zur gleichen Zeit ins Bett gehen. Ein fester Rhythmus verbessert deine HRV und den Schlafwert."]), (shortSleep ? 10 : z === "bad" ? 8 : 5));
 
   // Ernährung
   const pTarget = c.p, pYlow = yt.p > 0 && yt.p < pTarget * 0.8;
-  add("Ernährung", "protein", pYlow ? "Protein nachholen: " + pTarget + " g, verteilt auf 4 Mahlzeiten" : "Protein über den Tag verteilen: 4× etwa 40 g", (pYlow ? "Gestern waren es nur " + fmt(yt.p) + " g. " : "") + pick(["Gute Quellen: Skyr, Hähnchen, Eier, Thunfisch und körniger Frischkäse.", "Ein Shake aus Skyr, Whey und Beeren bringt dir schnell 50 g.", "Omas Fleischgericht mittags ist dafür ideal, dazu abends Omelett oder Skyr-Bowl."]));
-  if (hard || strengthToday || sportY) add("Ernährung", "carbs", "Kohlenhydrate rund ums Training", "Vor und nach " + (strengthToday ? "dem Training" : "der Belastung") + " Reis, Kartoffeln, Haferflocken oder Banane essen, damit die Speicher wieder voll werden. Im Cut lieber hier als bei Snacks sparen.");
-  add("Ernährung", "anti", pick(["Beeren und Sauerkirschen", "Fetter Fisch wie Lachs oder Hering", "Haferflocken, Nüsse und Kürbiskerne"]), pick(["Ihre Pflanzenstoffe helfen gegen Entzündungen und Muskelkater. Zum Beispiel 100 g TK-Beeren in den Skyr.", "Die Omega-3-Fettsäuren unterstützen die Regeneration. 1–2 Fischmahlzeiten pro Woche sind ideal.", "Sie liefern Magnesium, das bei Muskelkater und Krämpfen hilft."]));
-  add("Ernährung", "drink", sportY || ys >= 14 ? "Etwa 3,5 l trinken, mit etwas Salz" : "Etwa 3 l trinken", sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.");
-  if (strengthY || sore) add("Ernährung", "casein", "Abends Skyr oder Magerquark", "Das langsam verdauliche Eiweiß versorgt deine Muskeln über Nacht.");
-  return out;
+  add("Ernährung", "protein", pYlow ? "Protein nachholen: " + pTarget + " g, verteilt auf 4 Mahlzeiten" : "Protein über den Tag verteilen: 4× etwa 40 g", (pYlow ? "Gestern waren es nur " + fmt(yt.p) + " g. " : "") + pick(["Gute Quellen: Skyr, Hähnchen, Eier, Thunfisch und körniger Frischkäse.", "Ein Shake aus Skyr, Whey und Beeren bringt dir schnell 50 g.", "Omas Fleischgericht mittags ist dafür ideal, dazu abends Omelett oder Skyr-Bowl."]), (pYlow ? 9 : 6));
+  if (hard || strengthToday || sportY) add("Ernährung", "carbs", "Kohlenhydrate rund ums Training", "Vor und nach " + (strengthToday ? "dem Training" : "der Belastung") + " Reis, Kartoffeln, Haferflocken oder Banane essen, damit die Speicher wieder voll werden. Im Cut lieber hier als bei Snacks sparen.", (strengthToday || sportY ? 7 : 5));
+  add("Ernährung", "anti", pick(["Beeren und Sauerkirschen", "Fetter Fisch wie Lachs oder Hering", "Haferflocken, Nüsse und Kürbiskerne"]), pick(["Ihre Pflanzenstoffe helfen gegen Entzündungen und Muskelkater. Zum Beispiel 100 g TK-Beeren in den Skyr.", "Die Omega-3-Fettsäuren unterstützen die Regeneration. 1–2 Fischmahlzeiten pro Woche sind ideal.", "Sie liefern Magnesium, das bei Muskelkater und Krämpfen hilft."]), (sore ? 6 : 4));
+  add("Ernährung", "drink", sportY || ys >= 14 ? "Etwa 3,5 l trinken, mit etwas Salz" : "Etwa 3 l trinken", sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.", (sportY || ys >= 14 ? 7 : 3));
+  if (strengthY || sore) add("Ernährung", "casein", "Abends Skyr oder Magerquark", "Das langsam verdauliche Eiweiß versorgt deine Muskeln über Nacht.", (strengthY ? 5 : 3));
+  // Nur die 3 wirksamsten Tipps, höchstens einer pro Bereich.
+  const best = [], seen = new Set();
+  out.slice().sort((a, b) => b.prio - a.prio).forEach(x => { if (best.length < 3 && !seen.has(x.cat)) { best.push(x); seen.add(x.cat); } });
+  return best;
 }
 function sleepNeed(k){
   const c = cfg(); const ys = strainOf(addDays(k, -1)), ts = strainOf(k);
@@ -540,7 +543,7 @@ function recoveryTips(k){
   if (z === "good") tips.push(["Grünes Licht", "Gute Voraussetzungen: Heute kannst du an die Progression gehen und bei sauberer Technik das Gewicht erhöhen, wenn du den Wiederholungsbereich schaffst."]);
   if (Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). Für die Regeneration im Defizit ist das der wichtigste Hebel bei der Ernährung.`]);
   if (!tips.length) tips.push(["Check-in machen", "Trag deinen Schlaf ein und sag kurz, wie du dich fühlst. Dann berechne ich deine Erholung und gebe dir passende Tipps."]);
-  return tips.slice(0, 4);
+  return tips.slice(0, 1);
 }
 
 /* ---------- Rendering ---------- */
@@ -770,7 +773,7 @@ function recoverySection(k){
       ${ai ? `<div class="hint" style="margin:6px 0 10px;white-space:pre-wrap">${esc(ai)}</div>` : ""}
       <div class="list">${tips.map(([t, x]) => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="title" style="font-weight:600">${esc(t)}</div><div class="small ink2">${esc(x)}</div></div></div>`).join("")}</div>
       ${(() => { const pl = recoveryPlan(k), done = d.recDone || {}; const cats = [...new Set(pl.map(x => x.cat))];
-        return `<div class="eyebrow" style="margin:14px 0 4px">Dein Regenerationsplan · ${pl.filter(x => done[x.key]).length} / ${pl.length} erledigt</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<button class="planitem" data-act="plan-done" data-key="${x.key}" data-date="${k}" aria-pressed="${done[x.key] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></span></button>`).join("")).join(""); })()}
+        return `<div class="eyebrow" style="margin:14px 0 4px">Deine 3 Regenerationstipps · ${pl.filter(x => done[x.key]).length} / ${pl.length} erledigt</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<button class="planitem" data-act="plan-done" data-key="${x.key}" data-date="${k}" aria-pressed="${done[x.key] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></span></button>`).join("")).join(""); })()}
       ${ci ? `<div class="small muted" style="margin-top:6px">Check-in: Energie ${ci.energy}/5 · Muskelkater ${ci.soreness}/5 <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="ci-reset" data-date="${k}">ändern</button></div>` : ""}
     </div>
   </section>`;
