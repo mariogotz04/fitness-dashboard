@@ -250,7 +250,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "03.10.2026 15:54";
+const APP_VERSION = "03.10.2026 22:42";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -741,7 +741,7 @@ const QUOTES = [
   ["Ob du glaubst, du kannst es, oder ob du glaubst, du kannst es nicht: Du wirst recht behalten.", "Henry Ford"]
 ];
 function quoteOf(k){ const d = dateOf(k); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7; return QUOTES[n % QUOTES.length]; }
-let tipsAI = {}, tipsBusy = false, ciSel = {};
+let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false;
 function recoverySection(k){
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), z = r ? zoneOf(r.score) : "none";
   const zc = {good: "var(--good)", warn: "var(--warn)", bad: "var(--bad)", none: "var(--muted)"}[z];
@@ -759,6 +759,7 @@ function recoverySection(k){
       ${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}
       ${dial(sl && sl.h ? sl.h / need : 0, "color-mix(in srgb, var(--accent) 55%, var(--good))", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
     </div>
+    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span><button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin jetzt abrufen"}</button></div>
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}">${p.label} ${Math.round(p.score)}</span>`).join("")}</div>` : ""}
     ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
       <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
@@ -1478,6 +1479,15 @@ document.addEventListener("click", async e => {
     case "ci-pick": { const form = b.closest("form"); const k = form.dataset.date; ciSel[k] = ciSel[k] || {}; ciSel[k][D.k] = +D.v; b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); break; }
     case "ci-reset": { const d = getDay(D.date); delete d.checkin; saveDay(D.date, d); break; }
     case "tips-ai": runTipsAI(D.date); break;
+    case "garmin-now": {
+      garminBusy = true; render();
+      const {data: res, error} = await sb.rpc("trigger_garmin_sync");
+      if (error) { garminBusy = false; render(); toast("Der Abruf konnte nicht gestartet werden."); break; }
+      toast(res === "already_running" ? "Läuft gerade schon, die Werte kommen gleich." : "Abruf gestartet. Die Werte kommen in etwa einer Minute.");
+      [50, 80, 120].forEach(sec => setTimeout(() => loadAll(), sec * 1000));
+      setTimeout(() => { garminBusy = false; render(); }, 120000);
+      break;
+    }
     case "plan-done": { const d = getDay(D.date); d.recDone = d.recDone || {}; if (d.recDone[D.key]) delete d.recDone[D.key]; else d.recDone[D.key] = true; saveDay(D.date, d); break; }
     case "train-sub": trainSub = D.sub; render(); break;
     case "cal-prev": case "cal-next": { const [y, m] = calMonth.split("-").map(Number); const d = new Date(y, m - 1 + (a === "cal-next" ? 1 : -1), 1); calMonth = keyOf(d).slice(0, 7); render(); break; }
