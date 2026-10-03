@@ -517,16 +517,16 @@ function renderTabs(){
 }
 
 /* ----- Anmeldung ----- */
-let authMsg = "";
+let authMsg = "", authBusy = "", authEmail = "";
 function viewAuth(){
   return `<section class="card" style="max-width:420px;margin:24px auto 0">
     <form class="stack" data-form="auth">
       <p class="ink2" style="margin:0">Melde dich mit deinem Konto an. Beim ersten Mal tippst du auf „Konto erstellen“.</p>
-      <div class="field"><label for="ae">E-Mail</label><input class="inp" type="email" id="ae" autocomplete="username" required></div>
+      <div class="field"><label for="ae">E-Mail</label><input class="inp" type="email" id="ae" autocomplete="username" value="${esc(authEmail)}" required></div>
       <div class="field"><label for="ap">Passwort</label><input class="inp" type="password" id="ap" autocomplete="current-password" minlength="8" required></div>
-      ${authMsg ? `<div class="hint">${esc(authMsg)}</div>` : ""}
-      <button class="btn primary" type="submit">Anmelden</button>
-      <button class="btn" type="button" data-act="auth-signup">Konto erstellen</button>
+      ${authMsg ? `<div class="hint" role="alert" style="border:1.5px solid var(--warn)">${esc(authMsg)}</div>` : ""}
+      <button class="btn primary" type="submit" ${authBusy ? "disabled" : ""}>${authBusy === "in" ? "Anmelden …" : "Anmelden"}</button>
+      <button class="btn" type="button" data-act="auth-signup" ${authBusy ? "disabled" : ""}>${authBusy === "up" ? "Konto wird erstellt …" : "Konto erstellen"}</button>
     </form></section>`;
 }
 
@@ -1366,7 +1366,11 @@ document.addEventListener("click", async e => {
     case "auth-signup": {
       const em = ($("#ae") || {}).value || "", pw = ($("#ap") || {}).value || "";
       if (!em.includes("@") || pw.length < 8) { authMsg = "Gib deine E-Mail und ein Passwort mit mindestens 8 Zeichen ein."; render(); break; }
-      const {data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}});
+      authBusy = "up"; authMsg = ""; authEmail = em.trim(); render();
+      let data, error;
+      try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
+      catch (err) { error = {message: String(err && err.message || err)}; }
+      authBusy = "";
       if (error) { authMsg = "Das Konto konnte nicht angelegt werden: " + error.message; render(); break; }
       if (data.session) { authMsg = ""; initStore(); break; }
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
@@ -1486,8 +1490,11 @@ document.addEventListener("submit", async e => {
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
     case "ex-edit": { const id = f.dataset.id || uid("x"); const prev = S.exercises[id] || {}; put("exercises", id, Object.assign(clone(prev), {name: v("exn").trim(), group: v("exg"), equipment: v("exq").trim(), notes: v("exo").trim()})); closeSheet(); toast("Übung gespeichert."); break; }
     case "auth": {
-      const {error} = await sb.auth.signInWithPassword({email: v("ae").trim(), password: v("ap")});
-      if (error) { authMsg = /confirm/i.test(error.message) ? "Deine E-Mail ist noch nicht bestätigt. Öffne den Link in der Bestätigungs-Mail." : "E-Mail oder Passwort stimmen nicht."; render(); return; }
+      authBusy = "in"; const em = v("ae").trim(), pw = v("ap"); authEmail = em; render();
+      let error;
+      try { ({error} = await sb.auth.signInWithPassword({email: em, password: pw})); } catch (err) { error = {message: String(err && err.message || err)}; }
+      authBusy = "";
+      if (error) { authMsg = /confirm/i.test(error.message) ? "Deine E-Mail ist noch nicht bestätigt. Öffne den Link in der Bestätigungs-Mail." : "E-Mail oder Passwort stimmen nicht (" + error.message + ")."; render(); return; }
       authMsg = ""; initStore(); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
