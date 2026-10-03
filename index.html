@@ -487,7 +487,7 @@ function scheduleRender(){ if (editing()) { pendingRender = true; return; } rend
 document.addEventListener("focusout", () => { if (!pendingRender) return; setTimeout(() => { if (!editing() && pendingRender) { pendingRender = false; render(); } }, 120); });
 
 function render(){
-  if (mode === "auth") { $("#top").innerHTML = '<h1><small>Fitness-Dashboard</small>Anmelden</h1>'; $("#tabs").parentElement.hidden = true; $("#view").innerHTML = viewAuth(); return; }
+  if (mode === "auth") { $("#top").innerHTML = '<h1><small>Fitness-Dashboard</small>' + (authMode === "signup" ? "Konto erstellen" : "Anmelden") + '</h1>'; $("#tabs").parentElement.hidden = true; $("#view").innerHTML = viewAuth(); return; }
   $("#tabs").parentElement.hidden = false;
   renderTop(); renderTabs();
   const v = $("#view");
@@ -517,16 +517,17 @@ function renderTabs(){
 }
 
 /* ----- Anmeldung ----- */
-let authMsg = "", authBusy = "", authEmail = "";
+let authMsg = "", authBusy = "", authEmail = "", authMode = "login";
 function viewAuth(){
+  const up = authMode === "signup";
   return `<section class="card" style="max-width:420px;margin:24px auto 0">
-    <form class="stack" data-form="auth">
-      <p class="ink2" style="margin:0">Melde dich mit deinem Konto an. Beim ersten Mal tippst du auf „Konto erstellen“.</p>
+    <form class="stack" data-form="${up ? "signup" : "auth"}">
+      <p class="ink2" style="margin:0">${up ? "Lege dein Konto an. Gib deine E-Mail und ein neues Passwort mit mindestens 8 Zeichen ein." : "Melde dich mit deiner E-Mail und deinem Passwort an."}</p>
       <div class="field"><label for="ae">E-Mail</label><input class="inp" type="email" id="ae" autocomplete="username" value="${esc(authEmail)}" required></div>
-      <div class="field"><label for="ap">Passwort</label><input class="inp" type="password" id="ap" autocomplete="current-password" minlength="8" required></div>
+      <div class="field"><label for="ap">${up ? "Neues Passwort" : "Passwort"}</label><input class="inp" type="password" id="ap" autocomplete="${up ? "new-password" : "current-password"}" minlength="8" required></div>
       ${authMsg ? `<div class="hint" role="alert" style="border:1.5px solid var(--warn)">${esc(authMsg)}</div>` : ""}
-      <button class="btn primary" type="submit" ${authBusy ? "disabled" : ""}>${authBusy === "in" ? "Anmelden …" : "Anmelden"}</button>
-      <button class="btn" type="button" data-act="auth-signup" ${authBusy ? "disabled" : ""}>${authBusy === "up" ? "Konto wird erstellt …" : "Konto erstellen"}</button>
+      <button class="btn primary" type="submit" ${authBusy ? "disabled" : ""}>${authBusy ? (up ? "Konto wird erstellt …" : "Anmelden …") : (up ? "Konto anlegen" : "Anmelden")}</button>
+      <button class="btn ghost" type="button" data-act="auth-mode" ${authBusy ? "disabled" : ""}>${up ? "Ich habe schon ein Konto" : "Noch kein Konto? Konto erstellen"}</button>
     </form></section>`;
 }
 
@@ -1363,19 +1364,7 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, D = b.dataset;
   switch (a) {
-    case "auth-signup": {
-      const em = ($("#ae") || {}).value || "", pw = ($("#ap") || {}).value || "";
-      if (!em.includes("@") || pw.length < 8) { authMsg = "Gib deine E-Mail und ein Passwort mit mindestens 8 Zeichen ein."; render(); break; }
-      authBusy = "up"; authMsg = ""; authEmail = em.trim(); render();
-      let data, error;
-      try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
-      catch (err) { error = {message: String(err && err.message || err)}; }
-      authBusy = "";
-      if (error) { authMsg = "Das Konto konnte nicht angelegt werden: " + error.message; render(); break; }
-      if (data.session) { authMsg = ""; initStore(); break; }
-      authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
-      render(); break;
-    }
+    case "auth-mode": authMode = authMode === "signup" ? "login" : "signup"; authMsg = ""; render(); break;
     case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; closeSheet(); render(); break;
     case "tab": tab = D.tab; try { history.replaceState(null, "", "#" + tab); } catch(_) {} window.scrollTo(0, 0); render(); break;
     case "day-prev": curDate = addDays(curDate, -1); render(); break;
@@ -1496,6 +1485,20 @@ document.addEventListener("submit", async e => {
       authBusy = "";
       if (error) { authMsg = /confirm/i.test(error.message) ? "Deine E-Mail ist noch nicht bestätigt. Öffne den Link in der Bestätigungs-Mail." : "E-Mail oder Passwort stimmen nicht (" + error.message + ")."; render(); return; }
       authMsg = ""; initStore(); break;
+    }
+    case "signup": {
+      const em = v("ae") || "", pw = v("ap") || "";
+      if (!em.includes("@") || pw.length < 8) { authMsg = "Gib deine E-Mail und ein Passwort mit mindestens 8 Zeichen ein."; render(); return; }
+      authBusy = "up"; authMsg = ""; authEmail = em.trim(); render();
+      let data, error;
+      try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
+      catch (err) { error = {message: String(err && err.message || err)}; }
+      authBusy = "";
+      if (error) { authMsg = "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
+      if (data.session) { authMsg = ""; initStore(); break; }
+      authMode = "login";
+      authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
+      render(); return;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gh")) || DEFAULTS.goalHi, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
