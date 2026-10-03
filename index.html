@@ -242,7 +242,18 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "03.10.2026 15:27";
+const APP_VERSION = "03.10.2026 15:29";
+/* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
+async function checkUpdate(){
+  if (APP_VERSION.startsWith("__")) return;
+  try {
+    const html = await (await fetch(location.pathname + "?check=" + Date.now(), {cache: "no-store"})).text();
+    const m = html.match(/APP_VERSION = "([^"]+)"/);
+    if (m && m[1] !== APP_VERSION && !m[1].startsWith("__")) location.replace(location.pathname + "?v=" + encodeURIComponent(m[1]));
+  } catch(e) {}
+}
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
 /* Doppeltipp-Zoom verhindert touch-action im CSS, ohne schnelle Tipps zu verschlucken. */
 
 /* ---------- Hilfsfunktionen ---------- */
