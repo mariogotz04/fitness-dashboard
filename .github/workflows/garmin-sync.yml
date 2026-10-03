@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: write   # nur für den Keepalive-Schritt unten
 
 concurrency:
   group: garmin-sync
@@ -38,3 +39,9 @@ jobs:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
           PYTHONWARNINGS: ignore
         run: python garmin/garmin_sync.py --push --days 4
+      - name: Zeitplan aktiv halten
+        # GitHub pausiert Zeitpläne nach 60 Tagen ohne Änderungen am Repository. Das hält ihn aktiv.
+        if: github.event.schedule == '15 6 * * *'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/garmin-sync.yml/enable" --silent
