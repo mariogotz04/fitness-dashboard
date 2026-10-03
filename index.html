@@ -241,7 +241,8 @@ textarea.inp{min-height:84px;resize:vertical}
 
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
-document.addEventListener("touchmove", e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false});
+["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
+const APP_VERSION = "03.10.2026 15:27";
 /* Doppeltipp-Zoom verhindert touch-action im CSS, ohne schnelle Tipps zu verschlucken. */
 
 /* ---------- Hilfsfunktionen ---------- */
@@ -1296,7 +1297,8 @@ function openSettings(){
     <div class="section-title">Sicherung</div><button class="btn" data-act="export">Alle Daten als Datei sichern</button>
     <div class="section-title">Konto</div>
     <p class="small muted" style="margin:0 0 8px">Angemeldet als ${esc(user ? user.email : "")}. Deine Daten liegen geschützt in deiner eigenen Datenbank und sind auf iPhone und Mac gleich.</p>
-    <button class="btn danger" data-act="logout">Abmelden</button>`);
+    <button class="btn danger" data-act="logout">Abmelden</button>
+    <p class="small muted" style="margin-top:14px">App-Version ${APP_VERSION}</p>`);
 }
 
 /* ---------- Hevy-Import ---------- */
