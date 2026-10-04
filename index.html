@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:12";
+const APP_VERSION = "04.10.2026 08:15";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -311,7 +311,7 @@ const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["freu
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
-const DEFAULTS = {kcal: 2400, p: 180, f: 70, c: 260, goalLo: 81, goalHi: 82, rateLo: 0.4, rateHi: 0.6, sleepGoal: 7.5, strengthPerWeek: 3, supplements: []};
+const DEFAULTS = {kcal: 2400, p: 180, f: 70, c: 260, goalLo: 81, goalHi: 81, rateLo: 0.4, rateHi: 0.6, sleepGoal: 7.5, strengthPerWeek: 3, supplements: []};
 
 /* ---------- Datenspeicher (Supabase) ---------- */
 const SB_URL = "https://vmrbhvigsvemuntqeedp.supabase.co", SB_KEY = "sb_publishable_fHBe4Fo9FlF4xMu7Nzt9NA_8YoRC6m6";
@@ -987,7 +987,7 @@ function viewKoerper(){
     <div class="card-h"><h2>Gewichtsverlauf</h2>
       <div class="seg" role="group" aria-label="Zeitraum">${[[30,"30 T"],[90,"90 T"],[0,"Alles"]].map(([r, l]) => `<button data-act="w-range" data-r="${r}" aria-pressed="${weightRange === r}">${l}</button>`).join("")}</div></div>
     <div class="chart" data-chart="weight" style="height:240px"></div>
-    <div class="legend"><span><span class="dot" style="background:var(--muted)"></span>Messung</span><span><span class="ln"></span>Ø 7 Tage</span><span><span class="dot" style="background:var(--accent-soft);border:1px solid var(--accent)"></span>Ziel ${fmt(c.goalLo)}–${fmt(c.goalHi)} kg</span></div>
+    <div class="legend"><span><span class="dot" style="background:var(--muted)"></span>Messung</span><span><span class="ln"></span>Ø 7 Tage</span><span><span class="dot" style="background:var(--accent-soft);border:1px solid var(--accent)"></span>Ziel ${c.goalLo === c.goalHi ? fmt(c.goalLo, 1) : fmt(c.goalLo) + "–" + fmt(c.goalHi)} kg</span></div>
   </section>
   <div style="height:12px"></div>
   <section class="card">
@@ -1132,7 +1132,9 @@ function lineChart(el, o){
     const days = (t1 - t0) / 864e5, n = Math.min(5, Math.max(2, Math.floor((W - padL) / 90)));
     for (let i = 0; i < n; i++) { const t = t0 + (t1 - t0) * i / (n - 1); const k = keyOf(new Date(t)); s += `<text x="${X(k)}" y="${H - 6}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}">${days > 300 ? MON[dateOf(k).getMonth()].slice(0, 3) + " " + String(dateOf(k).getFullYear()).slice(2) : fmtShort(k)}</text>`; }
   }
-  if (o.band && !spark) s += `<rect x="${padL}" width="${W - padL - padR}" y="${Y(o.band[1])}" height="${Math.max(2, Y(o.band[0]) - Y(o.band[1]))}" fill="var(--accent-soft)"/>`;
+  if (o.band && !spark) s += o.band[0] === o.band[1]
+    ? `<line x1="${padL}" x2="${W - padR}" y1="${Y(o.band[0])}" y2="${Y(o.band[0])}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="6 4"/><text x="${W - padR}" y="${Y(o.band[0]) - 5}" text-anchor="end">Ziel ${fmt(o.band[0], 1)} kg</text>`
+    : `<rect x="${padL}" width="${W - padL - padR}" y="${Y(o.band[1])}" height="${Math.max(2, Y(o.band[0]) - Y(o.band[1]))}" fill="var(--accent-soft)"/>`;
   if (o.connect) s += `<polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts.map(p => X(p.k) + "," + Y(p.v)).join(" ")}"/>`;
   if (o.line && o.line.length > 1) s += `<polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${o.line.map(p => X(p.k) + "," + Y(p.v)).join(" ")}"/>`;
   if (!spark || pts.length < 40) pts.forEach(p => { s += `<circle cx="${X(p.k)}" cy="${Y(p.v)}" r="${spark ? 2 : o.connect ? 4 : 3.5}" fill="${o.connect ? "var(--accent)" : "var(--muted)"}" stroke="var(--surface)" stroke-width="${o.connect ? 2 : 0}"/>`; });
@@ -1414,7 +1416,7 @@ function openSettings(){
     <div class="eyebrow">Tagesziele Ernährung</div>
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}"></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}"></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}"></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Gewichtsziel</div>
-    <div class="fields"><div class="field"><label for="gl">Ziel von (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div><div class="field"><label for="gh">Ziel bis (kg)</label><input class="inp num" id="gh" inputmode="decimal" value="${fmt(c.goalHi, 1)}"></div></div>
+    <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
     <div class="fields"><div class="field"><label for="gs">Krafteinheiten pro Woche</label><input class="inp num" id="gs" inputmode="numeric" value="${c.strengthPerWeek}"></div><div class="field"><label for="gsl">Schlafziel (h)</label><input class="inp num" id="gsl" inputmode="decimal" value="${fmt(c.sleepGoal, 1)}"></div></div>
     <button class="btn primary" type="submit">Ziele speichern</button></form>
@@ -1667,7 +1669,7 @@ document.addEventListener("submit", async e => {
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gh")) || DEFAULTS.goalHi, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
+    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
   }
 });
 
