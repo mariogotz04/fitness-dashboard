@@ -103,7 +103,8 @@ def fetch(days):
     try:
         api.login(TOKENS)
     except Exception as e:
-        print(json.dumps({"error": "login_failed", "detail": str(e)[:200]}))
+        code = getattr(getattr(e, "response", None), "status_code", None) or getattr(getattr(getattr(e, "error", None), "response", None), "status_code", None)
+        print(json.dumps({"error": "login_failed", "detail": type(e).__name__ + (" HTTP " + str(code) if code else "") + ": " + str(e).split("?")[0][:160]}))
         return 2
     today = dt.date.today()
     res = [day(api, (today - dt.timedelta(days=i)).isoformat()) for i in range(days - 1, -1, -1)]
@@ -128,7 +129,7 @@ def push(days):
         code = fetch(days)
     payload = json.loads(buf.getvalue() or "{}")
     if code != 0 or "days" not in payload:
-        print("Garmin-Abruf fehlgeschlagen:", payload.get("error", "unbekannt"))
+        print("Garmin-Abruf fehlgeschlagen:", payload.get("error", "unbekannt"), "|", payload.get("detail", ""))
         return 2
     if os.environ.get("SUPABASE_URL"):
         cfg = {"url": os.environ["SUPABASE_URL"], "key": os.environ["SUPABASE_KEY"], "token": os.environ["SYNC_TOKEN"]}
