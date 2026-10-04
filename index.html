@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 09:17";
+const APP_VERSION = "04.10.2026 09:31";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -368,6 +368,7 @@ async function initStore(){
   if (!session) { mode = "auth"; render(); return; }
   user = session.user; mode = "db";
   sb.rpc("am_owner").then(({data}) => { isOwner = !!data; scheduleRender(); });
+  sb.rpc("has_garmin").then(({data}) => { hasGarmin = !!data; scheduleRender(); });
   try { const raw = localStorage.getItem("fd-cache"); if (raw) { const o = JSON.parse(raw); COLS.forEach(c => S[c] = o[c] || {}); loaded = true; render(); } } catch(e) {}
   await loadAll();
   initPush();
@@ -764,7 +765,7 @@ const QUOTES = [
   ["Ob du glaubst, du kannst es, oder ob du glaubst, du kannst es nicht: Du wirst recht behalten.", "Henry Ford"]
 ];
 function quoteOf(k){ const d = dateOf(k); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7; return QUOTES[n % QUOTES.length]; }
-let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false, isOwner = false;
+let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false, isOwner = false, hasGarmin = false;
 function recoverySection(k){
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), z = r ? zoneOf(r.score) : "none";
   const zc = {good: "var(--good)", warn: "var(--warn)", bad: "var(--bad)", none: "var(--muted)"}[z];
@@ -782,7 +783,7 @@ function recoverySection(k){
       ${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}
       ${dial(sl && sl.h ? sl.h / need : 0, "color-mix(in srgb, var(--accent) 55%, var(--good))", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
     </div>
-    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${isOwner ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>
+    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}" title="Wirkt mit ${Math.round(p.score)} von 100 Punkten auf deine Erholung">${p.label} ${p.disp}</span>`).join("")}</div>` : ""}
     ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
       <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
@@ -1880,7 +1881,7 @@ document.addEventListener("click", async e => {
   const a = b.dataset.act, D = b.dataset;
   switch (a) {
     case "auth-mode": authMode = authMode === "signup" ? "login" : "signup"; authMsg = ""; render(); break;
-    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: "", invites: []}; isOwner = false; closeSheet(); render(); break;
+    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: "", invites: []}; isOwner = false; hasGarmin = false; closeSheet(); render(); break;
     case "tab": tab = D.tab; try { history.replaceState(null, "", "#" + tab); } catch(_) {} window.scrollTo(0, 0); render(); break;
     case "day-prev": curDate = addDays(curDate, -1); render(); break;
     case "day-next": curDate = addDays(curDate, 1); render(); break;
