@@ -2,14 +2,13 @@ name: Garmin-Abruf
 
 # Läuft nur nach Zeitplan oder per Hand durch den Besitzer.
 # Keine pull_request-Auslöser: Änderungsvorschläge von außen können diesen Ablauf nicht starten.
+# Läuft nur auf Knopfdruck aus der App (workflow_dispatch über die Datenbank) oder per Hand.
+# Keine pull_request-Auslöser: Änderungsvorschläge von außen können diesen Ablauf nicht starten.
 on:
-  schedule:
-    - cron: "15 4-21 * * *"   # stündlich von 06:15 bis 23:15 (Sommerzeit), im Winter eine Stunde früher
   workflow_dispatch:
 
 permissions:
   contents: read
-  actions: write   # nur für den Keepalive-Schritt unten
 
 concurrency:
   group: garmin-sync
@@ -37,8 +36,3 @@ jobs:
           SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
           PYTHONWARNINGS: ignore
         run: python garmin/garmin_sync.py --push --days 4
-      - name: Zeitplan aktiv halten
-        # GitHub pausiert Zeitpläne nach 60 Tagen ohne Änderungen am Repository. Das hält ihn aktiv.
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/garmin-sync.yml/enable" --silent
