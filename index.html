@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:36";
+const APP_VERSION = "04.10.2026 08:44";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1106,6 +1106,46 @@ function updateRestBar(){
   el.innerHTML = `<span class="eyebrow">Pause</span><span class="mid num">${Math.floor(left / 60)}:${pad(left % 60)}</span><span class="row" style="gap:6px;margin-left:auto"><button class="btn" data-act="rest-plus">+30 s</button><button class="btn ghost" data-act="rest-skip">Überspringen</button></span>`;
 }
 
+/* ----- KI-Essenseingabe (Text oder Sprache) ----- */
+let recog = null;
+function aiVoice(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR || !af) return;
+  if (af.listening && recog) { recog.stop(); return; }
+  recog = new SR(); recog.lang = "de-DE"; recog.interimResults = true; recog.continuous = false;
+  const base = (($("#aiq") || {}).value || af.aiText || "").trim();
+  recog.onresult = ev => { let t = ""; for (const r of ev.results) t += r[0].transcript; af.aiText = (base ? base + " " : "") + t; const el = $("#aiq"); if (el) el.value = af.aiText; };
+  recog.onerror = ev => { af.listening = false; af.aiErr = ev.error === "not-allowed" || ev.error === "service-not-allowed" ? "Spracheingabe ist hier nicht erlaubt. Tippe im Textfeld auf das Mikrofon deiner Tastatur." : "Ich habe nichts verstanden. Versuch es noch einmal."; renderAddFood(); };
+  recog.onend = () => { const was = af && af.listening; if (!af) return; af.listening = false; renderAddFood(); if (was && af.aiText.trim() && !af.aiErr) runAiFood(af.aiText); };
+  af.listening = true; af.aiErr = ""; renderAddFood();
+  try { recog.start(); } catch(e) { af.listening = false; renderAddFood(); }
+}
+async function runAiFood(text){
+  if (!af || af.aiBusy) return;
+  text = String(text || "").trim(); if (text.length < 2) { af.aiErr = "Beschreib kurz, was du gegessen hast."; renderAddFood(); return; }
+  af.aiText = text; af.aiBusy = true; af.aiErr = ""; renderAddFood();
+  const meal = af.meal, date = curDate;
+  const msgs = {daily_limit: "Für heute ist das Limit von 60 KI-Einträgen erreicht.", no_api_key: "Die KI ist noch nicht eingerichtet.", empty: "Beschreib kurz, was du gegessen hast."};
+  const fail = m => { if (af) { af.aiBusy = false; af.aiErr = m; renderAddFood(); } else toast(m); };
+  const {data: id, error} = await sb.rpc("ai_food_request", {p_text: text});
+  if (error) { const k = Object.keys(msgs).find(x => (error.message || "").includes(x)); return fail(k ? msgs[k] : "Die KI ist gerade nicht erreichbar. Versuch es gleich noch einmal."); }
+  const t0 = Date.now();
+  while (Date.now() - t0 < 70000) {
+    await new Promise(r => setTimeout(r, 1200));
+    const {data: res} = await sb.rpc("ai_food_result", {p_id: id});
+    if (!res || res.status === "pending") continue;
+    if (res.status === "error") return fail(res.message === "refusal" ? "Dazu konnte die KI nichts eintragen. Formuliere es anders." : "Die KI hat nicht geantwortet. Versuch es noch einmal.");
+    const items = (res.items || []).map(it => ({name: String(it.name || "Unbekannt"), g: Math.round(num(it.g) || 0), kcal: Math.round(num(it.kcal) || 0), p: Math.round((num(it.p) || 0) * 10) / 10, c: Math.round((num(it.c) || 0) * 10) / 10, f: Math.round((num(it.f) || 0) * 10) / 10, src: "ki"})).filter(it => it.kcal > 0 || it.g > 0);
+    if (!items.length) return fail("Ich habe darin kein Essen erkannt. Nenne Lebensmittel und am besten die Menge.");
+    const d = getDay(date); d.meals = d.meals || {}; d.meals[meal] = (d.meals[meal] || []).concat(items); saveDay(date, d);
+    const kc = items.reduce((a, x) => a + x.kcal, 0), pr = items.reduce((a, x) => a + x.p, 0);
+    if (af) { af.aiBusy = false; af.aiText = ""; closeSheet(); }
+    toast(items.length + (items.length === 1 ? " Eintrag" : " Einträge") + " hinzugefügt: " + fmt(kc) + " kcal, " + fmt(pr) + " g Protein");
+    return;
+  }
+  fail("Die KI hat zu lange gebraucht. Versuch es noch einmal.");
+}
+
 /* ----- Körper ----- */
 function viewKoerper(){
   const c = cfg(), ser = weightSeries(), pser = planSeries();
@@ -1378,16 +1418,24 @@ function foodsSorted(q){
   return all.filter(f => !ql || f.name.toLowerCase().includes(ql)).sort((a, b) => (b.uses || 0) - (a.uses || 0) || a.name.localeCompare(b.name, "de"));
 }
 function openAddFood(meal){
-  af = {meal, mode: "suchen", q: "", pick: null, g: "", est: null, busy: false, ctl: null};
+  af = {meal, mode: "ki", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
   const label = MEALS.find(m => m[0] === meal)[1];
   openSheet(label + " hinzufügen", "", null, () => { if (af && af.ctl) af.ctl.abort(); af = null; });
   renderAddFood();
 }
 function renderAddFood(){
   if (!af) return;
-  const tabs = [["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Schnell"],["neu","Neues Lebensmittel"]]);
+  const tabs = [["ki","KI"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Schnell"],["neu","Neues Lebensmittel"]]);
   let b = `<div class="seg" role="group" aria-label="Art">${tabs.map(([k, l]) => `<button data-act="af-mode" data-m="${k}" aria-pressed="${af.mode === k}">${l}</button>`).join("")}</div><div style="height:14px"></div>`;
-  if (af.mode === "suchen") {
+  if (af.mode === "ki") {
+    const canTalk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    b += `<form class="stack" data-form="ai-food">
+      <div class="field"><label for="aiq">Was hast du gegessen?</label><textarea class="inp" id="aiq" placeholder="z. B. 500 g Skyr mit 100 g Beeren und einer Banane" ${af.aiBusy ? "disabled" : ""}>${esc(af.aiText)}</textarea></div>
+      <div class="row">${canTalk ? `<button type="button" class="btn ${af.listening ? "primary" : ""}" data-act="ai-voice" ${af.aiBusy ? "disabled" : ""}>${af.listening ? "● Ich höre zu … (tippen zum Stoppen)" : "🎤 Sprechen"}</button>` : ""}<button class="btn primary" type="submit" ${af.aiBusy ? "disabled" : ""}>${af.aiBusy ? "KI rechnet …" : "Eintragen"}</button></div>
+      ${af.aiErr ? `<div class="hint" role="alert">${esc(af.aiErr)}</div>` : ""}
+      <p class="small muted" style="margin:0">Die KI berechnet Kalorien und Makros und trägt alles direkt ein. Stimmt etwas nicht, löschst du den Eintrag in der Mahlzeit mit ×.${canTalk ? "" : " Zum Sprechen tippe im Textfeld auf das Mikrofon deiner Tastatur."}</p>
+    </form>`;
+  } else if (af.mode === "suchen") {
     if (af.pick) {
       const f = S.foods[af.pick]; const g = num(af.g) || f.portion || 100; const k = g / 100;
       b += `<div class="card"><div class="title" style="font-weight:600;font-size:17px">${esc(f.name)}</div><div class="small muted num">pro 100 g: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · K ${fmt(f.c, 1)} · F ${fmt(f.f, 1)}</div>
@@ -1680,7 +1728,7 @@ document.addEventListener("click", async e => {
     case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); break; }
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
     case "add-food": openAddFood(D.meal); break;
-    case "af-mode": af.mode = D.m; af.pick = null; renderAddFood(); break;
+    case "af-mode": if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
     case "af-pick": af.pick = D.id; af.g = ""; renderAddFood(); break;
     case "af-unpick": af.pick = null; renderAddFood(); break;
     case "af-g": af.g = D.g; renderAddFood(); break;
@@ -1692,6 +1740,7 @@ document.addEventListener("click", async e => {
     }
     case "food-del": del("foods", D.id); af.pick = null; renderAddFood(); break;
     case "af-estimate": runEstimate(); break;
+    case "ai-voice": aiVoice(); break;
     case "af-stop": if (af && af.ctl) af.ctl.abort(); break;
     case "est-del": af.est.splice(+D.i, 1); if (!af.est.length) af.est = null; $("#afest").innerHTML = estHtml(); break;
     case "est-add": {
@@ -1804,6 +1853,7 @@ document.addEventListener("submit", async e => {
       saveDay(k, d);
       document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmt(mins / 60, 1) + " h."); break;
     }
+    case "ai-food": runAiFood(v("aiq")); break;
     case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
     case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
