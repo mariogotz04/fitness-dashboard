@@ -245,6 +245,19 @@ textarea.inp{min-height:84px;resize:vertical}
 .planitem[aria-pressed="true"] .chk{background:var(--good);border-color:var(--good)}
 .planitem[aria-pressed="true"] .chk svg{opacity:1}
 .planitem[aria-pressed="true"] b{text-decoration:line-through;text-decoration-color:var(--muted)}
+/* Übungs-Animation: Start- und Endposition im Wechsel */
+a.btn{color:var(--accent)}
+.exanim{position:relative;display:block;overflow:hidden;border-radius:14px;background:#fff;flex:none;border:1px solid var(--line)}
+.exanim img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.exanim img.b{animation:exflip 1.8s steps(1) infinite}
+@keyframes exflip{0%{opacity:0}50%{opacity:1}}
+.steps{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px}
+.steps li{padding-left:2px;line-height:1.45}
+.steps li::marker{color:var(--accent);font-weight:700}
+.filt{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin:10px 0 4px;scrollbar-width:none}
+.filt::-webkit-scrollbar{display:none}
+.filt button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-weight:600;font-size:13px;white-space:nowrap;cursor:pointer;color:var(--ink-2)}
+.filt button[aria-pressed="true"]{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
 .pick{width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 2px;cursor:pointer;display:flex;gap:8px;align-items:center}
 .pick:first-child{border-top:0}
 .pick:hover{background:var(--surface-2)}
@@ -268,7 +281,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 15:12";
+const APP_VERSION = "04.10.2026 15:23";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -392,7 +405,52 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 /* Claude-Funktionen gibt es nur auf claude.ai. */
 let sampleFn = null, sampleImages = null;
-async function initExtras(){}
+async function initExtras(){ loadExdb(); }
+
+/* ---------- Übungsdatenbank (Free Exercise DB, gemeinfrei; deutsche Texte selbst geschrieben) ---------- */
+const EXIMG = "https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/";
+let EXDB = null, EXDBI = {};
+async function loadExdb(){
+  if (EXDB) return EXDB;
+  try { EXDB = await fetch("exdb.json?v=" + encodeURIComponent(APP_VERSION)).then(r => r.json()); EXDBI = {}; EXDB.forEach(x => EXDBI[x.id] = x); scheduleRender(); }
+  catch(e) { EXDB = null; }
+  return EXDB;
+}
+const exRef = id => { const e = S.exercises[id]; return e && e.ref ? EXDBI[e.ref] : null; };
+function exAnim(x, size){
+  if (!x || !x.img || !x.img.length) return "";
+  const [a, b] = x.img;
+  return `<span class="exanim" style="width:${size};aspect-ratio:${size === "100%" ? "4/3" : "1"}" aria-hidden="true"><img src="${EXIMG + esc(a)}" alt="" loading="lazy">${b ? `<img class="b" src="${EXIMG + esc(b)}" alt="" loading="lazy">` : ""}</span>`;
+}
+const ytLink = name => "https://www.youtube.com/results?search_query=" + encodeURIComponent(name.replace(/\s*\(.*?\)/g, "") + " richtige Ausführung");
+function exGuide(x){
+  if (!x) return "";
+  return `${exAnim(x, "100%")}
+    <div class="row" style="margin:10px 0 4px">${(x.pm || []).map(m => `<span class="chip acc">${esc(m)}</span>`).join("")}${(x.sm || []).map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div>
+    <div class="section-title" style="margin-top:12px">So geht's</div>
+    <ol class="steps">${x.s.map(t => `<li>${esc(t)}</li>`).join("")}</ol>
+    <a class="btn" style="margin-top:12px;text-decoration:none" href="${ytLink(x.n)}" target="_blank" rel="noopener">▶ Video auf YouTube ansehen</a>
+    <p class="small muted" style="margin:8px 0 0">Bilder: Free Exercise DB (gemeinfrei).</p>`;
+}
+let exdbQ = "", exdbG = "";
+function exdbList(){
+  if (!EXDB) { loadExdb().then(() => { if ($("#exdbres")) $("#exdbres").innerHTML = exdbList(); }); return '<div class="empty">Datenbank wird geladen …</div>'; }
+  const q = normT(exdbQ), mine = new Set(Object.values(S.exercises).map(e => e.ref).filter(Boolean));
+  const res = EXDB.filter(x => (!exdbG || x.g === exdbG) && (!q || normT(x.n + " " + x.en + " " + x.e).includes(q)));
+  return res.slice(0, 80).map(x => `<button class="pick" data-act="exdb-open" data-id="${esc(x.id)}">${exAnim(x, "52px")}<span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(x.n)}</span><span class="small muted">${esc(x.g)} · ${esc(x.e)}</span></span>${mine.has(x.id) ? '<span class="chip good">Meine</span>' : ""}</button>`).join("") || '<div class="empty">Nichts gefunden.</div>';
+}
+function openExdb(){
+  openSheet("Übungsdatenbank", `<input class="inp" id="exdbq" placeholder="Suchen, z. B. Rudern oder Kurzhantel" value="${esc(exdbQ)}" autocomplete="off">
+    <div class="filt">${["", ...GROUPS].map(g => `<button data-act="exdb-g" data-g="${g}" aria-pressed="${exdbG === g}">${g || "Alle"}</button>`).join("")}</div>
+    <div class="list" id="exdbres">${exdbList()}</div>`);
+}
+function openExdbItem(rid){
+  const x = EXDBI[rid]; if (!x) return;
+  const mineId = Object.keys(S.exercises).find(k => S.exercises[k].ref === rid);
+  openSheet(x.n, `<div class="row" style="margin-bottom:10px"><span class="chip">${esc(x.g)}</span><span class="chip">${esc(x.e)}</span>${x.l ? `<span class="chip">${esc(x.l)}</span>` : ""}</div>${exGuide(x)}`,
+    mineId ? `<button class="btn" data-act="open-ex" data-id="${mineId}">In deinen Übungen öffnen</button><button class="btn ghost" data-act="exdb-back">Zurück</button>`
+           : `<button class="btn primary" data-act="exdb-add" data-id="${esc(rid)}">Zu meinen Übungen hinzufügen</button><button class="btn ghost" data-act="exdb-back">Zurück</button>`);
+}
 
 /* ---------- Berechnungen ---------- */
 function dayTotals(d){
@@ -1157,10 +1215,11 @@ function viewExercises(){
   const byG = {};
   exs.forEach(e => (byG[e.group || "Sonstiges"] = byG[e.group || "Sonstiges"] || []).push(e));
   const order = GROUPS.filter(g => byG[g]).concat(Object.keys(byG).filter(g => !GROUPS.includes(g)));
-  return `<p class="small muted" style="margin:0 0 10px">Dein Übungsregister. Tippe auf eine Übung, um deinen Fortschritt zu sehen.</p>` +
+  return `<button class="btn primary block" data-act="exdb" style="margin-bottom:8px">🔎 Übungsdatenbank durchsuchen${EXDB ? " (" + EXDB.length + " Übungen)" : ""}</button>
+  <p class="small muted" style="margin:0 0 10px">Dein Übungsregister. Tippe auf eine Übung für Anleitung, Video und deinen Fortschritt.</p>` +
   (order.map(g => `<div class="section-title">${esc(g)}</div><section class="card" style="padding-block:6px">${byG[g].sort((a, b) => a.name.localeCompare(b.name, "de")).map(e => {
       const h = exHistory(e.id); const last = h[h.length - 1];
-      return `<button class="pick" data-act="open-ex" data-id="${e.id}"><span style="flex:1;min-width:0"><span class="title" style="display:block;font-weight:500">${esc(e.name)}</span><span class="sub small muted">${esc(e.equipment || "")}${last ? (e.equipment ? " · " : "") + "zuletzt " + setsStr(last.sets.slice(0, 3)) : ""}</span></span>${h.length ? `<span class="chip">${h.length}×</span>` : ""}</button>`;
+      return `<button class="pick" data-act="open-ex" data-id="${e.id}">${e.ref && EXDBI[e.ref] ? exAnim(EXDBI[e.ref], "44px") : ""}<span style="flex:1;min-width:0"><span class="title" style="display:block;font-weight:500">${esc(e.name)}</span><span class="sub small muted">${esc(e.equipment || "")}${last ? (e.equipment ? " · " : "") + "zuletzt " + setsStr(last.sets.slice(0, 3)) : ""}</span></span>${h.length ? `<span class="chip">${h.length}×</span>` : ""}</button>`;
     }).join("")}</section>`).join("") || '<section class="card"><div class="empty">Das Register ist noch leer.${isOwner ? "" : `<div style="margin-top:10px"><button class="btn primary" data-act="starter-ex">Übungsregister von Mario übernehmen</button></div>`}</div></section>') +
   `<div style="height:12px"></div><button class="btn block" data-act="edit-ex" data-id="">+ Übung hinzufügen</button>`;
 }
@@ -1945,6 +2004,7 @@ function saveWs(now){
   if (now) go(); else wsTimer = setTimeout(go, 1200);
 }
 function flushWs(){ if (wsTimer) { clearTimeout(wsTimer); wsTimer = null; if (ws) { const {id, ...data} = ws; put("workouts", id, clone(data)); } } }
+let wsInfo = {};
 function renderWs(){
   if (!ws) return;
   const done = ws.status === "done";
@@ -1955,10 +2015,13 @@ function renderWs(){
     const hi = e.target ? repHi(e.target.reps) : null;
     let hint = "";
     if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft. Heute Gewicht erhöhen.</div>` : ""; }
-    return `<div class="ex"><div class="spread"><div style="min-width:0"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
+    const rx = exRef(e.exId), open = wsInfo[ei];
+    return `<div class="ex"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}</div>
-      ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>${hint}
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}
+      ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
+      ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
+      ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
       <div class="sets"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span>
       ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
@@ -1981,6 +2044,7 @@ function openExercise(id){
   const best = h.filter(x => x.kind === kind).reduce((m, x) => Math.max(m, x.v), 0);
   openSheet(e.name, `<div class="row" style="margin-bottom:10px"><span class="chip">${esc(e.group || "Sonstiges")}</span>${e.equipment ? `<span class="chip">${esc(e.equipment)}</span>` : ""}</div>
     ${e.notes ? `<p class="ink2" style="margin:0 0 12px;white-space:pre-wrap">${esc(e.notes)}</p>` : ""}
+    ${exRef(id) ? exGuide(exRef(id)) + '<div class="section-title">Dein Fortschritt</div>' : `<p class="small muted" style="margin:0 0 12px">Noch keine Anleitung verknüpft. Unter „Bearbeiten“ kannst du eine Übung aus der Datenbank zuordnen.</p>`}
     <div class="kv" style="margin-bottom:10px"><div><span class="eyebrow">Einheiten</span><div class="v">${h.length}</div></div><div><span class="eyebrow">${kind === "kg" ? "Bestes 1RM (geschätzt)" : "Beste Serie"}</span><div class="v">${best ? fmt(best, kind === "kg" ? 1 : 0) : "–"}<span class="unit">${kind === "kg" ? "kg" : kind === "sec" ? "s" : "Wdh."}</span></div></div></div>
     <div class="chart" data-chart="ex" data-id="${id}" style="height:200px"></div>
     <p class="small muted" style="margin:6px 0 0">${kind === "kg" ? "Die Linie zeigt das geschätzte Maximalgewicht aus deinem besten Satz pro Training (Formel nach Epley)." : "Die Linie zeigt deine beste Serie pro Training."}</p>
@@ -1995,6 +2059,7 @@ function openExEdit(id){
     <div class="field"><label for="exn">Name</label><input class="inp" id="exn" value="${esc(e.name)}" required></div>
     <div class="fields"><div class="field"><label for="exg">Muskelgruppe</label><select class="inp" id="exg">${GROUPS.map(g => `<option ${g === e.group ? "selected" : ""}>${g}</option>`).join("")}</select></div>
     <div class="field"><label for="exq">Gerät</label><input class="inp" id="exq" value="${esc(e.equipment || "")}" placeholder="z. B. Kabelzug"></div></div>
+    <div class="field"><label for="exr">Anleitung aus der Datenbank</label><select class="inp" id="exr"><option value="">Keine</option>${(EXDB || []).map(x => `<option value="${esc(x.id)}" ${e.ref === x.id ? "selected" : ""}>${esc(x.g)}: ${esc(x.n)}</option>`).join("")}</select></div>
     <div class="field"><label for="exo">Technik-Notizen</label><textarea class="inp" id="exo" placeholder="Worauf achtest du bei der Ausführung?">${esc(e.notes || "")}</textarea></div>
     <div class="row"><button class="btn primary" type="submit">Speichern</button>${id ? `<button class="btn ghost danger" type="button" data-act="ex-del" data-id="${id}">Löschen</button>` : ""}</div></form>`);
 }
@@ -2228,7 +2293,13 @@ document.addEventListener("click", async e => {
     case "ws-finish": stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
     case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
-    case "open-ex": openExercise(D.id); break;
+    case "open-ex": closeSheet(); openExercise(D.id); break;
+    case "exdb": openExdb(); break;
+    case "exdb-g": exdbG = D.g; $("#sheet").querySelectorAll(".filt button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.g === exdbG))); $("#exdbres").innerHTML = exdbList(); break;
+    case "exdb-open": openExdbItem(D.id); break;
+    case "exdb-back": openExdb(); break;
+    case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
+    case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "edit-template": openTemplateEdit(D.id); break;
@@ -2250,6 +2321,7 @@ document.addEventListener("click", async e => {
 document.addEventListener("input", e => {
   const t = e.target;
   if (t.closest && t.closest('form[data-form="calc"]')) { const r = calcRead(); if (t.id === "cg") { const p = Object.assign({}, cfgRaw().calc || {}, r.p, {pace: null, pkg: null}); $("#sheet-b").innerHTML = calcForm(p, r.goal); return; } $("#calcres").innerHTML = calcExplain(calcTargets(r.p, r.goal), r.goal); return; }
+  if (t.id === "exdbq") { exdbQ = t.value; $("#exdbres").innerHTML = exdbList(); return; }
   if (t.id === "afq" && af) { af.q = t.value; offSearch(af.q); $("#afres").innerHTML = foodResults(foodsSorted(af.q)); return; }
   if (t.id === "afg" && af && af.pick) { const f = S.foods[af.pick]; const k = (num(t.value) || 0) / 100; af.g = t.value; $("#afcalc").innerHTML = `<b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}`; return; }
   if (t.dataset.ws && ws) {
@@ -2290,7 +2362,7 @@ document.addEventListener("submit", async e => {
     case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
     case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
-    case "ex-edit": { const id = f.dataset.id || uid("x"); const prev = S.exercises[id] || {}; put("exercises", id, Object.assign(clone(prev), {name: v("exn").trim(), group: v("exg"), equipment: v("exq").trim(), notes: v("exo").trim()})); closeSheet(); toast("Übung gespeichert."); break; }
+    case "ex-edit": { const id = f.dataset.id || uid("x"); const prev = S.exercises[id] || {}; put("exercises", id, Object.assign(clone(prev), {name: v("exn").trim(), group: v("exg"), equipment: v("exq").trim(), notes: v("exo").trim(), ref: v("exr") || undefined})); closeSheet(); toast("Übung gespeichert."); break; }
     case "auth": {
       authBusy = "in"; const em = v("ae").trim(), pw = v("ap"); authEmail = em; render();
       let error;
