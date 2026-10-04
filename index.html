@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:44";
+const APP_VERSION = "04.10.2026 08:53";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1418,14 +1418,14 @@ function foodsSorted(q){
   return all.filter(f => !ql || f.name.toLowerCase().includes(ql)).sort((a, b) => (b.uses || 0) - (a.uses || 0) || a.name.localeCompare(b.name, "de"));
 }
 function openAddFood(meal){
-  af = {meal, mode: "ki", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
+  af = {meal, mode: "suchen", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
   const label = MEALS.find(m => m[0] === meal)[1];
   openSheet(label + " hinzufügen", "", null, () => { if (af && af.ctl) af.ctl.abort(); af = null; });
   renderAddFood();
 }
 function renderAddFood(){
   if (!af) return;
-  const tabs = [["ki","KI"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Schnell"],["neu","Neues Lebensmittel"]]);
+  const tabs = [["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Schnell"],["neu","Neues Lebensmittel"]]);
   let b = `<div class="seg" role="group" aria-label="Art">${tabs.map(([k, l]) => `<button data-act="af-mode" data-m="${k}" aria-pressed="${af.mode === k}">${l}</button>`).join("")}</div><div style="height:14px"></div>`;
   if (af.mode === "ki") {
     const canTalk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
