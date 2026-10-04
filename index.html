@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:58";
+const APP_VERSION = "04.10.2026 09:01";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1213,15 +1213,9 @@ function matchFood(name){
 }
 async function offLookup(name){
   try {
-    const u = "https://de.openfoodfacts.org/cgi/search.pl?search_terms=" + encodeURIComponent(name) + "&search_simple=1&action=process&json=1&page_size=12&sort_by=unique_scans_n&fields=product_name_de,product_name,brands,nutriments,serving_quantity";
-    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(u, {signal: ctl.signal}); clearTimeout(tm); if (!r.ok) return null;
-    const d = await r.json(); const qw = normT(name).split(" ");
-    const ok = (d.products || []).filter(p => { const n = p.nutriments || {}; return n["energy-kcal_100g"] != null && n.proteins_100g != null && (p.product_name_de || p.product_name); });
-    const pick = ok.find(p => qw.every(w => normT(p.product_name_de || p.product_name).includes(w))) || ok[0];
-    if (!pick) return null;
-    const n = pick.nutriments, nm = (pick.product_name_de || pick.product_name).trim() + (pick.brands ? " (" + String(pick.brands).split(",")[0].trim() + ")" : "");
-    return {src: "off", name: nm, kcal: +n["energy-kcal_100g"], p: +(n.proteins_100g || 0), c: +(n.carbohydrates_100g || 0), f: +(n.fat_100g || 0), piece: +(pick.serving_quantity || 0) || null};
+    const items = await offQuery(name); const qw = normT(name).split(" ");
+    const pick = items.find(p => qw.every(w => normT(p.name).includes(w))) || items[0];
+    return pick ? {src: "off", name: pick.name, kcal: pick.kcal, p: pick.p, c: pick.c, f: pick.f, piece: pick.portion || null} : null;
   } catch(e) { return null; }
 }
 function gramsFor(it, food){
@@ -1582,8 +1576,43 @@ function renderAddFood(){
   $("#sheet-b").innerHTML = b;
 }
 function foodResults(res){
-  if (!res.length) return `<div class="empty">${Object.keys(S.foods).length ? "Nichts gefunden. Lege es unter „Neues Lebensmittel“ an oder lass Claude schätzen." : "Deine Lebensmittelliste ist noch leer. Lege Lebensmittel an oder lass Claude schätzen und speichere das Ergebnis."}</div>`;
-  return res.slice(0, 60).map(f => `<button class="pick" data-act="af-pick" data-id="${f.id}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(f.name)}</span><span class="small muted num">${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} pro 100 g${f.portion ? " · Portion " + fmt(f.portion) + " g" : ""}</span></span></button>`).join("");
+  const q = (af && af.q || "").trim();
+  let h = "";
+  if (q.length >= 2) { const qn = normT(q); h += BASE_FOODS.filter(b => b[1].split(",").some(k => normT(k).includes(qn) || qn.includes(normT(k)))).slice(0, 4).map(b => `<button class="pick" data-act="af-base" data-name="${esc(b[0])}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(b[0])}</span><span class="small muted num">${fmt(b[2])} kcal · P ${fmt(b[3], 1)} pro 100 g</span></span><span class="chip">Richtwert</span></button>`).join(""); }
+  h += res.slice(0, q ? 8 : 40).map(f => `<button class="pick" data-act="af-pick" data-id="${f.id}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(f.name)}</span><span class="small muted num">${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} pro 100 g${f.portion ? " · Portion " + fmt(f.portion) + " g" : ""}</span></span><span class="chip">Meine</span></button>`).join("");
+  if (q.length >= 3) {
+    const o = af.off;
+    if (!o || o.q !== q || o.loading) h += `<div class="empty" style="padding:10px">Suche in Open Food Facts …</div>`;
+    else if (o.error) h += `<div class="empty" style="padding:10px">Open Food Facts ist gerade nicht erreichbar. Versuch es gleich noch einmal.</div>`;
+    else h += o.items.map((p, i) => `<button class="pick" data-act="af-off" data-i="${i}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(p.name)}</span><span class="small muted num">${fmt(p.kcal)} kcal · P ${fmt(p.p, 1)} · K ${fmt(p.c, 1)} · F ${fmt(p.f, 1)} pro 100 g</span></span></button>`).join("") || `<div class="empty" style="padding:10px">In Open Food Facts nichts gefunden.</div>`;
+  } else if (!res.length) h = `<div class="empty">Tippe mindestens 3 Buchstaben, dann suche ich in deiner Liste und in Open Food Facts.</div>`;
+  return h;
+}
+/* Open Food Facts über die Datenbank (kostenlos, ohne CORS-Probleme) */
+async function offQuery(q){
+  const {data: id, error} = await sb.rpc("off_search_request", {p_q: q});
+  if (error) throw error;
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, i < 3 ? 500 : 900));
+    const {data: res} = await sb.rpc("off_search_result", {p_id: id});
+    if (res && res.status === "done") return res.items || [];
+    if (res && res.status === "error") throw new Error("off");
+  }
+  throw new Error("timeout");
+}
+let offTimer = null;
+function offSearch(q){
+  clearTimeout(offTimer);
+  if (!af || q.trim().length < 3) return;
+  af.off = {q: q.trim(), loading: true, items: []};
+  offTimer = setTimeout(async () => {
+    const want = q.trim();
+    try {
+      const items = (await offQuery(want)).slice(0, 15);
+      if (af && af.off && af.off.q === want) af.off = {q: want, loading: false, items};
+    } catch(e) { if (af && af.off && af.off.q === want) af.off = {q: want, loading: false, error: true, items: []}; }
+    const el = $("#afres"); if (el && af && af.mode === "suchen" && !af.pick) el.innerHTML = foodResults(foodsSorted(af.q));
+  }, 600);
 }
 function estHtml(){
   if (!af || !af.est) return af && af.err ? `<div class="hint">${esc(af.err)}</div>` : "";
@@ -1844,6 +1873,12 @@ document.addEventListener("click", async e => {
     case "add-food": openAddFood(D.meal); break;
     case "af-mode": if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
     case "af-pick": af.pick = D.id; af.g = ""; renderAddFood(); break;
+    case "af-base": { const b = BASE_FOODS.find(x => x[0] === D.name); if (!b) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === b[0]); const id = ex ? ex[0] : uid("f");
+      if (!ex) put("foods", id, {name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], portion: b[6] || undefined, uses: 0, src: "richtwert"});
+      af.pick = id; af.g = ""; renderAddFood(); break; }
+    case "af-off": { const p = af.off && af.off.items[+D.i]; if (!p) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === p.name); const id = ex ? ex[0] : uid("f");
+      if (!ex) put("foods", id, {name: p.name, kcal: p.kcal, p: p.p, c: p.c, f: p.f, portion: p.portion || undefined, uses: 0, src: "openfoodfacts"});
+      af.pick = id; af.g = ""; renderAddFood(); break; }
     case "af-unpick": af.pick = null; renderAddFood(); break;
     case "af-g": af.g = D.g; renderAddFood(); break;
     case "af-add-pick": {
@@ -1932,7 +1967,7 @@ document.addEventListener("click", async e => {
 
 document.addEventListener("input", e => {
   const t = e.target;
-  if (t.id === "afq" && af) { af.q = t.value; $("#afres").innerHTML = foodResults(foodsSorted(af.q)); return; }
+  if (t.id === "afq" && af) { af.q = t.value; offSearch(af.q); $("#afres").innerHTML = foodResults(foodsSorted(af.q)); return; }
   if (t.id === "afg" && af && af.pick) { const f = S.foods[af.pick]; const k = (num(t.value) || 0) / 100; af.g = t.value; $("#afcalc").innerHTML = `<b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}`; return; }
   if (t.dataset.ws && ws) {
     if (t.dataset.ws === "note") ws.note = t.value;
