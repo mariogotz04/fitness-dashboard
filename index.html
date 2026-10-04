@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 16:25";
+const APP_VERSION = "04.10.2026 16:27";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -788,7 +788,7 @@ function viewHeute(){
         <div><span class="eyebrow">Gegessen</span><div class="mid">${fmt(t.kcal)}<span class="unit">kcal</span></div></div>
         <div class="small muted num">Ziel ${fmt(c.kcal)} kcal${burnedOf(curDate) ? ` + <span style="color:var(--warn)">🔥 ${fmt(burnedOf(curDate))} verbrannt</span>` : ""}</div>
       </div></div>
-    <div class="stack" style="margin-top:14px">${macroRows(t, c)}</div>
+    <div class="stack" style="margin-top:14px">${macroRows(t, c)}${waterRow(curDate)}</div>
   </section>
 
   <section class="card">
@@ -1161,6 +1161,13 @@ function waterTip(k, g){
     ["Mineralwasser nutzen", "Mineralwasser mit viel Magnesium und Natrium hilft, Mineralstoffe nebenbei aufzufüllen, besonders an Sporttagen."]]);
 }
 function pickN(n, arr){ return arr[n % arr.length]; }
+/* Kurzüberblick fürs „Heute“-Dashboard, gleiche Optik wie die Makro-Zeilen */
+function waterRow(k){
+  const g = waterGoal(k), pct = Math.min(100, g.drunk / g.total * 100);
+  return `<div class="macro m2" style="margin-top:4px;padding-top:12px;border-top:1px solid var(--line)"><span class="lbl"><span class="dot" style="background:#38BDF8"></span>Trinken</span>
+    <span class="num small"><b>${fmtL(g.drunk).replace(" l", "")}</b><span class="muted"> / ${fmtL(g.total)}</span></span>
+    <div class="bar" role="img" aria-label="Getrunken: ${fmtL(g.drunk)} von ${fmtL(g.total)}"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div></div>`;
+}
 function waterCard(k){
   const g = waterGoal(k), pct = Math.min(100, g.drunk / g.total * 100), tip = waterTip(k, g);
   const glasses = Math.ceil(g.total / 250), full = Math.floor(g.drunk / 250);
