@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:20";
+const APP_VERSION = "04.10.2026 08:26";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -368,6 +368,7 @@ async function initStore(){
   sb.rpc("am_owner").then(({data}) => { isOwner = !!data; scheduleRender(); });
   try { const raw = localStorage.getItem("fd-cache"); if (raw) { const o = JSON.parse(raw); COLS.forEach(c => S[c] = o[c] || {}); loaded = true; render(); } } catch(e) {}
   await loadAll();
+  initPush();
   if (COLS.every(c => !Object.keys(S[c]).length)) {
     const {data: n} = await sb.rpc("import_seed");
     if (n > 0) { toast(n + " Einträge aus deinem bisherigen Dashboard übernommen."); await loadAll(); }
@@ -966,6 +967,45 @@ function viewFriends(){
   return h;
 }
 
+/* ----- Mitteilungen (Web-Push) ----- */
+const VAPID_PUBLIC = "BLYSyAlItwfeJyAF5tmlJPvfMdVoXT4boT-TSX0sFbPH0c1_xsuw09_HjsKSiIyobCpoaDPiDI-beIZaj08Irbs";
+let pushState = "unknown";
+const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const b64u = s => { const p = "=".repeat((4 - s.length % 4) % 4); const r = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from([...r].map(c => c.charCodeAt(0))); };
+async function initPush(){
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) { pushState = isStandalone() ? "unsupported" : "browser"; return; }
+  try { await navigator.serviceWorker.register("sw.js"); } catch(e) {}
+  if (!isStandalone() && /iPhone|iPad/.test(navigator.userAgent)) { pushState = "browser"; return; }
+  if (Notification.permission === "denied") { pushState = "denied"; return; }
+  try {
+    const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription();
+    pushState = sub ? "on" : "off";
+    if (sub && mode === "db") sb.rpc("save_push_sub", {p_sub: sub.toJSON()});
+  } catch(e) { pushState = "off"; }
+  scheduleRender();
+}
+async function enablePush(){
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") { pushState = "denied"; render(); return; }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64u(VAPID_PUBLIC)});
+    const {error} = await sb.rpc("save_push_sub", {p_sub: sub.toJSON()});
+    if (error) throw error;
+    pushState = "on"; toast("Mitteilungen sind aktiv."); render();
+  } catch(e) { toast("Mitteilungen konnten nicht aktiviert werden."); }
+}
+function pushCard(){
+  const txt = {
+    browser: "Mitteilungen gehen nur, wenn du die App über den Home-Bildschirm öffnest. Füge sie in Safari über Teilen → „Zum Home-Bildschirm“ hinzu.",
+    unsupported: "Dein Gerät unterstützt keine Mitteilungen für Web-Apps. Am iPhone braucht es iOS 16.4 oder neuer.",
+    denied: "Mitteilungen sind blockiert. Erlaube sie in den iPhone-Einstellungen unter Mitteilungen → Fitness.",
+  }[pushState];
+  if (pushState === "on") return `<div class="hint good spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Erinnerungen sind aktiv. Du bekommst zur eingestellten Uhrzeit eine Mitteilung, wenn das Supplement noch nicht abgehakt ist.</span><button class="btn ghost" data-act="push-test">Test senden</button></div>`;
+  if (pushState === "off") return `<div class="hint spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Stell bei jedem Supplement eine Uhrzeit ein und aktiviere Mitteilungen, dann erinnert dich die App.</span><button class="btn primary" data-act="push-on">Mitteilungen aktivieren</button></div>`;
+  return txt ? `<div class="hint" style="margin-bottom:10px">${txt}</div>` : "";
+}
+
 /* ----- Körper ----- */
 function viewKoerper(){
   const c = cfg(), ser = weightSeries(), pser = planSeries();
@@ -1057,7 +1097,8 @@ function viewRoutine(){
   </section>
   <div class="section-title">Meine Supplements</div>
   <section class="card">
-    <div class="list">${supps.map(s => `<div class="li"><div class="grow"><div class="title">${esc(s.name)}</div><div class="sub">${esc([s.dose, s.time].filter(Boolean).join(" · "))}</div></div><button class="x" data-act="supp-del" data-id="${esc(s.id)}" aria-label="${esc(s.name)} entfernen">×</button></div>`).join("")}</div>
+    ${pushCard()}
+    <div class="list">${supps.map(s => `<div class="li"><div class="grow"><div class="title">${esc(s.name)}</div><div class="sub">${esc(s.dose || "")}</div></div><label class="small muted" for="st-${esc(s.id)}">Erinnerung</label><input class="inp num" type="time" id="st-${esc(s.id)}" data-supp-time="${esc(s.id)}" value="${esc(s.time || "")}" style="width:auto;min-height:36px;padding:5px 8px"><button class="x" data-act="supp-del" data-id="${esc(s.id)}" aria-label="${esc(s.name)} entfernen">×</button></div>`).join("")}</div>
     <form class="stack" data-form="supp-add" style="margin-top:10px">
       <div class="fields"><div class="field"><label for="sn">Name</label><input class="inp" id="sn" placeholder="z. B. Kreatin" required></div>
       <div class="field"><label for="sdo">Menge</label><input class="inp" id="sdo" placeholder="5 g"></div>
@@ -1527,6 +1568,8 @@ document.addEventListener("click", async e => {
     case "settings": openSettings(); break;
     case "sheet-close": closeSheet(); break;
     case "supp-toggle": { const d = getDay(D.date); d.supps = d.supps || {}; if (d.supps[D.id]) delete d.supps[D.id]; else d.supps[D.id] = new Date().toTimeString().slice(0, 5); saveDay(D.date, d); break; }
+    case "push-on": enablePush(); break;
+    case "push-test": { const {data: r} = await sb.rpc("send_test_push"); toast(r === "queued" ? "Test-Mitteilung kommt in etwa einer Minute." : "Auf diesem Gerät sind Mitteilungen noch nicht aktiv."); break; }
     case "supp-del": saveCfg({supplements: (cfg().supplements || []).filter(s => s.id !== D.id)}); break;
     case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); break; }
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
@@ -1631,6 +1674,7 @@ document.addEventListener("change", e => {
   const t = e.target;
   if (t.dataset.move) { const w = clone(S.workouts[t.dataset.move]); if (w && t.value) { w.date = t.value; put("workouts", t.dataset.move, w); calSel = t.value; calMonth = t.value.slice(0, 7); toast("Verschoben auf " + fmtShort(t.value) + "."); } return; }
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
+  if (t.dataset.suppTime) { const list = (cfg().supplements || []).map(x => x.id === t.dataset.suppTime ? Object.assign({}, x, {time: t.value}) : x); saveCfg({supplements: list}); toast(t.value ? "Erinnerung um " + t.value + " Uhr gespeichert." : "Erinnerung entfernt."); return; }
   if (t.id === "sld") { sleepDate = t.value || todayKey(); pendingRender = false; render(); return; }
 });
 
