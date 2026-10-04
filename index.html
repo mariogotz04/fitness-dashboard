@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:15";
+const APP_VERSION = "04.10.2026 08:20";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -311,6 +311,8 @@ const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["freu
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
+const GOALS = {cut: "Abnehmen (Cut)", bulk: "Muskeln aufbauen", maintain: "Gewicht halten"};
+const goalType = () => GOALS[cfg().goalType] ? cfg().goalType : "maintain";
 const DEFAULTS = {kcal: 2400, p: 180, f: 70, c: 260, goalLo: 81, goalHi: 81, rateLo: 0.4, rateHi: 0.6, sleepGoal: 7.5, strengthPerWeek: 3, supplements: []};
 
 /* ---------- Datenspeicher (Supabase) ---------- */
@@ -505,7 +507,7 @@ function recoveryPlan(k){
 
   // Bewegung
   if (hard) add("Bewegung", "walk", "Lockerer Spaziergang, 20–30 Min.", "Am besten draußen bei Tageslicht. Das fördert die Durchblutung und den Abtransport von Stoffwechselprodukten, ohne neue Belastung zu setzen.", 9);
-  else add("Bewegung", "steps", "10.000 Schritte schaffen", "Viel Alltagsbewegung hält die Regeneration in Gang und unterstützt deinen Cut, ohne die Beine zu ermüden.", 4);
+  else add("Bewegung", "steps", "10.000 Schritte schaffen", "Viel Alltagsbewegung hält die Regeneration in Gang, ohne die Beine zu ermüden." + ({cut: " Außerdem verbrennst du so zusätzlich Kalorien für deinen Cut.", bulk: " Mehr musst du im Aufbau aber nicht machen, sonst fehlen dir Kalorien für die Muskeln.", maintain: " So bleibt dein Verbrauch stabil und dein Gewicht leichter im Gleichgewicht."})[goalType()], 4);
   if (legsY || sportY) add("Bewegung", "bike", "Locker Radfahren oder Mobility, 10–15 Min.", "Nach " + (legsY ? "dem Beintraining" : sportY.title) + " lockern leichte Tritte oder Mobility-Übungen für Hüfte und Sprunggelenk die Beine.", 6);
 
   // Kälte & Wärme
@@ -525,7 +527,7 @@ function recoveryPlan(k){
   // Ernährung
   const pTarget = c.p, pYlow = yt.p > 0 && yt.p < pTarget * 0.8;
   add("Ernährung", "protein", pYlow ? "Protein nachholen: " + pTarget + " g, verteilt auf 4 Mahlzeiten" : "Protein über den Tag verteilen: 4× etwa 40 g", (pYlow ? "Gestern waren es nur " + fmt(yt.p) + " g. " : "") + pick(["Gute Quellen: Skyr, Hähnchen, Eier, Thunfisch und körniger Frischkäse.", "Ein Shake aus Skyr, Whey und Beeren bringt dir schnell 50 g.", "Omas Fleischgericht mittags ist dafür ideal, dazu abends Omelett oder Skyr-Bowl."]), (pYlow ? 9 : 6));
-  if (hard || strengthToday || sportY) add("Ernährung", "carbs", "Kohlenhydrate rund ums Training", "Vor und nach " + (strengthToday ? "dem Training" : "der Belastung") + " Reis, Kartoffeln, Haferflocken oder Banane essen, damit die Speicher wieder voll werden. Im Cut lieber hier als bei Snacks sparen.", (strengthToday || sportY ? 7 : 5));
+  if (hard || strengthToday || sportY) add("Ernährung", "carbs", "Kohlenhydrate rund ums Training", "Vor und nach " + (strengthToday ? "dem Training" : "der Belastung") + " Reis, Kartoffeln, Haferflocken oder Banane essen, damit die Speicher wieder voll werden." + ({cut: " Im Cut lieber bei Snacks sparen als hier.", bulk: " Im Aufbau ruhig großzügig, das liefert Energie für neue Muskeln.", maintain: " So bleibst du leistungsfähig, ohne zuzunehmen."})[goalType()], (strengthToday || sportY ? 7 : 5));
   add("Ernährung", "anti", pick(["Beeren und Sauerkirschen", "Fetter Fisch wie Lachs oder Hering", "Haferflocken, Nüsse und Kürbiskerne"]), pick(["Ihre Pflanzenstoffe helfen gegen Entzündungen und Muskelkater. Zum Beispiel 100 g TK-Beeren in den Skyr.", "Die Omega-3-Fettsäuren unterstützen die Regeneration. 1–2 Fischmahlzeiten pro Woche sind ideal.", "Sie liefern Magnesium, das bei Muskelkater und Krämpfen hilft."]), (sore ? 6 : 4));
   add("Ernährung", "drink", sportY || ys >= 14 ? "Etwa 3,5 l trinken, mit etwas Salz" : "Etwa 3 l trinken", sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.", (sportY || ys >= 14 ? 7 : 3));
   if (strengthY || sore) add("Ernährung", "casein", "Abends Skyr oder Magerquark", "Das langsam verdauliche Eiweiß versorgt deine Muskeln über Nacht.", (strengthY ? 5 : 3));
@@ -550,7 +552,7 @@ function recoveryTips(k){
   if (z === "bad") tips.push(["Heute zurückschalten", "Deine Erholung ist niedrig. Mach heute Pause oder nur ein leichtes Training mit RIR 3, ohne neue Rekordversuche. Ein schweres Unterkörpertraining verschiebst du besser."]);
   if (z === "warn" && !tips.length) tips.push(["Normal trainieren, nicht übertreiben", "Trainiere nach Plan, aber lass bei den schweren Übungen eher 2 Wiederholungen in Reserve. Gönn dir ein gutes Warm-up von 12–15 Minuten."]);
   if (z === "good") tips.push(["Grünes Licht", "Gute Voraussetzungen: Heute kannst du an die Progression gehen und bei sauberer Technik das Gewicht erhöhen, wenn du den Wiederholungsbereich schaffst."]);
-  if (Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). Für die Regeneration im Defizit ist das der wichtigste Hebel bei der Ernährung.`]);
+  if (Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). ${({cut: "Im Defizit ist Protein der wichtigste Hebel, damit du Muskeln behältst.", bulk: "Für den Muskelaufbau ist Protein der wichtigste Hebel bei der Ernährung.", maintain: "Protein ist der wichtigste Ernährungs-Hebel für die Regeneration."})[goalType()]}`]);
   if (!tips.length) tips.push(["Check-in machen", "Trag deinen Schlaf ein und sag kurz, wie du dich fühlst. Dann berechne ich deine Erholung und gebe dir passende Tipps."]);
   return tips.slice(0, 1);
 }
@@ -795,7 +797,7 @@ async function runTipsAI(k){
   const wsT = workoutsSorted().filter(w => w.date === k).map(w => `${w.title} (${w.status === "done" ? "erledigt" : "geplant"})`);
   const yt = dayTotals(S.days[y]);
   const facts = [
-    `Ziel: Cut von etwa 90 kg auf ${c.goalLo}–${c.goalHi} kg, ${c.kcal} kcal und ${c.p} g Protein pro Tag, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
+    `Ziel: ${GOALS[goalType()]}, Zielgewicht ${c.goalLo} kg, ${c.kcal} kcal und ${c.p} g Protein pro Tag, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
     `Erholung heute: ${r ? r.score + " % (" + r.parts.map(p => p.label + " " + Math.round(p.score)).join(", ") + ")" : "unbekannt"}.`,
     `Schlaf letzte Nacht: ${d.sleep && d.sleep.h ? fmt(d.sleep.h, 1) + " h" + (d.sleep.q ? ", Qualität " + d.sleep.q + "/5" : "") + (d.sleep.hrv ? ", HRV " + d.sleep.hrv + " ms" : "") + (d.sleep.rhr ? ", Ruhepuls " + d.sleep.rhr : "") : "nicht eingetragen"}. Bedarf heute Nacht etwa ${fmt(sleepNeed(k), 1)} h.`,
     `Check-in: ${d.checkin ? "Energie " + d.checkin.energy + "/5, Muskelkater " + d.checkin.soreness + "/5" : "keiner"}.`,
@@ -971,14 +973,26 @@ function viewKoerper(){
   const avg = last ? avgAt(ser, last.k) : null;
   const rate = weeklyRate(pser);
   const goalMid = (c.goalLo + c.goalHi) / 2;
-  const remain = avg != null ? avg - c.goalHi : null;
+  const gt = goalType();
+  const remain = avg != null ? Math.abs(avg - c.goalHi) : null;
   let eta = "–";
-  if (rate != null && rate < -0.05 && remain > 0) { const wks = remain / -rate; eta = fmtShort(addDays(last.k, Math.round(wks * 7))) + dateOf(addDays(last.k, Math.round(wks * 7))).getFullYear(); }
+  const towards = rate != null && ((gt === "cut" && rate < -0.05 && avg > c.goalHi) || (gt === "bulk" && rate > 0.03 && avg < c.goalHi));
+  if (towards) { const wks = remain / Math.abs(rate); eta = fmtShort(addDays(last.k, Math.round(wks * 7))) + dateOf(addDays(last.k, Math.round(wks * 7))).getFullYear(); }
   let status = "";
   if (rate != null && pser.length >= 2 && diffDays(first.k, last.k) >= 14) {
-    if (rate > -0.2) status = `<div class="hint">Du nimmst gerade langsamer ab als geplant (${fmt(rate, 2)} kg pro Woche). Laut deinem Plan reduzierst du jetzt um etwa 150–200 kcal.</div>`;
-    else if (rate < -0.8) status = `<div class="hint">Du nimmst schneller ab als geplant (${fmt(rate, 2)} kg pro Woche). Laut deinem Plan erhöhst du jetzt um etwa 150–200 kcal.</div>`;
-    else status = `<div class="hint good">Dein Tempo passt zum Plan (Ziel ${fmt(c.rateLo, 1)}–${fmt(c.rateHi, 1)} kg pro Woche). Nichts ändern.</div>`;
+    const r2 = fmt(rate, 2);
+    if (gt === "cut") {
+      if (rate > -0.2) status = `<div class="hint">Du nimmst gerade langsamer ab als geplant (${r2} kg pro Woche). Reduziere um etwa 150–200 kcal.</div>`;
+      else if (rate < -0.8) status = `<div class="hint">Du nimmst schneller ab als geplant (${r2} kg pro Woche). Erhöhe um etwa 150–200 kcal, damit du keine Muskeln verlierst.</div>`;
+      else status = `<div class="hint good">Dein Tempo passt (Ziel ${fmt(c.rateLo, 1)}–${fmt(c.rateHi, 1)} kg Abnahme pro Woche). Nichts ändern.</div>`;
+    } else if (gt === "bulk") {
+      if (rate < 0.05) status = `<div class="hint">Dein Gewicht steigt kaum (${r2} kg pro Woche). Für Muskelaufbau erhöhe um etwa 150–200 kcal.</div>`;
+      else if (rate > 0.4) status = `<div class="hint">Du nimmst schnell zu (${r2} kg pro Woche). Reduziere um etwa 150 kcal, damit möglichst wenig Fett dazukommt.</div>`;
+      else status = `<div class="hint good">Dein Tempo passt für einen sauberen Aufbau (etwa 0,1–0,3 kg pro Woche). Nichts ändern.</div>`;
+    } else {
+      if (Math.abs(rate) > 0.25) status = `<div class="hint">Dein Gewicht ${rate > 0 ? "steigt" : "sinkt"} gerade (${r2} kg pro Woche). Zum Halten ${rate > 0 ? "reduziere" : "erhöhe"} um etwa 150 kcal.</div>`;
+      else status = `<div class="hint good">Dein Gewicht ist stabil. Nichts ändern.</div>`;
+    }
   }
   const recent = ser.slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
@@ -997,7 +1011,7 @@ function viewKoerper(){
       <div><span class="eyebrow">Bisher</span><div class="v">${first && avg ? (avg - first.v > 0 ? "+" : "") + fmt(avg - first.v, 1) : "–"}<span class="unit">kg</span></div></div>
       <div><span class="eyebrow">Tempo</span><div class="v">${rate == null ? "–" : (rate > 0 ? "+" : "") + fmt(rate, 2)}<span class="unit">kg/Wo</span></div></div>
       <div><span class="eyebrow">Bis zum Ziel</span><div class="v">${remain != null ? fmt(Math.max(0, remain), 1) : "–"}<span class="unit">kg</span></div></div>
-      <div><span class="eyebrow">Prognose Ziel</span><div class="v" style="font-size:20px">${eta}</div></div>
+      ${gt === "maintain" ? "" : `<div><span class="eyebrow">Prognose Ziel</span><div class="v" style="font-size:20px">${eta}</div></div>`}
     </div>
     ${status ? `<div style="margin-top:12px">${status}</div>` : ""}
   </section>
@@ -1413,6 +1427,7 @@ function openPlanDay(k){
 function openSettings(){
   const c = cfg();
   openSheet("Einstellungen", `<form class="stack" data-form="settings">
+    <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps und Hinweise an. Kalorien und Makros legst du unten selbst fest.</span></div>
     <div class="eyebrow">Tagesziele Ernährung</div>
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}"></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}"></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}"></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Gewichtsziel</div>
@@ -1669,7 +1684,7 @@ document.addEventListener("submit", async e => {
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
+    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
   }
 });
 
