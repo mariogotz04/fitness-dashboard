@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 09:12";
+const APP_VERSION = "04.10.2026 09:17";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -459,7 +459,7 @@ function loadOf(k){
   const steps = (S.days[k] || {}).steps;
   if (steps > 4000) load += (steps - 4000) / 1000 * 0.9;
   Object.values(S.workouts).filter(w => w.date === k && w.status === "done").forEach(w => {
-    if (w.kind === "activity") load += (w.minutes || 60) * (ACT_FACTOR[w.title] ?? 0.6);
+    if (w.kind === "activity") { const tt = normT(w.title); const fac = ACT_FACTOR[w.title] ?? (/fussball|soccer/.test(tt) ? 0.9 : /lauf|run|jogg/.test(tt) ? 1.0 : /rad|bike|cycl/.test(tt) ? 0.7 : /tennis/.test(tt) ? 0.7 : /spazier|walk|wander/.test(tt) ? 0.25 : 0.6); load += (w.minutes || 60) * fac; }
     else load += (w.exercises || []).reduce((a, e) => a + (e.sets || []).filter(s => s.type !== "warmup" && num(s.r) > 0).length, 0) * 1.3;
   });
   return load;
@@ -631,7 +631,15 @@ function macroRows(t, c){
       <span class="num small"><b>${fmt(t[k])}</b><span class="muted"> / ${goal} g</span></span></div>`;
   }).join("");
 }
-function kcalRing(t, c){
+/* Verbrannte Kalorien: Garmin-Trainings (Standard), alle aktiven Kalorien oder aus; manuelle Einträge zählen immer mit */
+function burnedOf(k){
+  const c = cfg(), d = S.days[k] || {}, m = c.burnMode || "workouts";
+  if (m === "off") return 0;
+  return Math.round((num(d.burnManual) || 0) + (m === "active" ? (num(d.burnActive) || 0) : (num(d.burnWorkout) || 0)));
+}
+const kcalGoal = k => cfg().kcal + burnedOf(k);
+function kcalRing(t, c0){
+  const c = Object.assign({}, c0, {kcal: kcalGoal(curDate)});
   const pct = Math.min(1, t.kcal / c.kcal), r = 50, C = 2 * Math.PI * r;
   const over = t.kcal > c.kcal;
   return `<div class="ring"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="11"/>
@@ -665,7 +673,7 @@ function viewHeute(){
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}
       <div class="stack" style="flex:1;min-width:0;gap:4px">
         <div><span class="eyebrow">Gegessen</span><div class="mid">${fmt(t.kcal)}<span class="unit">kcal</span></div></div>
-        <div class="small muted num">Ziel ${fmt(c.kcal)} kcal</div>
+        <div class="small muted num">Ziel ${fmt(c.kcal)} kcal${burnedOf(curDate) ? ` + <span style="color:var(--warn)">🔥 ${fmt(burnedOf(curDate))} verbrannt</span>` : ""}</div>
       </div></div>
     <div class="stack" style="margin-top:14px">${macroRows(t, c)}</div>
   </section>
@@ -834,12 +842,23 @@ function workoutLine(w){
     ${isAct ? "" : `<button class="btn" data-act="open-workout" data-id="${w.id}">${w.status === "done" ? "Ansehen" : w.status === "active" ? "Weiter" : "Starten"}</button>`}</div>`;
 }
 
+function burnRow(k){
+  const c = cfg(), d = S.days[k] || {}, m = c.burnMode || "workouts";
+  if (m === "off") return "";
+  const auto = m === "active" ? (num(d.burnActive) || 0) : (num(d.burnWorkout) || 0), man = num(d.burnManual) || 0;
+  return `<div class="spread" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap">
+    <span class="small"><b>🔥 ${fmt(auto + man)} kcal verbrannt</b><span class="muted"> · ${m === "active" ? "aktive Kalorien" : "Trainings"} von Garmin ${fmt(auto)}${man ? " + manuell " + fmt(man) : ""}. Ziel heute: ${fmt(c.kcal)} + ${fmt(auto + man)} = ${fmt(c.kcal + auto + man)} kcal</span></span>
+    <form class="row" data-form="burn" data-date="${k}" style="flex-wrap:nowrap;gap:6px"><input class="inp num" id="burnin" inputmode="numeric" placeholder="+ kcal" style="width:90px;min-height:36px;padding:5px 8px" aria-label="Verbrannte Kalorien manuell hinzufügen"><button class="btn" type="submit" style="min-height:36px">Hinzufügen</button>${man ? `<button class="btn ghost" type="button" data-act="burn-reset" data-date="${k}" style="min-height:36px">Manuell zurücksetzen</button>` : ""}</form>
+  </div>`;
+}
+
 /* ----- Essen ----- */
 function viewEssen(){
   const c = cfg(), d = S.days[curDate] || {}, t = dayTotals(d);
   const yd = S.days[addDays(curDate, -1)] || {};
   return `<section class="card">
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}<div class="stack" style="flex:1;min-width:0">${macroRows(t, c)}</div></div>
+    ${burnRow(curDate)}
   </section>
   ${MEALS.map(([m, label]) => {
     const items = (d.meals && d.meals[m]) || [];
@@ -1766,6 +1785,7 @@ function openSettings(){
     <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps und Hinweise an. Kalorien und Makros legst du unten selbst fest.</span></div>
     <div class="eyebrow">Tagesziele Ernährung</div>
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}"></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}"></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}"></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}"></div></div>
+    <div class="field"><label for="gbm">Verbrannte Kalorien anrechnen</label><select class="inp" id="gbm">${[["workouts","Nur Trainings von Garmin (empfohlen)"],["active","Alle aktiven Kalorien inkl. Schritte"],["off","Nicht anrechnen"]].map(([k, l]) => `<option value="${k}" ${(c.burnMode || "workouts") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Verbrannte Kalorien kommen zu deinem Tagesziel dazu. Manuell eingetragene zählen immer.</span></div>
     <div class="eyebrow" style="margin-top:6px">Gewichtsziel</div>
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
@@ -1904,6 +1924,7 @@ document.addEventListener("click", async e => {
     case "ci-pick": { const form = b.closest("form"); const k = form.dataset.date; ciSel[k] = ciSel[k] || {}; ciSel[k][D.k] = +D.v; b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); break; }
     case "ci-reset": { const d = getDay(D.date); delete d.checkin; saveDay(D.date, d); break; }
     case "tips-ai": runTipsAI(D.date); break;
+    case "burn-reset": { const d = getDay(D.date); delete d.burnManual; saveDay(D.date, d); break; }
     case "fr-accept": case "fr-decline": await sb.rpc("respond_friend", {p_user: D.id, p_accept: a === "fr-accept"}); toast(a === "fr-accept" ? "Ihr seid jetzt befreundet." : "Anfrage abgelehnt."); loadFriends(true); break;
     case "fr-remove": if (b.dataset.confirm) { await sb.rpc("remove_friend", {p_user: D.id}); loadFriends(true); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich?"; } break;
     case "kudos": { b.disabled = true; const {data: n} = await sb.rpc("toggle_kudos", {p_owner: D.owner, p_wid: D.id}); const it = (FR.feed.items || []).find(x => x.owner === D.owner && x.id === D.id); if (it && n >= 0) { it.mykudos = !it.mykudos; it.kudos = n; } render(); break; }
@@ -2039,8 +2060,9 @@ document.addEventListener("submit", async e => {
       const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", invited: "Eingeladen. Sie kann sich jetzt mit dieser E-Mail-Adresse registrieren, danach seid ihr automatisch befreundet. Schick ihr einfach den Link zur App.", invalid: "Bitte eine gültige E-Mail-Adresse eingeben.", limit: "Du hast schon 20 offene Einladungen.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
+    case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
+    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
   }
 });
 

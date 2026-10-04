@@ -75,6 +75,19 @@ def day(api, d):
         out.setdefault("sleep", {}).update({k: int(v) for k, v in extra.items()})
     if summ.get("totalSteps"):
         out["steps"] = int(summ["totalSteps"])
+    if summ.get("activeKilocalories") is not None:
+        out["burnActive"] = int(summ["activeKilocalories"])
+    try:
+        acts = api.get_activities_by_date(d, d) or []
+    except Exception:
+        acts = []
+    out["burnWorkout"] = int(sum(a.get("calories") or 0 for a in acts))
+    out["activities"] = [{
+        "id": str(a.get("activityId")), "name": a.get("activityName") or "Aktivität",
+        "type": (a.get("activityType") or {}).get("typeKey") or "",
+        "minutes": round((a.get("duration") or 0) / 60), "kcal": int(a.get("calories") or 0),
+        "start": (a.get("startTimeLocal") or "").replace(" ", "T"),
+    } for a in acts]
     weights = safe(api.get_body_composition, d).get("dateWeightList") or []
     if weights and weights[-1].get("weight"):
         out["weight"] = round(weights[-1]["weight"] / 1000, 1)
