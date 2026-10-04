@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 15:23";
+const APP_VERSION = "04.10.2026 16:25";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -607,7 +607,7 @@ function recoveryPlan(k){
   add("Ernährung", "protein", pYlow ? "Protein nachholen: " + pTarget + " g, verteilt auf 4 Mahlzeiten" : "Protein über den Tag verteilen: 4× etwa 40 g", (pYlow ? "Gestern waren es nur " + fmt(yt.p) + " g. " : "") + pick(["Gute Quellen: Skyr, Hähnchen, Eier, Thunfisch und körniger Frischkäse.", "Ein Shake aus Skyr, Whey und Beeren bringt dir schnell 50 g.", "Omas Fleischgericht mittags ist dafür ideal, dazu abends Omelett oder Skyr-Bowl."]), (pYlow ? 9 : 6));
   if (hard || strengthToday || sportY) add("Ernährung", "carbs", "Kohlenhydrate rund ums Training", "Vor und nach " + (strengthToday ? "dem Training" : "der Belastung") + " Reis, Kartoffeln, Haferflocken oder Banane essen, damit die Speicher wieder voll werden." + ({cut: " Im Cut lieber bei Snacks sparen als hier.", bulk: " Im Aufbau ruhig großzügig, das liefert Energie für neue Muskeln.", maintain: " So bleibst du leistungsfähig, ohne zuzunehmen."})[goalType()], (strengthToday || sportY ? 7 : 5));
   add("Ernährung", "anti", pick(["Beeren und Sauerkirschen", "Fetter Fisch wie Lachs oder Hering", "Haferflocken, Nüsse und Kürbiskerne"]), pick(["Ihre Pflanzenstoffe helfen gegen Entzündungen und Muskelkater. Zum Beispiel 100 g TK-Beeren in den Skyr.", "Die Omega-3-Fettsäuren unterstützen die Regeneration. 1–2 Fischmahlzeiten pro Woche sind ideal.", "Sie liefern Magnesium, das bei Muskelkater und Krämpfen hilft."]), (sore ? 6 : 4));
-  add("Ernährung", "drink", sportY || ys >= 14 ? "Etwa 3,5 l trinken, mit etwas Salz" : "Etwa 3 l trinken", sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.", (sportY || ys >= 14 ? 7 : 3));
+  add("Ernährung", "drink", "Heute etwa " + fmtL(waterGoal(k).total) + " trinken" + (sportY || ys >= 14 ? ", mit etwas Salz" : ""), sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.", (sportY || ys >= 14 ? 7 : 3));
   if (strengthY || sore) add("Ernährung", "casein", "Abends Skyr oder Magerquark", "Das langsam verdauliche Eiweiß versorgt deine Muskeln über Nacht.", (strengthY ? 5 : 3));
   // Aus „Sporternährung für jeden Tag“ (Hessmann): Sport-Tag, 24-h-Pause, Eiweißkombis, Vitamine
   const sportToday = wT.some(w => w.kind === "activity");
@@ -1122,6 +1122,58 @@ function macroCheck(){
     <div class="muted">Ziel: Eiweiß ${fmt(pkg, 1)} g/kg${pToday > 0 ? " (heute bisher " + fmt(pToday / w, 1) + " g/kg)" : ""} · Kohlenhydrate ${fmt(ckg, 1)} g/kg · Fett ${Math.round(fatPct)} % der Kalorien.<br>Richtwerte: Eiweiß 1,6–2,2 g/kg, am besten 3–4 Mahlzeiten mit je mindestens 30 g. Kohlenhydrate 4 g/kg bei Fitness bis 5–8 g/kg bei viel Training, Fett höchstens 30 %.</div></div></details>`;
 }
 
+/* ---------- Trinken ----------
+   Grundbedarf ca. 33 ml pro kg Körpergewicht; Sport: Schweißverlust ca. 0,5 l/h Kraft, 0,6–0,8 l/h Ausdauer und Fußball.
+   Wurde vor/nach dem Training gewogen, gilt Hessmanns Regel: Gewichtsverlust × 1,5 nachtrinken. */
+const WATER_STEPS = [250, 500];
+function workoutMinutes(w){
+  if (num(w.minutes) > 0) return num(w.minutes);
+  if (w.start && w.end) { const m = (new Date(w.end) - new Date(w.start)) / 60000; if (m > 5 && m < 400) return Math.round(m); }
+  return w.kind === "activity" ? 60 : 60;
+}
+function waterGoal(k){
+  const d = S.days[k] || {}, w = curWeight() || 75;
+  const base = Math.round(w * 33 / 50) * 50;
+  const parts = [];
+  workoutsSorted().filter(x => x.date === k && x.status !== "skipped").forEach(x => {
+    const min = workoutMinutes(x), t = normT(x.title || "");
+    const rate = x.kind !== "activity" ? 500 : /fussball|lauf|run|jogg|tennis|rad|bike|cycl/.test(t) ? 750 : /spazier|walk|wander/.test(t) ? 300 : 600;
+    parts.push({title: x.title || "Training", min, ml: Math.round(min / 60 * rate / 50) * 50});
+  });
+  let sport = parts.reduce((a, p) => a + p.ml, 0);
+  const sweat = num(d.sweatLoss) > 0 ? Math.round(num(d.sweatLoss) * 1500 / 50) * 50 : 0;
+  if (sweat > sport) sport = sweat;
+  return {base, sport, total: base + sport, parts, sweat, drunk: num(d.water) || 0};
+}
+const fmtL = ml => fmt(ml / 1000, ml % 1000 === 0 ? 0 : ml % 100 === 0 ? 1 : 2) + " l";
+function waterTip(k, g){
+  const n = Math.floor(dateOf(k) / 864e5), long = g.parts.some(p => p.min >= 60 && p.ml >= 450);
+  if (g.sweat) return ["Nach dem Training auffüllen", `Du hast etwa ${fmt(num((S.days[k] || {}).sweatLoss), 1)} kg verloren. Trink dafür über die nächsten Stunden etwa ${fmtL(g.sweat)}. Am besten mit etwas Salz oder als Saftschorle, so bleibt das Wasser besser im Körper.`];
+  if (long) return [pickN(n, ["Elektrolyte bei langem Sport", "Iso-Getränk selbst gemacht"]), pickN(n, [
+    "Bei mehr als einer Stunde Sport verlierst du mit dem Schweiß vor allem Natrium. Gut sind Saftschorle mit einer Prise Salz, Brühe oder ein Elektrolytpulver. Kalium steckt in Bananen und Kartoffeln.",
+    "1 Teil Apfel- oder Orangensaft, 2 Teile Wasser und eine kleine Prise Salz (etwa 1 g pro Liter). Das liefert Flüssigkeit, Kohlenhydrate und Natrium, ganz ohne teure Sportgetränke."])];
+  if (g.parts.length) return ["Rund ums Training trinken", "In den 2 Stunden vorher 300–500 ml, beim Training alle 15–20 Minuten ein paar Schlucke, und danach zuerst trinken. Warte nicht, bis du Durst hast."];
+  return pickN(n, [
+    ["Gleich nach dem Aufstehen", "Ein großes Glas Wasser direkt am Morgen gleicht die Nacht aus und macht wach."],
+    ["Verteilt statt auf einmal", "Lieber über den Tag verteilt trinken. Große Mengen auf einmal scheidet der Körper schnell wieder aus."],
+    ["Urinfarbe als Check", "Hellgelb heißt: du trinkst genug. Dunkelgelb heißt: mehr trinken."],
+    ["Was zählt", "Wasser, Saftschorle und ungesüßter Tee zählen voll, Kaffee in normalen Mengen auch. Softdrinks, purer Saft und Energydrinks sind keine guten Durstlöscher, Alkohol entzieht eher Wasser."],
+    ["Mineralwasser nutzen", "Mineralwasser mit viel Magnesium und Natrium hilft, Mineralstoffe nebenbei aufzufüllen, besonders an Sporttagen."]]);
+}
+function pickN(n, arr){ return arr[n % arr.length]; }
+function waterCard(k){
+  const g = waterGoal(k), pct = Math.min(100, g.drunk / g.total * 100), tip = waterTip(k, g);
+  const glasses = Math.ceil(g.total / 250), full = Math.floor(g.drunk / 250);
+  return `<section class="card" style="margin-top:12px">
+    <div class="spread" style="margin-bottom:8px"><span class="eyebrow">💧 Trinken</span><span class="num"><b style="font-size:20px">${fmtL(g.drunk)}</b><span class="muted"> / ${fmtL(g.total)}</span></span></div>
+    <div class="bar" style="height:12px"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div>
+    <div class="row" style="gap:3px;margin-top:8px;flex-wrap:wrap" aria-hidden="true">${Array.from({length: Math.min(glasses, 24)}, (_, i) => `<span style="font-size:15px;opacity:${i < full ? 1 : .25}">💧</span>`).join("")}</div>
+    <div class="small muted" style="margin-top:6px">Grundbedarf ${fmtL(g.base)}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : ""}</div>
+    <div class="row" style="margin-top:10px;gap:6px">${WATER_STEPS.map(ml => `<button class="btn" data-act="water" data-ml="${ml}" data-date="${k}">+ ${ml} ml</button>`).join("")}<button class="btn ghost" data-act="water" data-ml="-250" data-date="${k}" ${g.drunk ? "" : "disabled"}>− 250</button></div>
+    <div class="hint" style="margin-top:10px"><b>${esc(tip[0])}:</b> ${esc(tip[1])}</div>
+  </section>`;
+}
+
 /* ----- Essen ----- */
 function viewEssen(){
   const c = cfg(), d = S.days[curDate] || {}, t = dayTotals(d);
@@ -1133,6 +1185,7 @@ function viewEssen(){
     ${calcLine()}
     ${macroCheck()}
   </section>
+  ${waterCard(curDate)}
   ${MEALS.map(([m, label]) => {
     const items = (d.meals && d.meals[m]) || [];
     const sum = items.reduce((a, it) => a + (+it.kcal || 0), 0), pm = items.reduce((a, it) => a + (+it.p || 0), 0);
@@ -2299,6 +2352,7 @@ document.addEventListener("click", async e => {
     case "exdb-open": openExdbItem(D.id); break;
     case "exdb-back": openExdb(); break;
     case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
+    case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && d.water >= g.total && d.water - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -2395,7 +2449,7 @@ document.addEventListener("submit", async e => {
       const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", invited: "Eingeladen. Sie kann sich jetzt mit dieser E-Mail-Adresse registrieren, danach seid ihr automatisch befreundet. Schick ihr einfach den Link zur App.", invalid: "Bitte eine gültige E-Mail-Adresse eingeben.", limit: "Du hast schon 20 offene Einladungen.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
-    case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
+    case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
