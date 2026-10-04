@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 16:38";
+const APP_VERSION = "04.10.2026 16:55";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -423,9 +423,30 @@ function exAnim(x, size){
   return `<span class="exanim" style="width:${size};aspect-ratio:${size === "100%" ? "4/3" : "1"}" aria-hidden="true"><img src="${EXIMG + esc(a)}" alt="" loading="lazy">${b ? `<img class="b" src="${EXIMG + esc(b)}" alt="" loading="lazy">` : ""}</span>`;
 }
 const ytLink = name => "https://www.youtube.com/results?search_query=" + encodeURIComponent(name.replace(/\s*\(.*?\)/g, "") + " richtige Ausführung");
-function exGuide(x){
+/* Empfehlung für Sätze/Wiederholungen nach den Quellen (nur Info, ändert keinen Plan):
+   10–20 harte Sätze pro Muskelgruppe und Woche, Sätze 1–3 Wdh. vor dem Versagen (RIR 1–3), Wiederholungsbereich frei (ca. 4–30),
+   schwere Sätze (3–5 Wdh.) mit 3–5 min Pause; Hessmann: Muskelaufbau mit ca. 60–70 % der Maximalkraft. */
+function recBox(x, ownId){
   if (!x) return "";
-  return `${exAnim(x, "100%")}
+  const g = x.g, comp = x.mc === "c", gt = goalType(), freq = Math.max(1, Math.min(3, Math.round((cfg().strengthPerWeek || 3) / 1.5)));
+  let reps, sets, rest, note = "";
+  if (g === "Bauch") { reps = /plank|bridge/i.test(x.id) ? "30–60 Sek. halten" : "10–20 Wdh."; sets = "2–3"; rest = "1 Min."; note = "Bauch wie jeden anderen Muskel trainieren: lieber mit Zusatzgewicht steigern als endlos viele Wiederholungen."; }
+  else if (g === "Waden") { reps = "10–20 Wdh."; sets = "3–4"; rest = "1–2 Min."; note = "Unten kurz in der Dehnung halten, das bringt bei Waden viel."; }
+  else if (comp && x.bw) { reps = "6–12 Wdh."; sets = "3"; rest = "2–3 Min."; note = "Schaffst du mehr als 12 saubere Wiederholungen, nimm Zusatzgewicht."; }
+  else if (comp) { reps = gt === "cut" ? "6–10 Wdh." : "6–12 Wdh."; sets = "3–4"; rest = "2–3 Min. (bei 3–5 Wdh. 3–5 Min.)"; note = gt === "cut" ? "Im Defizit schwer genug bleiben, damit die Kraft und damit die Muskeln erhalten bleiben." : "Etwa 60–70 % deiner Maximalkraft, also ein Gewicht für knapp 10–15 Wiederholungen, die du nach 6–12 beendest."; }
+  else { reps = "10–15 Wdh."; sets = "2–4"; rest = "1–2 Min."; note = "Bei Isolationsübungen darf der letzte Satz bis kurz vors Muskelversagen gehen."; }
+  const wk = weekSummary(todayKey()), done = wk.groups[g] || 0;
+  const plan = ownId ? templatesSorted().flatMap(t => (t.items || []).filter(it => it.exId === ownId).map(it => ({t: t.short || t.name, it}))) : [];
+  return `<div class="hint" style="margin-top:12px"><b>Empfehlung für dich</b> (${esc(GOALS[gt])}, nur Info)
+    <div class="num" style="margin-top:4px">${sets} Sätze × ${reps} · ${/halten/.test(reps) ? "kurz bevor die Spannung nachlässt beenden" : "1–3 Wdh. vor dem Muskelversagen (RIR 1–3)"} · Pause ${rest}</div>
+    <div class="small ink2" style="margin-top:4px">${esc(note)}</div>
+    ${g !== "Sonstiges" && g !== "Bauch" ? `<div class="small ink2" style="margin-top:4px">${esc(g)}: 10–20 harte Sätze pro Woche, verteilt auf ${freq} Einheit${freq > 1 ? "en" : ""}. Diese Woche bisher ${done}.</div>` : ""}
+    ${plan.length ? `<div class="small muted" style="margin-top:4px">Dein Plan: ${plan.map(p => esc(p.t) + " " + esc(p.it.sets || "?") + " × " + esc(p.it.reps || "?")).join(" · ")}</div>` : ""}
+  </div>`;
+}
+function exGuide(x, ownId){
+  if (!x) return "";
+  return `${exAnim(x, "100%")}${recBox(x, ownId)}
     <div class="row" style="margin:10px 0 4px">${(x.pm || []).map(m => `<span class="chip acc">${esc(m)}</span>`).join("")}${(x.sm || []).map(m => `<span class="chip">${esc(m)}</span>`).join("")}</div>
     <div class="section-title" style="margin-top:12px">So geht's</div>
     <ol class="steps">${x.s.map(t => `<li>${esc(t)}</li>`).join("")}</ol>
@@ -2088,7 +2109,7 @@ function renderWs(){
       ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}
       ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
-      ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
+      ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
       <div class="sets"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span>
       ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
@@ -2111,7 +2132,7 @@ function openExercise(id){
   const best = h.filter(x => x.kind === kind).reduce((m, x) => Math.max(m, x.v), 0);
   openSheet(e.name, `<div class="row" style="margin-bottom:10px"><span class="chip">${esc(e.group || "Sonstiges")}</span>${e.equipment ? `<span class="chip">${esc(e.equipment)}</span>` : ""}</div>
     ${e.notes ? `<p class="ink2" style="margin:0 0 12px;white-space:pre-wrap">${esc(e.notes)}</p>` : ""}
-    ${exRef(id) ? exGuide(exRef(id)) + '<div class="section-title">Dein Fortschritt</div>' : `<p class="small muted" style="margin:0 0 12px">Noch keine Anleitung verknüpft. Unter „Bearbeiten“ kannst du eine Übung aus der Datenbank zuordnen.</p>`}
+    ${exRef(id) ? exGuide(exRef(id), id) + '<div class="section-title">Dein Fortschritt</div>' : `<p class="small muted" style="margin:0 0 12px">Noch keine Anleitung verknüpft. Unter „Bearbeiten“ kannst du eine Übung aus der Datenbank zuordnen.</p>`}
     <div class="kv" style="margin-bottom:10px"><div><span class="eyebrow">Einheiten</span><div class="v">${h.length}</div></div><div><span class="eyebrow">${kind === "kg" ? "Bestes 1RM (geschätzt)" : "Beste Serie"}</span><div class="v">${best ? fmt(best, kind === "kg" ? 1 : 0) : "–"}<span class="unit">${kind === "kg" ? "kg" : kind === "sec" ? "s" : "Wdh."}</span></div></div></div>
     <div class="chart" data-chart="ex" data-id="${id}" style="height:200px"></div>
     <p class="small muted" style="margin:6px 0 0">${kind === "kg" ? "Die Linie zeigt das geschätzte Maximalgewicht aus deinem besten Satz pro Training (Formel nach Epley)." : "Die Linie zeigt deine beste Serie pro Training."}</p>
