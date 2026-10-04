@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 09:01";
+const APP_VERSION = "04.10.2026 09:12";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1118,6 +1118,8 @@ function aiVoice(){
   recog.onerror = ev => { af.listening = false; af.aiErr = ev.error === "not-allowed" || ev.error === "service-not-allowed" ? "Spracheingabe ist hier nicht erlaubt. Tippe im Textfeld auf das Mikrofon deiner Tastatur." : "Ich habe nichts verstanden. Versuch es noch einmal."; renderAddFood(); };
   recog.onend = () => { const was = af && af.listening; if (!af) return; af.listening = false; renderAddFood(); if (was && af.aiText.trim() && !af.aiErr) runQuickFood(af.aiText); };
   af.listening = true; af.aiErr = ""; renderAddFood();
+  let heard = false; recog.onaudiostart = () => { heard = true; };
+  setTimeout(() => { if (af && af.listening && !heard) { try { recog.abort(); } catch(e) {} af.listening = false; af.aiErr = "Die Spracheingabe startet hier nicht. Tippe im Textfeld auf das Mikrofon deiner Tastatur."; renderAddFood(); } }, 4000);
   try { recog.start(); } catch(e) { af.listening = false; renderAddFood(); }
 }
 async function runAiFood(text){
@@ -1536,12 +1538,13 @@ function renderAddFood(){
   const tabs = [["ki","Schnelleingabe"],["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Manuell"],["neu","Neues Lebensmittel"]]);
   let b = `<div class="seg" role="group" aria-label="Art">${tabs.map(([k, l]) => `<button data-act="af-mode" data-m="${k}" aria-pressed="${af.mode === k}">${l}</button>`).join("")}</div><div style="height:14px"></div>`;
   if (af.mode === "ki") {
-    const canTalk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const canTalk = !isIOS && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     b += `<form class="stack" data-form="ai-food">
       <div class="field"><label for="aiq">Was hast du gegessen?</label><textarea class="inp" id="aiq" placeholder="z. B. 500 g Skyr mit 100 g Beeren und einer Banane" ${af.aiBusy ? "disabled" : ""}>${esc(af.aiText)}</textarea></div>
-      <div class="row">${canTalk ? `<button type="button" class="btn ${af.listening ? "primary" : ""}" data-act="ai-voice" ${af.aiBusy ? "disabled" : ""}>${af.listening ? "● Ich höre zu … (tippen zum Stoppen)" : "🎤 Sprechen"}</button>` : ""}<button class="btn primary" type="submit" ${af.aiBusy ? "disabled" : ""}>${af.aiBusy ? "Wird eingetragen …" : "Eintragen"}</button></div>
+      <div class="row">${canTalk ? `<button type="button" class="btn ${af.listening ? "primary" : ""}" data-act="ai-voice" ${af.aiBusy ? "disabled" : ""}>${af.listening ? "● Ich höre zu … (tippen zum Stoppen)" : "🎤 Sprechen"}</button>` : `<button type="button" class="btn" data-act="ai-dictate" ${af.aiBusy ? "disabled" : ""}>🎤 Sprechen</button>`}<button class="btn primary" type="submit" ${af.aiBusy ? "disabled" : ""}>${af.aiBusy ? "Wird eingetragen …" : "Eintragen"}</button></div>
       ${af.aiErr ? `<div class="hint" role="alert">${esc(af.aiErr)}</div>` : ""}
-      <p class="small muted" style="margin:0">Mehrere Lebensmittel trennst du mit „und“ oder Komma. Die Nährwerte kommen aus deiner Lebensmittel-Liste, aus Richtwerten oder aus Open Food Facts, kostenlos. Alles wird direkt eingetragen. Stimmt etwas nicht, löschst du den Eintrag in der Mahlzeit mit ×.${canTalk ? "" : " Zum Sprechen tippe im Textfeld auf das Mikrofon deiner Tastatur."}</p>
+      <p class="small muted" style="margin:0">Mehrere Lebensmittel trennst du mit „und“ oder Komma. Die Nährwerte kommen aus deiner Lebensmittel-Liste, aus Richtwerten oder aus Open Food Facts, kostenlos. Alles wird direkt eingetragen. Stimmt etwas nicht, löschst du den Eintrag in der Mahlzeit mit ×.</p>${!canTalk && af.dictHint ? `<div class="hint" style="margin-top:8px">Tippe jetzt unten auf der Tastatur auf das <b>Mikrofon 🎤</b> und sprich. Danach auf „Eintragen“ tippen.</div>` : ""}
     </form>`;
   } else if (af.mode === "suchen") {
     if (af.pick) {
@@ -1890,6 +1893,7 @@ document.addEventListener("click", async e => {
     case "food-del": del("foods", D.id); af.pick = null; renderAddFood(); break;
     case "af-estimate": runEstimate(); break;
     case "ai-voice": aiVoice(); break;
+    case "ai-dictate": { af.dictHint = true; af.aiText = ($("#aiq") || {}).value || af.aiText; renderAddFood(); const el = $("#aiq"); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } break; }
     case "af-stop": if (af && af.ctl) af.ctl.abort(); break;
     case "est-del": af.est.splice(+D.i, 1); if (!af.est.length) af.est = null; $("#afest").innerHTML = estHtml(); break;
     case "est-add": {
