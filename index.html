@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:26";
+const APP_VERSION = "04.10.2026 08:30";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -583,6 +583,7 @@ function render(){
   const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
   v.innerHTML = html;
   drawCharts();
+  setTimeout(maybeShowReview, 600);
 }
 function renderTop(){
   const dated = tab === "heute" || tab === "essen";
@@ -1004,6 +1005,63 @@ function pushCard(){
   if (pushState === "on") return `<div class="hint good spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Erinnerungen sind aktiv. Du bekommst zur eingestellten Uhrzeit eine Mitteilung, wenn das Supplement noch nicht abgehakt ist.</span><button class="btn ghost" data-act="push-test">Test senden</button></div>`;
   if (pushState === "off") return `<div class="hint spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Stell bei jedem Supplement eine Uhrzeit ein und aktiviere Mitteilungen, dann erinnert dich die App.</span><button class="btn primary" data-act="push-on">Mitteilungen aktivieren</button></div>`;
   return txt ? `<div class="hint" style="margin-bottom:10px">${txt}</div>` : "";
+}
+
+/* ----- Wochenrückblick: sonntags ab 20 Uhr (oder montags), einmal anzeigen, wegklicken merkt sich das ----- */
+function reviewWeek(){
+  const now = new Date(), t = todayKey(), wd = now.getDay();
+  if (wd === 0 && now.getHours() >= 20) return mondayOf(t);
+  if (wd === 1) return mondayOf(addDays(t, -1));
+  return null;
+}
+let reviewShown = false;
+function maybeShowReview(){
+  if (reviewShown || mode !== "db" || !loaded || !S.settings.main) return;
+  const mon = reviewWeek(); if (!mon || cfg().reviewSeen === mon) return;
+  if (!$("#scrim").hidden) return;
+  reviewShown = true; openReview(mon);
+}
+function openReview(mon){
+  const c = cfg(), sun = addDays(mon, 6), days = Array.from({length: 7}, (_, i) => addDays(mon, i));
+  const wk = weekSummary(mon);
+  const sets = wk.strength.reduce((a, w) => a + (w.exercises || []).reduce((b, e) => b + (e.sets || []).filter(x => x.type !== "warmup" && num(x.r) > 0).length, 0), 0);
+  const vol = wk.strength.reduce((a, w) => a + (w.exercises || []).reduce((b, e) => b + (e.sets || []).filter(x => x.type !== "warmup").reduce((q, x) => q + (num(x.w) || 0) * (num(x.r) || 0), 0), 0), 0);
+  const avgOf = f => { const xs = days.map(f).filter(x => x != null && !isNaN(x) && x > 0); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+  const steps = avgOf(k => (S.days[k] || {}).steps), sleepH = avgOf(k => ((S.days[k] || {}).sleep || {}).h), sleepS = avgOf(k => num(((S.days[k] || {}).sleep || {}).score));
+  const rec = avgOf(k => { const r = recoveryOf(k); return r ? r.score : null; });
+  const ser = weightSeries(); const wEnd = avgAt(ser, sun), wStart = avgAt(ser, addDays(mon, -1));
+  const tracked = days.filter(k => dayTotals(S.days[k]).kcal > 0);
+  const kcal = tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).kcal, 0) / tracked.length : null;
+  const prot = tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).p, 0) / tracked.length : null;
+  const supps = suppsSorted(); const suppPct = supps.length ? Math.round(days.reduce((a, k) => a + supps.filter(x => ((S.days[k] || {}).supps || {})[x.id]).length, 0) / (supps.length * 7) * 100) : null;
+  const prs = [];
+  Object.keys(S.exercises).forEach(id => { const h = exHistory(id).filter(x => x.kind === "kg"); const inW = h.filter(x => x.k >= mon && x.k <= sun), before = h.filter(x => x.k < mon);
+    if (inW.length && before.length) { const best = Math.max(...inW.map(x => x.v)), prev = Math.max(...before.map(x => x.v)); if (best > prev) prs.push([exName(id), best, best - prev]); } });
+  prs.sort((a, b) => b[2] - a[2]);
+  const gt = goalType(); const dW = wEnd != null && wStart != null ? wEnd - wStart : null;
+  const verdict = dW == null ? "" : gt === "cut" ? (dW <= -0.3 ? "Starke Woche für deinen Cut." : dW < 0 ? "Es geht in die richtige Richtung, bleib dran." : "Diese Woche ging das Gewicht nicht runter. Schau auf Kalorien und Schritte.")
+    : gt === "bulk" ? (dW >= 0.1 && dW <= 0.4 ? "Sauberer Aufbau, genau im Plan." : dW > 0.4 ? "Etwas schnell zugenommen. Eventuell 150 kcal weniger." : "Kaum Zunahme. Für Muskelaufbau etwas mehr essen.")
+    : (Math.abs(dW) <= 0.3 ? "Gewicht stabil, so soll es sein." : "Dein Gewicht hat sich etwas bewegt. Behalte es im Blick.");
+  const tile = (label, val, unit, sub) => `<div><span class="eyebrow">${label}</span><div class="v">${val}${unit ? `<span class="unit">${unit}</span>` : ""}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
+  const body = `<p class="ink2" style="margin:0 0 14px">${fmtShort(mon)} – ${fmtShort(sun)} · ${esc(GOALS[gt])}${verdict ? " · " + esc(verdict) : ""}</p>
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Training</div><div class="kv">
+      ${tile("Krafteinheiten", wk.strength.length + " / " + c.strengthPerWeek, "", wk.strength.map(w => w.title).join(", "))}
+      ${tile("Sätze", fmt(sets), "")}
+      ${tile("Bewegt", fmt(vol), "kg")}
+      ${wk.acts.length ? tile("Sport", wk.acts.length + "×", "", [...new Set(wk.acts.map(a => a.title))].join(", ")) : ""}
+    </div>${prs.length ? `<div class="hint good" style="margin-top:12px"><b>Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}</section>
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Körper & Erholung</div><div class="kv">
+      ${tile("Gewicht Ø", wEnd ? fmt(wEnd, 1) : "–", "kg", dW != null ? (dW > 0 ? "+" : "") + fmt(dW, 1) + " kg zur Vorwoche" : "")}
+      ${tile("Erholung Ø", rec ? Math.round(rec) : "–", rec ? "%" : "")}
+      ${tile("Schlaf Ø", sleepH ? fmt(sleepH, 1) : "–", "h", sleepS ? "Schlafwert " + Math.round(sleepS) : "")}
+      ${tile("Schritte Ø", steps ? fmt(steps) : "–", "")}
+    </div></section>
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Ernährung & Supplements</div><div class="kv">
+      ${tile("Kalorien Ø", kcal ? fmt(kcal) : "–", "kcal", tracked.length ? tracked.length + " von 7 Tagen eingetragen · Ziel " + fmt(c.kcal) : "nichts eingetragen")}
+      ${tile("Protein Ø", prot ? fmt(prot) : "–", "g", "Ziel " + c.p + " g")}
+      ${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}
+    </div></section>`;
+  openSheet("Dein Wochenrückblick", body, `<button class="btn primary block" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
 }
 
 /* ----- Körper ----- */
@@ -1475,7 +1533,11 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
     <div class="fields"><div class="field"><label for="gs">Krafteinheiten pro Woche</label><input class="inp num" id="gs" inputmode="numeric" value="${c.strengthPerWeek}"></div><div class="field"><label for="gsl">Schlafziel (h)</label><input class="inp num" id="gsl" inputmode="decimal" value="${fmt(c.sleepGoal, 1)}"></div></div>
-    <button class="btn primary" type="submit">Ziele speichern</button></form>
+    <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
+    <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
+    <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
+    <p class="small muted" style="margin:0">Supplement-Erinnerungen stellst du direkt bei den Supplements unter Erholung ein.</p>
+    <button class="btn primary" type="submit">Speichern</button></form>
     <div class="section-title">Hevy-Import</div>
     <p class="small ink2" style="margin:0 0 8px">Exportiere in Hevy unter Profil → Einstellungen → Daten exportieren deine Trainings als CSV und wähle die Datei hier aus. Bereits importierte Trainings werden nicht doppelt angelegt.</p>
     <input class="inp" type="file" id="hevyfile" accept=".csv,text/csv">
@@ -1728,7 +1790,7 @@ document.addEventListener("submit", async e => {
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
+    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
   }
 });
 
