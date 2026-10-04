@@ -222,6 +222,8 @@ textarea.inp{min-height:84px;resize:vertical}
 .restbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
 .av{width:36px;height:36px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
 .av.sm{width:22px;height:22px;font-size:12px}
+.av{overflow:hidden}.av img{width:100%;height:100%;object-fit:cover;display:block}
+.av.lg{width:64px;height:64px;font-size:28px}
 .feed{margin-bottom:12px}
 .fhead{display:flex;gap:10px;align-items:center;margin-bottom:8px}
 .ftitle{font-family:var(--display);font-size:22px;font-weight:600;margin-bottom:8px}
@@ -258,7 +260,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 14:49";
+const APP_VERSION = "04.10.2026 14:56";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -338,7 +340,8 @@ function del(col, id){
   if (mode !== "db") return Promise.resolve();
   return queue(col + "/" + id, () => sb.from("docs").delete().match({user_id: user.id, col, id}));
 }
-const cfg = () => Object.assign({}, DEFAULTS, S.settings.main || {});
+const cfgRaw = () => Object.assign({}, DEFAULTS, S.settings.main || {});
+const cfg = () => { const c = cfgRaw(); if (c.calc && c.calc.on) { const a = autoTargets(); if (a) Object.assign(c, {kcal: a.kcal, p: a.p, f: a.f, c: a.c}); } return c; };
 const saveCfg = patch => put("settings", "main", Object.assign(clone(S.settings.main), patch));
 const getDay = k => clone(S.days[k]);
 const saveDay = (k, d) => put("days", k, d);
@@ -656,7 +659,7 @@ function macroRows(t, c){
 }
 /* Verbrannte Kalorien: Garmin-Trainings (Standard), alle aktiven Kalorien oder aus; manuelle Einträge zählen immer mit */
 function burnedOf(k){
-  const c = cfg(), d = S.days[k] || {}, m = c.burnMode || "workouts";
+  const c = cfgRaw(), d = S.days[k] || {}, m = c.burnMode || "workouts";
   if (m === "off") return 0;
   return Math.round((num(d.burnManual) || 0) + burnAuto(d, c));
 }
@@ -903,6 +906,111 @@ function fuelBox(k){
   return `<div class="hint" style="margin-top:10px"><b>Snack rund ums Training (${snack[0]}):</b> ${snack[1]}.</div>
     ${done ? `<form class="row" data-form="drink" style="margin-top:8px;gap:6px;flex-wrap:wrap"><span class="small ink2" style="flex-basis:100%">Trink-Rechner: Gewicht vor und nach dem Training</span><input class="inp num" id="dv" inputmode="decimal" placeholder="vorher kg" style="width:96px;min-height:36px;padding:5px 8px"><input class="inp num" id="dn" inputmode="decimal" placeholder="nachher kg" style="width:96px;min-height:36px;padding:5px 8px"><button class="btn" type="submit" style="min-height:36px">Berechnen</button>${drinkRes ? `<span class="small" style="flex-basis:100%"><b>${esc(drinkRes)}</b></span>` : ""}</form>` : ""}`;
 }
+/* ---------- Kalorienrechner ----------
+   Quellen: Hessmann (Grundumsatz-Formel, PAL, max. 0,5–1 kg/Woche, Überschuss 300–500)
+   und NotebookLM-Zusammenfassung (Defizit höchstens ca. 500 kcal, Überschuss ca. 200–300, Eiweiß 1,6–2,2 g/kg,
+   Uhren überschätzen Trainingskalorien). Sport kommt täglich über „Verbrannte Kalorien“ dazu.
+   Dynamisch: rechnet mit dem aktuellen Gewicht (Ø 7 Tage) und lernt aus Essen + Gewichtsverlauf der letzten 3 Wochen. */
+const PALS = [[1.3, "Kaum Bewegung (Homeoffice, viel Sitzen)"], [1.4, "Bürojob"], [1.6, "Sitzend mit etwas Bewegung"], [1.7, "Viel Stehen und Gehen"], [1.9, "Körperlich schwere Arbeit"]];
+const PACE = {
+  cut: [[-300, "Sanft: −300 kcal (ca. 0,3 kg pro Woche)"], [-500, "Empfohlen: −500 kcal (ca. 0,5 kg pro Woche)"], [-750, "Zügig: −750 kcal (ca. 0,7 kg pro Woche)"]],
+  bulk: [[200, "Sauber: +200 kcal"], [300, "Empfohlen: +300 kcal"], [500, "Schneller: +500 kcal (mehr Fett)"]],
+  maintain: [[0, "Genau halten"], [-200, "Leicht drunter für Recomp: −200 kcal"]]
+};
+const PACE_DEF = {cut: -500, bulk: 300, maintain: 0};
+const curWeight = () => { const ser = weightSeries(); return ser.length ? avgAt(ser, ser[ser.length - 1].k) : null; };
+function bmrOf(p, w){
+  const age = new Date().getFullYear() - (num(p.birth) || 1995), m = (num(p.height) || 180) / 100;
+  return p.sex === "w" ? 655.1 + 9.563 * w + 184.96 * m - 4.676 * age : 13.707 * w + 492.3 * m - 6.673 * age + 77;
+}
+/* Tatsächlicher Verbrauch aus den letzten 21 Tagen: Ø gegessen − Gewichtsänderung × 7700 kcal/kg, ohne angerechnete Sportkalorien */
+function learnedBase(p){
+  const ser = weightSeries(), end = addDays(todayKey(), -1), start = addDays(end, -20);
+  const inWin = ser.filter(x => x.k >= start && x.k <= end);
+  if (inWin.length < 6) return null;
+  const w0 = avgAt(ser, inWin[0].k), w1 = avgAt(ser, inWin[inWin.length - 1].k), span = diffDays(inWin[0].k, inWin[inWin.length - 1].k);
+  if (span < 10 || w0 == null || w1 == null) return null;
+  const minK = Math.max(1000, bmrOf(p, w1) * 0.8);
+  const logged = [];
+  for (let i = 0; i <= 20; i++) { const k = addDays(start, i), t = dayTotals(S.days[k]); if (t.kcal >= minK) logged.push({kcal: t.kcal, burn: burnedOf(k)}); }
+  if (logged.length < 7) return null;
+  const eat = logged.reduce((a, x) => a + x.kcal, 0) / logged.length, burn = logged.reduce((a, x) => a + x.burn, 0) / logged.length;
+  return {base: eat - (w1 - w0) * 7700 / span - burn, days: logged.length, eat, burn, rate: (w1 - w0) / span * 7};
+}
+function calcTargets(p, goal){
+  const w = curWeight(); if (!w) return null;
+  const bm = cfgRaw().burnMode || "workouts";
+  const bmr = bmrOf(p, w);
+  // Bei „alle aktiven Kalorien“ zählt die Uhr die ganze Bewegung; dann nur Grundumsatz + Verdauung
+  const factor = bm === "active" ? 1.15 : (num(p.pal) || 1.4) + (bm === "off" ? 0.2 : 0);
+  const formula = bmr * factor;
+  const L = learnedBase(p);
+  let base = formula, share = 0;
+  if (L) { share = Math.min(1, (L.days - 7) / 14) * 0.8; base = formula * (1 - share) + clamp(L.base, formula * 0.75, formula * 1.25) * share; }
+  const adj = p.pace != null && PACE[goal].some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
+  const floor = Math.round(Math.max(bmr * 0.75, p.sex === "w" ? 1200 : 1500) / 10) * 10;
+  const kcal = Math.round(Math.max(floor, base + adj) / 10) * 10;
+  const pk = num(p.pkg) || (goal === "cut" ? 2.0 : 1.8), fpct = num(p.fat) || 25;
+  const pr = Math.round(w * pk), fat = Math.max(Math.round(kcal * fpct / 100 / 9), Math.round(w * 0.6));
+  const carbs = Math.max(0, Math.round((kcal - pr * 4 - fat * 9) / 4));
+  return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, floor, floorHit: base + adj < floor};
+}
+let autoMemo = {};
+function autoTargets(){
+  const st = S.settings.main || {}, key = todayKey();
+  if (autoMemo.days === S.days && autoMemo.set === S.settings.main && autoMemo.key === key) return autoMemo.val;
+  const g = GOALS[st.goalType] ? st.goalType : "maintain";
+  const val = calcTargets(st.calc || {}, g);
+  autoMemo = {days: S.days, set: S.settings.main, key, val};
+  return val;
+}
+function calcExplain(t, goal){
+  if (!t) return `<div class="hint">Trag zuerst dein Gewicht ein (Körper oder Garmin), dann kann ich rechnen.</div>`;
+  const bm = cfgRaw().burnMode || "workouts";
+  const L = t.learned;
+  return `<div class="stack" style="gap:6px">
+    <div class="spread"><span>Grundumsatz (${fmt(t.w, 1)} kg)</span><b class="num">${fmt(t.bmr)} kcal</b></div>
+    <div class="spread"><span>${bm === "active" ? "+ Verdauung (Bewegung zählt die Uhr)" : "× Alltag " + fmt(t.factor, 1) + (bm === "off" ? " inkl. Sport" : " ohne Sport")}</span><b class="num">${fmt(t.formula)} kcal</b></div>
+    ${L ? `<div class="spread"><span>Gelernt aus ${L.days} Tagen Essen + Gewicht (zählt ${Math.round(t.share * 100)} %)</span><b class="num">${fmt(L.base)} kcal</b></div>` : ""}
+    <div class="spread"><span>${GOALS[goal]}</span><b class="num">${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal</b></div>
+    <div class="spread" style="border-top:1px solid var(--line);padding-top:6px"><b>Tagesziel</b><b class="num" style="font-size:20px">${fmt(t.kcal)} kcal</b></div>
+    <div class="small muted num">Eiweiß ${t.p} g · Kohlenhydrate ${t.c} g · Fett ${t.f} g</div>
+    ${bm !== "off" ? `<div class="small ink2">+ an jedem Tag deine verbrannten Trainingskalorien von Garmin${num(cfgRaw().burnShare) && num(cfgRaw().burnShare) < 100 ? " (" + cfgRaw().burnShare + " %)" : ""}.</div>` : ""}
+    ${t.floorHit ? `<div class="hint">Weniger als ${fmt(t.floor)} kcal (ohne Sport) empfehle ich nicht, deshalb ist das Ziel hier begrenzt.</div>` : ""}
+    ${L ? `<div class="small muted">In den letzten 3 Wochen: Ø ${fmt(L.eat)} kcal gegessen, Gewicht ${L.rate > 0 ? "+" : ""}${fmt(L.rate, 2)} kg pro Woche. Daraus lernt der Rechner deinen echten Verbrauch und passt das Ziel an, damit dein Ziel auch wirklich eintritt.</div>` : `<div class="small muted">Sobald du etwa 2 Wochen dein Essen einträgst und dich wiegst, lernt der Rechner deinen echten Verbrauch dazu und passt das Ziel an.</div>`}
+  </div>`;
+}
+function calcForm(p, goal){
+  const paces = PACE[goal], pace = paces.some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
+  const pk = num(p.pkg) || (goal === "cut" ? 2.0 : 1.8);
+  return `<form class="stack" data-form="calc">
+    <div class="field"><label for="cg">Mein Ziel</label><select class="inp" id="cg">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goal === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="fields"><div class="field"><label for="csx">Geschlecht</label><select class="inp" id="csx"><option value="m" ${p.sex !== "w" ? "selected" : ""}>Mann</option><option value="w" ${p.sex === "w" ? "selected" : ""}>Frau</option></select></div>
+    <div class="field"><label for="cby">Geburtsjahr</label><input class="inp num" id="cby" inputmode="numeric" value="${esc(p.birth || "")}" placeholder="z. B. 2004"></div>
+    <div class="field"><label for="cht">Größe (cm)</label><input class="inp num" id="cht" inputmode="numeric" value="${esc(p.height || "")}" placeholder="z. B. 182"></div></div>
+    ${(cfgRaw().burnMode || "workouts") === "active" ? `<input type="hidden" id="cpal" value="${num(p.pal) || 1.4}"><p class="small muted" style="margin:0">Deine Uhr zählt Alltag und Sport mit („Alle aktiven Kalorien“ in den Einstellungen). Deshalb rechne ich hier nur Grundumsatz und Verdauung, der Rest kommt täglich von Garmin dazu.</p>` : `<div class="field"><label for="cpal">Alltag ohne Sport</label><select class="inp" id="cpal">${PALS.map(([v, l]) => `<option value="${v}" ${(num(p.pal) || 1.4) === v ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Sport ist hier pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Sport nicht mitrechnen, der kommt täglich über Garmin dazu."}</span></div>`}
+    <div class="field"><label for="cpace">Tempo</label><select class="inp" id="cpace">${paces.map(([v, l]) => `<option value="${v}" ${pace === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
+    <div class="field"><label for="cft">Fett-Anteil</label><select class="inp" id="cft">${[25, 30].map(v => `<option value="${v}" ${(num(p.fat) || 25) === v ? "selected" : ""}>${v} %</option>`).join("")}</select></div></div>
+    <div class="card" style="background:var(--surface-2);box-shadow:none" id="calcres">${calcExplain(calcTargets(p, goal), goal)}</div>
+    <button class="btn primary" type="submit">${p.on ? "Speichern" : "Automatisch berechnen lassen"}</button>
+    ${p.on ? `<button class="btn ghost" type="button" data-act="calc-off">Ausschalten und Werte selbst festlegen</button>` : `<p class="small muted" style="margin:0">Danach passt die App Kalorien und Makros jeden Tag selbst an: an dein Gewicht, deinen Sport und daran, wie schnell du wirklich ab- oder zunimmst.</p>`}
+  </form>`;
+}
+function calcRead(){
+  const v = id => ($("#" + id) || {}).value;
+  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birth: num(v("cby")) || "", height: num(v("cht")) || "", pal: num(v("cpal")) || 1.4, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
+}
+function openCalc(){
+  const st = S.settings.main || {};
+  openSheet("Kalorienrechner", calcForm(Object.assign({}, st.calc || {}), goalType()));
+}
+function calcLine(){
+  const c = cfgRaw();
+  if (!(c.calc && c.calc.on)) return `<button class="btn ghost" data-act="calc-open" style="margin-top:8px;min-height:36px">🧮 Kalorienrechner</button>`;
+  const t = autoTargets(); if (!t) return "";
+  return `<button class="hint" data-act="calc-open" style="margin-top:10px;display:block;width:100%;text-align:left;cursor:pointer"><b>🧮 Automatisch: ${fmt(t.kcal)} kcal</b> <span class="muted">· ${GOALS[goalType()]} ${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal${t.learned ? " · lernt aus " + t.learned.days + " Tagen" : ""}. Tippen für Details.</span></button>`;
+}
 /* Eiweiß pro Mahlzeit: mind. 30 g regt den Muskelaufbau am besten an (NotebookLM-Zusammenfassung) */
 function proteinMeals(d){
   const ms = MEALS.map(([m]) => (d.meals && d.meals[m]) || []).filter(it => it.length);
@@ -933,6 +1041,7 @@ function viewEssen(){
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}<div class="stack" style="flex:1;min-width:0">${macroRows(t, c)}</div></div>
     ${burnRow(curDate)}
     ${proteinMeals(d)}
+    ${calcLine()}
     ${macroCheck()}
   </section>
   ${MEALS.map(([m, label]) => {
@@ -1026,17 +1135,41 @@ function viewExercises(){
 }
 
 /* ----- Freunde ----- */
-let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: ""};
+let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, avatar: null, msg: "", editProfile: false};
 async function loadFriends(force){
   if (FR.busy || (!force && Date.now() - FR.loaded < 60000)) return;
   FR.busy = true;
   try {
-    const [f, l, n, iv] = await Promise.all([sb.rpc("friend_feed", {p_days: 21}), sb.rpc("my_friends"), sb.rpc("my_name"), sb.rpc("my_invites")]);
-    FR.feed = f.data || {items: [], steps: []}; FR.friends = l.data || []; FR.name = n.data || ""; FR.invites = iv.data || [];
+    const [f, l, n, iv] = await Promise.all([sb.rpc("friend_feed", {p_days: 21}), sb.rpc("my_friends"), sb.rpc("my_profile"), sb.rpc("my_invites")]);
+    FR.feed = f.data || {items: [], steps: []}; FR.friends = l.data || []; FR.name = (n.data || {}).name || ""; FR.avatar = (n.data || {}).avatar || null; FR.invites = iv.data || [];
   } catch(e) { FR.msg = "Freunde konnten nicht geladen werden. Prüfe deine Internetverbindung."; }
   FR.loaded = Date.now(); FR.busy = false; scheduleRender();
 }
 const initial = n => esc((n || "?").trim().charAt(0).toUpperCase());
+/* Profilbild aus dem Feed (people), sonst Anfangsbuchstabe */
+function avatar(uid, name, cls){
+  const p = FR.feed && FR.feed.people && FR.feed.people[uid], a = p && p.avatar;
+  return `<span class="av ${cls || ""}">${a && /^data:image\//.test(a) ? `<img src="${esc(a)}" alt="">` : initial(name)}</span>`;
+}
+/* Bild verkleinern (quadratisch, 192 px, JPEG), damit es klein in der Datenbank liegt */
+function shrinkImage(file){
+  return new Promise((ok, fail) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => { const n = 192, cv = document.createElement("canvas"); cv.width = cv.height = n; const sz = Math.min(img.width, img.height);
+      cv.getContext("2d").drawImage(img, (img.width - sz) / 2, (img.height - sz) / 2, sz, sz, 0, 0, n, n); URL.revokeObjectURL(url); ok(cv.toDataURL("image/jpeg", 0.8)); };
+    img.onerror = () => { URL.revokeObjectURL(url); fail(new Error("bild")); };
+    img.src = url;
+  });
+}
+function profileCard(){
+  const pic = FR.avatar ? `<span class="av lg"><img src="${esc(FR.avatar)}" alt=""></span>` : `<span class="av lg">${initial(FR.name || "?")}</span>`;
+  const edit = FR.editProfile || !FR.name;
+  return `<section class="card" style="margin-bottom:12px">
+    <div class="row" style="flex-wrap:nowrap;gap:14px">${pic}<div class="grow" style="min-width:0"><div class="eyebrow">Mein Profil</div><div style="font-weight:600;font-size:18px">${esc(FR.name || "Noch kein Name")}</div><div class="small muted">So sehen dich deine Freunde.</div></div>${edit ? "" : `<button class="btn ghost" data-act="prof-edit">Bearbeiten</button>`}</div>
+    ${edit ? `<form class="stack" data-form="myname" style="margin-top:12px"><div class="field"><label for="mn">Dein Name</label><input class="inp" id="mn" value="${esc(FR.name || "")}" placeholder="z. B. Mario" maxlength="40" required></div>
+      <div class="row" style="gap:8px"><label class="btn" for="avf" style="cursor:pointer">${FR.avatar ? "Bild ändern" : "Profilbild wählen"}</label><input type="file" id="avf" accept="image/*" hidden>${FR.avatar ? `<button class="btn ghost danger" type="button" data-act="avatar-del">Bild entfernen</button>` : ""}<button class="btn primary" type="submit">Speichern</button></div></form>` : ""}
+  </section>`;
+}
 function viewFriends(){
   if (!FR.loaded) { loadFriends(); return '<section class="card"><div class="empty">Freunde werden geladen …</div></section>'; }
   if (Date.now() - FR.loaded > 60000) loadFriends();
@@ -1046,16 +1179,16 @@ function viewFriends(){
   const feed = FR.feed || {items: [], steps: []};
   let h = "";
   if (FR.msg) h += `<div class="banner">${esc(FR.msg)}</div>`;
-  if (!FR.name) h += `<section class="card" style="margin-bottom:12px"><form class="stack" data-form="myname"><div class="eyebrow">Dein Name im Feed</div><div class="row" style="flex-wrap:nowrap"><input class="inp" id="mn" placeholder="z. B. Mario" required style="flex:1"><button class="btn primary" type="submit">Speichern</button></div></form></section>`;
-  if (inc.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:6px">Freundschaftsanfragen</div><div class="list">${inc.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn primary" data-act="fr-accept" data-id="${f.user_id}">Annehmen</button><button class="x" data-act="fr-decline" data-id="${f.user_id}" aria-label="Ablehnen">×</button></div>`).join("")}</div></section>`;
+  h += profileCard();
+  if (inc.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:6px">Freundschaftsanfragen</div><div class="list">${inc.map(f => `<div class="li">${avatar(f.user_id, f.name)}<div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn primary" data-act="fr-accept" data-id="${f.user_id}">Annehmen</button><button class="x" data-act="fr-decline" data-id="${f.user_id}" aria-label="Ablehnen">×</button></div>`).join("")}</div></section>`;
   const steps = (feed.steps || []).filter(x => x.me || acc.length);
-  if (acc.length && steps.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schritte heute</div><div class="stack" style="gap:8px">${(() => { const mx = Math.max(10000, ...steps.map(x => x.steps || 0)); return steps.sort((a, b) => (b.steps || 0) - (a.steps || 0)).map(x => `<div class="macro" style="grid-template-columns:96px 1fr auto"><span class="lbl"><span class="av sm">${initial(x.name)}</span>${esc(x.me ? "Du" : x.name)}</span><div class="bar"><i style="width:${(x.steps || 0) / mx * 100}%"></i></div><span class="num small"><b>${x.steps ? fmt(x.steps) : "–"}</b></span></div>`).join(""); })()}</div></section>`;
+  if (acc.length && steps.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schritte heute</div><div class="stack" style="gap:8px">${(() => { const mx = Math.max(10000, ...steps.map(x => x.steps || 0)); return steps.sort((a, b) => (b.steps || 0) - (a.steps || 0)).map(x => `<div class="macro" style="grid-template-columns:96px 1fr auto"><span class="lbl">${avatar(x.owner, x.name, "sm")}${esc(x.me ? "Du" : x.name)}</span><div class="bar"><i style="width:${(x.steps || 0) / mx * 100}%"></i></div><span class="num small"><b>${x.steps ? fmt(x.steps) : "–"}</b></span></div>`).join(""); })()}</div></section>`;
   h += `<div class="section-title">Aktivitäten</div>`;
   h += (feed.items || []).map(it => {
     const act = it.kind === "activity";
     const meta = [fmtMid(it.date), it.minutes ? it.minutes + " min" : ""].filter(Boolean).join(" · ");
     const ex = (it.exercises || []);
-    return `<article class="card feed"><div class="fhead"><span class="av">${initial(it.name)}</span><div class="grow"><b>${esc(it.me ? "Du" : it.name)}</b><div class="small muted">${esc(meta)}</div></div></div>
+    return `<article class="card feed"><div class="fhead">${avatar(it.owner, it.name)}<div class="grow"><b>${esc(it.me ? "Du" : it.name)}</b><div class="small muted">${esc(meta)}</div></div></div>
       <div class="ftitle">${esc(it.title || (act ? "Sport" : "Training"))}</div>
       ${act ? "" : `<div class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div><span class="eyebrow">Übungen</span><div class="v">${ex.length}</div></div><div><span class="eyebrow">Sätze</span><div class="v">${it.sets}</div></div><div><span class="eyebrow">Bewegt</span><div class="v">${fmt(it.volume)}<span class="unit">kg</span></div></div></div>
       <div class="small ink2" style="margin-top:8px">${esc(ex.slice(0, 4).join(" · "))}${ex.length > 4 ? " · +" + (ex.length - 4) : ""}</div>`}
@@ -1063,7 +1196,7 @@ function viewFriends(){
     </article>`;
   }).join("") || '<section class="card"><div class="empty">In den letzten drei Wochen gibt es noch keine Aktivitäten.</div></section>';
   h += `<div class="section-title">Freunde</div><section class="card">
-    <div class="list">${acc.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn ghost danger" data-act="fr-remove" data-id="${f.user_id}">Entfernen</button></div>`).join("")}
+    <div class="list">${acc.map(f => `<div class="li">${avatar(f.user_id, f.name)}<div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn ghost danger" data-act="fr-remove" data-id="${f.user_id}">Entfernen</button></div>`).join("")}
     ${out.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.email)}</div><div class="sub">Anfrage gesendet, wartet auf Bestätigung</div></div><button class="x" data-act="fr-remove" data-id="${f.user_id}" aria-label="Anfrage zurückziehen">×</button></div>`).join("")}
     ${(FR.invites || []).map(iv => `<div class="li"><span class="av">✉</span><div class="grow"><div class="title">${esc(iv.email)}</div><div class="sub">Eingeladen, hat sich noch nicht registriert</div></div><button class="x" data-act="inv-cancel" data-email="${esc(iv.email)}" aria-label="Einladung zurückziehen">×</button></div>`).join("")}
     ${!acc.length && !out.length && !(FR.invites || []).length ? '<p class="small muted" style="margin:0 0 6px">Noch keine Freunde. Gib die E-Mail-Adresse einer Person ein. Hat sie schon ein Konto, bekommt sie eine Anfrage. Sonst wird sie eingeladen: Sie kann sich dann mit genau dieser Adresse in der App registrieren, und ihr seid automatisch befreundet.</p>' : ""}</div>
@@ -1407,7 +1540,7 @@ function viewKoerper(){
       <div><span class="eyebrow">Bis zum Ziel</span><div class="v">${remain != null ? fmt(Math.max(0, remain), 1) : "–"}<span class="unit">kg</span></div></div>
       ${gt === "maintain" ? "" : `<div><span class="eyebrow">Prognose Ziel</span><div class="v" style="font-size:20px">${eta}</div></div>`}
     </div>
-    ${status ? `<div style="margin-top:12px">${status}</div>` : ""}
+    ${status ? `<div style="margin-top:12px">${c.calc && c.calc.on ? status.replace(/ (Reduziere|Erhöhe|Für Muskelaufbau erhöhe)[^.]*\./, " Der Kalorienrechner passt dein Ziel dafür automatisch an.") : status}</div>` : ""}
   </section>
   <div class="section-title">Eintragen</div>
   <section class="card">
@@ -1867,9 +2000,10 @@ function openPlanDay(k){
 function openSettings(){
   const c = cfg();
   openSheet("Einstellungen", `<form class="stack" data-form="settings">
-    <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps und Hinweise an. Kalorien und Makros legst du unten selbst fest.</span></div>
+    <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps, Hinweise und den Kalorienrechner an.</span></div>
     <div class="eyebrow">Tagesziele Ernährung</div>
-    <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}"></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}"></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}"></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}"></div></div>
+    ${c.calc && c.calc.on ? `<div class="hint">Werden automatisch vom Kalorienrechner berechnet. <button class="btn ghost" type="button" data-act="calc-open" style="min-height:32px">Rechner öffnen</button></div>` : `<button class="btn" type="button" data-act="calc-open">🧮 Mit dem Kalorienrechner berechnen</button>`}
+    <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}" ${c.calc && c.calc.on ? "readonly" : ""}></div></div>
     <div class="field"><label for="gbm">Verbrannte Kalorien anrechnen</label><select class="inp" id="gbm">${[["workouts","Nur Trainings von Garmin (empfohlen)"],["active","Alle aktiven Kalorien inkl. Schritte"],["off","Nicht anrechnen"]].map(([k, l]) => `<option value="${k}" ${(c.burnMode || "workouts") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Verbrannte Kalorien kommen zu deinem Tagesziel dazu. Manuell eingetragene zählen immer.</span></div>
     <div class="field"><label for="gbs">Davon anrechnen</label><select class="inp" id="gbs">${[[100,"100 % (alles)"],[75,"75 %"],[50,"50 % (vorsichtig)"]].map(([k, l]) => `<option value="${k}" ${(num(c.burnShare) || 100) === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Uhren schätzen den Verbrauch oft zu hoch. Mit 50 oder 75 % isst du die Trainingskalorien nicht komplett zurück, das hilft vor allem beim Abnehmen.</span></div>
     <div class="eyebrow" style="margin-top:6px">Gewichtsziel</div>
@@ -2012,6 +2146,10 @@ document.addEventListener("click", async e => {
     case "tips-ai": runTipsAI(D.date); break;
     case "burn-reset": { const d = getDay(D.date); delete d.burnManual; saveDay(D.date, d); break; }
     case "fr-accept": case "fr-decline": await sb.rpc("respond_friend", {p_user: D.id, p_accept: a === "fr-accept"}); toast(a === "fr-accept" ? "Ihr seid jetzt befreundet." : "Anfrage abgelehnt."); loadFriends(true); break;
+    case "calc-open": closeSheet(); openCalc(); break;
+    case "calc-off": { const t = autoTargets(); const patch = {calc: Object.assign({}, cfgRaw().calc, {on: false})}; if (t) Object.assign(patch, {kcal: t.kcal, p: t.p, c: t.c, f: t.f}); saveCfg(patch); toast("Kalorienrechner aus. Die letzten Werte bleiben als dein Ziel."); closeSheet(); break; }
+    case "prof-edit": FR.editProfile = true; render(); break;
+    case "avatar-del": await sb.rpc("set_my_avatar", {p_avatar: ""}); FR.avatar = null; toast("Profilbild entfernt."); loadFriends(true); render(); break;
     case "fr-remove": if (b.dataset.confirm) { await sb.rpc("remove_friend", {p_user: D.id}); loadFriends(true); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich?"; } break;
     case "kudos": { b.disabled = true; const {data: n} = await sb.rpc("toggle_kudos", {p_owner: D.owner, p_wid: D.id}); const it = (FR.feed.items || []).find(x => x.owner === D.owner && x.id === D.id); if (it && n >= 0) { it.mykudos = !it.mykudos; it.kudos = n; } render(); break; }
     case "inv-cancel": await sb.rpc("cancel_invite", {p_email: D.email}); toast("Einladung zurückgezogen."); loadFriends(true); break;
@@ -2080,6 +2218,7 @@ document.addEventListener("click", async e => {
 
 document.addEventListener("input", e => {
   const t = e.target;
+  if (t.closest && t.closest('form[data-form="calc"]')) { const r = calcRead(); if (t.id === "cg") { const p = Object.assign({}, cfgRaw().calc || {}, r.p, {pace: null, pkg: null}); $("#sheet-b").innerHTML = calcForm(p, r.goal); return; } $("#calcres").innerHTML = calcExplain(calcTargets(r.p, r.goal), r.goal); return; }
   if (t.id === "afq" && af) { af.q = t.value; offSearch(af.q); $("#afres").innerHTML = foodResults(foodsSorted(af.q)); return; }
   if (t.id === "afg" && af && af.pick) { const f = S.foods[af.pick]; const k = (num(t.value) || 0) / 100; af.g = t.value; $("#afcalc").innerHTML = `<b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}`; return; }
   if (t.dataset.ws && ws) {
@@ -2093,6 +2232,7 @@ document.addEventListener("input", e => {
 document.addEventListener("change", e => {
   const t = e.target;
   if (t.dataset.move) { const w = clone(S.workouts[t.dataset.move]); if (w && t.value) { w.date = t.value; put("workouts", t.dataset.move, w); calSel = t.value; calMonth = t.value.slice(0, 7); toast("Verschoben auf " + fmtShort(t.value) + "."); } return; }
+  if (t.id === "avf" && t.files[0]) { shrinkImage(t.files[0]).then(async a => { const {error} = await sb.rpc("set_my_avatar", {p_avatar: a}); if (error) throw error; FR.avatar = a; toast("Profilbild gespeichert."); loadFriends(true); render(); }).catch(() => toast("Das Bild konnte nicht gespeichert werden.")); return; }
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
   if (t.dataset.suppTime) { const list = (cfg().supplements || []).map(x => x.id === t.dataset.suppTime ? Object.assign({}, x, {time: t.value}) : x); saveCfg({supplements: list}); toast(t.value ? "Erinnerung um " + t.value + " Uhr gespeichert." : "Erinnerung entfernt."); return; }
   if (t.id === "sld") { sleepDate = t.value || todayKey(); pendingRender = false; render(); return; }
@@ -2142,7 +2282,11 @@ document.addEventListener("submit", async e => {
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
       render(); return;
     }
-    case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; toast("Gespeichert."); loadFriends(true); break; }
+    case "calc": { const r = calcRead(); if (!(r.p.birth > 1920 && r.p.birth < 2015) || !(r.p.height > 120 && r.p.height < 230)) { toast("Bitte Geburtsjahr und Größe eintragen."); return; }
+      const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
+      if (r.goal === "cut") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
+      saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
+    case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; FR.editProfile = false; toast("Gespeichert."); loadFriends(true); break; }
     case "addfriend": {
       const em = v("fe").trim(); const {data: r, error} = await sb.rpc("add_friend", {p_email: em});
       const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", invited: "Eingeladen. Sie kann sich jetzt mit dieser E-Mail-Adresse registrieren, danach seid ihr automatisch befreundet. Schick ihr einfach den Link zur App.", invalid: "Bitte eine gültige E-Mail-Adresse eingeben.", limit: "Du hast schon 20 offene Einladungen.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
@@ -2151,7 +2295,7 @@ document.addEventListener("submit", async e => {
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
+    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
   }
 });
 
