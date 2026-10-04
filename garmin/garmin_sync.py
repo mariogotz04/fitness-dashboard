@@ -128,13 +128,25 @@ def push(days):
     with contextlib.redirect_stdout(buf):
         code = fetch(days)
     payload = json.loads(buf.getvalue() or "{}")
-    if code != 0 or "days" not in payload:
-        print("Garmin-Abruf fehlgeschlagen:", payload.get("error", "unbekannt"), "|", payload.get("detail", ""))
-        return 2
     if os.environ.get("SUPABASE_URL"):
         cfg = {"url": os.environ["SUPABASE_URL"], "key": os.environ["SUPABASE_KEY"], "token": os.environ["SYNC_TOKEN"]}
     else:
         cfg = json.load(open(CONFIG))
+
+    def report(ok, msg=""):
+        try:
+            r = urllib.request.Request(cfg["url"].rstrip("/") + "/rest/v1/rpc/garmin_report",
+                data=json.dumps({"token": cfg["token"], "p_ok": ok, "p_msg": msg}).encode(),
+                headers={"apikey": cfg["key"], "Authorization": "Bearer " + cfg["key"], "Content-Type": "application/json"}, method="POST")
+            urllib.request.urlopen(r, timeout=30).read()
+        except Exception:
+            pass
+
+    if code != 0 or "days" not in payload:
+        err = payload.get("error", "unbekannt")
+        print("Garmin-Abruf fehlgeschlagen:", err, "|", payload.get("detail", ""))
+        report(False, "login_expired" if err in ("login_failed", "login_required") else err)
+        return 2
     req = urllib.request.Request(
         cfg["url"].rstrip("/") + "/rest/v1/rpc/garmin_sync",
         data=json.dumps({"token": cfg["token"], "days": payload["days"]}).encode(),
@@ -145,9 +157,11 @@ def push(days):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             print(dt.datetime.now().isoformat(timespec="seconds"), "übertragen:", r.read().decode())
+        report(True)
     except urllib.error.HTTPError as e:
         msg = json.loads(e.read().decode() or "{}").get("message", "")
         print(dt.datetime.now().isoformat(timespec="seconds"), "Fehler:", e.code, msg[:120])
+        report(False, "upload_failed")
         return 1
     return 0
 
