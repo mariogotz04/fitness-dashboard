@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 09:31";
+const APP_VERSION = "04.10.2026 13:05";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -535,6 +535,18 @@ function recoveryPlan(k){
   add("Ernährung", "anti", pick(["Beeren und Sauerkirschen", "Fetter Fisch wie Lachs oder Hering", "Haferflocken, Nüsse und Kürbiskerne"]), pick(["Ihre Pflanzenstoffe helfen gegen Entzündungen und Muskelkater. Zum Beispiel 100 g TK-Beeren in den Skyr.", "Die Omega-3-Fettsäuren unterstützen die Regeneration. 1–2 Fischmahlzeiten pro Woche sind ideal.", "Sie liefern Magnesium, das bei Muskelkater und Krämpfen hilft."]), (sore ? 6 : 4));
   add("Ernährung", "drink", sportY || ys >= 14 ? "Etwa 3,5 l trinken, mit etwas Salz" : "Etwa 3 l trinken", sportY || ys >= 14 ? "Nach viel Schwitzen gleichen eine Prise Salz oder ein Elektrolytgetränk die Mineralstoffe aus." : "Wasser über den Tag verteilt. Ein Glas direkt nach dem Aufstehen erleichtert den Start.", (sportY || ys >= 14 ? 7 : 3));
   if (strengthY || sore) add("Ernährung", "casein", "Abends Skyr oder Magerquark", "Das langsam verdauliche Eiweiß versorgt deine Muskeln über Nacht.", (strengthY ? 5 : 3));
+  // Aus „Sporternährung für jeden Tag“ (Hessmann): Sport-Tag, 24-h-Pause, Eiweißkombis, Vitamine
+  const sportToday = wT.some(w => w.kind === "activity");
+  if (sportToday) add("Ernährung", "sportday", "Heute ist Sport: richtig essen und trinken", "Etwa 3 h vorher kohlenhydratreich und fettarm essen, 30 Min. vorher etwas Schnelles wie eine Banane. Währenddessen trinken, bevor Durst kommt. Danach zuerst trinken und nach etwa 1 h Kohlenhydrate mit Eiweiß essen.", 8);
+  const groupsOf = ws => new Set(ws.filter(w => w.kind !== "activity").flatMap(w => (w.exercises || []).map(e => (S.exercises[e.exId] || {}).group).filter(g => g && g !== "Bauch" && g !== "Sonstiges")));
+  const gy = groupsOf(wY), overlap = [...groupsOf(wT)].filter(g => gy.has(g));
+  if (strengthToday && overlap.length) add("Bewegung", "rest24", "Gleiche Muskeln brauchen 24 h Pause", "Gestern hast du schon " + overlap.slice(0, 3).join(", ") + " trainiert. Leg das heute lieber auf einen anderen Tag oder trainiere die Muskeln nur leicht.", 9);
+  if (hard && goalType() === "cut") add("Ernährung", "nocarbcut", "Im Defizit Kohlenhydrate nicht streichen", "Wer bei hartem Training zu wenig Kohlenhydrate isst, verliert eher Muskeln. Spar lieber bei Fett und Snacks.", 5);
+  add("Ernährung", "combo", pick(["Kartoffeln mit Ei", "Milch mit Kartoffeln", "Bohnen mit Getreide"]), pick(["Zusammen ist das Eiweiß hochwertiger als jedes für sich (biologische Wertigkeit 136), z. B. Bratkartoffeln mit Spiegelei.", "Die Kombination liefert besonders hochwertiges Eiweiß, z. B. Kartoffelpüree mit Milch.", "Hülsenfrüchte und Getreide ergänzen sich, z. B. Chili mit Reis oder Linsen mit Vollkornbrot."]), 3);
+  const VIT = [["Vitamin C", "Zitrusfrüchte und Paprika"], ["Magnesium", "Haferflocken, Bananen und dunkle Schokolade"], ["Kalium", "Bananen, Tomaten und Fisch"], ["Zink", "Eigelb, Haferflocken und Rindfleisch"], ["Eisen", "Fleisch und Vollkorn"], ["Kalzium", "Milchprodukte und Nüsse"], ["Vitamin E", "Eier und Nüsse"], ["B-Vitamine", "Vollkorn, Haferflocken, Milch, Fisch und Fleisch"], ["Omega-3", "Lachs, Hering, Leinöl und Rapsöl"], ["Vitamin A", "Karotten, Thunfisch und Milchprodukte"]];
+  const vt = VIT[n % VIT.length];
+  add("Ernährung", "vit", vt[0] + " heute", "Steckt vor allem in " + vt[1] + ". Bau davon heute etwas in eine Mahlzeit ein.", 2);
+
   // Nur die 3 wirksamsten Tipps, höchstens einer pro Bereich.
   const best = [], seen = new Set();
   out.slice().sort((a, b) => b.prio - a.prio).forEach(x => { if (best.length < 3 && !seen.has(x.cat)) { best.push(x); seen.add(x.cat); } });
@@ -543,7 +555,7 @@ function recoveryPlan(k){
 function sleepNeed(k){
   const c = cfg(); const ys = strainOf(addDays(k, -1)), ts = strainOf(k);
   const debt = [1, 2, 3].reduce((a, i) => { const s = (S.days[addDays(k, -i + 1)] || {}).sleep; return a + (s && s.h ? Math.max(0, c.sleepGoal - s.h) : 0); }, 0);
-  return Math.round((c.sleepGoal + Math.max(ys, ts) / 21 * 0.75 + debt * 0.3) * 4) / 4;
+  return Math.round(Math.min(c.sleepGoal + 1, c.sleepGoal + Math.max(ys, ts) / 21 * 0.75 + debt * 0.3) * 4) / 4;
 }
 function recoveryTips(k){
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), sl = d.sleep, ci = d.checkin;
@@ -697,6 +709,7 @@ function viewHeute(){
     <div class="card-h"><h2>Training</h2><button class="btn ghost" data-act="tab" data-tab="training">Kalender</button></div>
     ${trainHtml}
     <div class="row">${tpls.map(tp => `<button class="btn" data-act="start-template" data-id="${tp.id}" data-date="${curDate}">${esc(tp.short || tp.name)} starten</button>`).join("") || '<span class="muted small">Noch keine Trainingspläne angelegt.</span>'}</div>
+    ${fuelBox(curDate)}
     <div class="row" style="margin-top:12px"><span class="chip ${wk.strength.length >= c.strengthPerWeek ? "good" : ""}">${wk.strength.length} / ${c.strengthPerWeek} Krafteinheiten diese Woche</span>${wk.acts.length ? `<span class="chip">${wk.acts.length}× ${esc([...new Set(wk.acts.map(a => a.title))].join(", "))}</span>` : ""}</div>
   </section>
 
@@ -853,6 +866,39 @@ function burnRow(k){
   </div>`;
 }
 
+/* Trainings-Snack je nach Härte und Trink-Rechner (Hessmann) */
+function intensityOf(k){
+  const ws = workoutsSorted().filter(w => w.date === k);
+  if (!ws.length) return null;
+  let lvl = 0;
+  ws.forEach(w => {
+    if (w.kind === "activity") { const m = w.minutes || 60; lvl = Math.max(lvl, m >= 75 ? 2 : m >= 30 ? 1 : 0); }
+    else { const n = (w.exercises || []).reduce((a, e) => a + ((e.sets || []).length || +(e.target && e.target.sets) || 0), 0); lvl = Math.max(lvl, n >= 22 ? 2 : n >= 12 ? 1 : 0); }
+  });
+  return lvl;
+}
+let drinkRes = "";
+function fuelBox(k){
+  const lvl = intensityOf(k); if (lvl == null) return "";
+  const snack = [["locker", "1 Stück Obst, z. B. 2 Kiwis oder ein Apfel"], ["mittel", "Obst plus Eiweiß, z. B. Banane mit 250 ml Milch oder 125 g Quark"], ["hart", "Obst, Getreide und Eiweiß, z. B. Banane, Müsliriegel und 2 Eier oder Putenbrust"]][lvl];
+  const done = workoutsSorted().some(w => w.date === k && w.status === "done");
+  return `<div class="hint" style="margin-top:10px"><b>Snack rund ums Training (${snack[0]}):</b> ${snack[1]}.</div>
+    ${done ? `<form class="row" data-form="drink" style="margin-top:8px;gap:6px;flex-wrap:wrap"><span class="small ink2" style="flex-basis:100%">Trink-Rechner: Gewicht vor und nach dem Training</span><input class="inp num" id="dv" inputmode="decimal" placeholder="vorher kg" style="width:96px;min-height:36px;padding:5px 8px"><input class="inp num" id="dn" inputmode="decimal" placeholder="nachher kg" style="width:96px;min-height:36px;padding:5px 8px"><button class="btn" type="submit" style="min-height:36px">Berechnen</button>${drinkRes ? `<span class="small" style="flex-basis:100%"><b>${esc(drinkRes)}</b></span>` : ""}</form>` : ""}`;
+}
+/* „Passt mein Ziel?“-Check unter den Makros: nur Hinweise, ändert nichts */
+function macroCheck(){
+  const c = cfg(), ser = weightSeries(); const w = ser.length ? ser[ser.length - 1].v : null;
+  if (!w) return "";
+  const pkg = c.p / w, fatPct = c.f * 9 / c.kcal * 100, ckg = c.c / w;
+  const warn = [];
+  if (pkg < 1.2) warn.push(`Dein Proteinziel liegt bei ${fmt(pkg, 1)} g pro kg. Für Krafttraining empfiehlt die Sporternährung mindestens 1,2–1,7 g pro kg.`);
+  if (fatPct > 30) warn.push(`Fett macht ${Math.round(fatPct)} % deiner Kalorien aus. Empfohlen sind höchstens 30 %.`);
+  if (c.f < 25) warn.push(`Dein Fettziel ist mit ${c.f} g sehr niedrig. Mindestens etwa 2–3 EL Öl oder Fett am Tag (ca. 25–30 g) braucht der Körper.`);
+  return `<details class="small" style="margin-top:10px"><summary class="ink2" style="cursor:pointer">${warn.length ? "⚠︎ " : "✓ "}Passt mein Ziel? (bei ${fmt(w, 1)} kg)</summary>
+    <div class="stack" style="gap:6px;margin-top:8px">${warn.map(x => `<div class="hint">${esc(x)}</div>`).join("")}
+    <div class="muted">Protein ${fmt(pkg, 1)} g/kg · Kohlenhydrate ${fmt(ckg, 1)} g/kg · Fett ${Math.round(fatPct)} % der Kalorien.<br>Richtwerte Sporternährung: Protein 1,2–1,7 g/kg bei Kraftsport (im Defizit gern mehr), Kohlenhydrate 4 g/kg bei Fitness bis 5–8 g/kg bei viel Training, Fett höchstens 30 %.</div></div></details>`;
+}
+
 /* ----- Essen ----- */
 function viewEssen(){
   const c = cfg(), d = S.days[curDate] || {}, t = dayTotals(d);
@@ -860,6 +906,7 @@ function viewEssen(){
   return `<section class="card">
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}<div class="stack" style="flex:1;min-width:0">${macroRows(t, c)}</div></div>
     ${burnRow(curDate)}
+    ${macroCheck()}
   </section>
   ${MEALS.map(([m, label]) => {
     const items = (d.meals && d.meals[m]) || [];
@@ -1293,6 +1340,7 @@ function viewKoerper(){
     const r2 = fmt(rate, 2);
     if (gt === "cut") {
       if (rate > -0.2) status = `<div class="hint">Du nimmst gerade langsamer ab als geplant (${r2} kg pro Woche). Reduziere um etwa 150–200 kcal.</div>`;
+      else if (rate < -1.0) status = `<div class="hint" style="border:1.5px solid var(--bad)">Du nimmst mehr als 1 kg pro Woche ab (${r2} kg). Das ist zu schnell, dabei gehen leicht Muskeln verloren. Erhöhe um etwa 200–300 kcal.</div>`;
       else if (rate < -0.8) status = `<div class="hint">Du nimmst schneller ab als geplant (${r2} kg pro Woche). Erhöhe um etwa 150–200 kcal, damit du keine Muskeln verlierst.</div>`;
       else status = `<div class="hint good">Dein Tempo passt (Ziel ${fmt(c.rateLo, 1)}–${fmt(c.rateHi, 1)} kg Abnahme pro Woche). Nichts ändern.</div>`;
     } else if (gt === "bulk") {
@@ -2061,6 +2109,7 @@ document.addEventListener("submit", async e => {
       const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", invited: "Eingeladen. Sie kann sich jetzt mit dieser E-Mail-Adresse registrieren, danach seid ihr automatisch befreundet. Schick ihr einfach den Link zur App.", invalid: "Bitte eine gültige E-Mail-Adresse eingeben.", limit: "Du hast schon 20 offene Einladungen.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
+    case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
