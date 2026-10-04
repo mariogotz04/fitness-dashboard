@@ -68,8 +68,8 @@ h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:.01em;margin:
 
 /* Tab-Leiste */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.tabs nav{max-width:620px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
-.tabs button{background:none;border:0;padding:8px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:11.5px;font-weight:500;cursor:pointer}
+.tabs nav{max-width:680px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr)}
+.tabs button{background:none;border:0;padding:8px 0 7px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:11px;min-width:0;font-weight:500;cursor:pointer}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .tabs button[aria-current="page"]{color:var(--accent)}
 
@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:00";
+const APP_VERSION = "04.10.2026 08:04";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -298,6 +298,7 @@ const ICON = {
   essen:'<svg viewBox="0 0 24 24"><path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10"/><path d="M17 21V3c-2.2 1.3-3.5 4-3.5 7.5 0 2 1.5 3.5 3.5 3.5"/></svg>',
   training:'<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>',
   koerper:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8.5 10a5 5 0 0 1 7 0"/><path d="M12 10l1.5-2"/></svg>',
+  freunde:'<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.3 3-5.2 6-5.2s5.4 1.9 6 5.2"/><circle cx="17" cy="9" r="2.6"/><path d="M16.2 14.4c2.5.2 4.3 1.9 4.8 4.6"/></svg>',
   routine:'<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   left:'<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -306,7 +307,7 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 };
 
-const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["koerper","Körper"],["routine","Erholung"]];
+const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["freunde","Freunde"],["koerper","Körper"],["routine","Erholung"]];
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
@@ -576,13 +577,13 @@ function render(){
   renderTop(); renderTabs();
   const v = $("#view");
   if (!loaded) { v.innerHTML = '<div class="empty">Daten werden geladen …</div>'; return; }
-  const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, koerper: viewKoerper, routine: viewRoutine})[tab]();
+  const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
   v.innerHTML = html;
   drawCharts();
 }
 function renderTop(){
   const dated = tab === "heute" || tab === "essen";
-  const titles = {heute: "Übersicht", essen: "Ernährung", training: "Training", koerper: "Gewicht & Körper", routine: "Erholung & Schlaf"};
+  const titles = {heute: "Übersicht", essen: "Ernährung", training: "Training", freunde: "Freunde", koerper: "Gewicht & Körper", routine: "Erholung & Schlaf"};
   let h = "";
   if (dated) {
     const rel = relDay(curDate);
@@ -851,11 +852,10 @@ function viewEssen(){
 /* ----- Training ----- */
 function templatesSorted(){ return Object.entries(S.templates).map(([id, t]) => Object.assign({id}, t)).sort((a, b) => (a.order || 0) - (b.order || 0)); }
 function viewTraining(){
-  const seg = `<div class="seg" role="group" aria-label="Ansicht">${[["kalender","Kalender"],["plaene","Pläne"],["uebungen","Übungen"],["freunde","Freunde"]].map(([k, l]) => `<button data-act="train-sub" data-sub="${k}" aria-pressed="${trainSub === k}">${l}</button>`).join("")}</div>`;
+  const seg = `<div class="seg" role="group" aria-label="Ansicht">${[["kalender","Kalender"],["plaene","Pläne"],["uebungen","Übungen"]].map(([k, l]) => `<button data-act="train-sub" data-sub="${k}" aria-pressed="${trainSub === k}">${l}</button>`).join("")}</div>`;
   let body = "";
   if (trainSub === "kalender") body = viewCalendar();
   else if (trainSub === "plaene") body = viewTemplates();
-  else if (trainSub === "freunde") body = viewFriends();
   else body = viewExercises();
   return seg + '<div style="height:12px"></div>' + body;
 }
@@ -1654,7 +1654,7 @@ document.addEventListener("submit", async e => {
       try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
       catch (err) { error = {message: String(err && err.message || err)}; }
       authBusy = "";
-      if (error) { authMsg = /database error|not_allowed/i.test(error.message) ? "Für diese E-Mail-Adresse gibt es noch keine Einladung. Bitte die Person, die dich eingeladen hat, deine E-Mail-Adresse unter Training → Freunde einzutragen." : "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
+      if (error) { authMsg = /database error|not_allowed/i.test(error.message) ? "Für diese E-Mail-Adresse gibt es noch keine Einladung. Bitte die Person, die dich eingeladen hat, deine E-Mail-Adresse im Bereich Freunde einzutragen." : "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
       if (data.session) { authMsg = ""; initStore(); break; }
       authMode = "login";
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
