@@ -4,12 +4,17 @@ name: Garmin-Abruf
 # Keine pull_request-Auslöser: Änderungsvorschläge von außen können diesen Ablauf nicht starten.
 on:
   workflow_dispatch:
+    inputs:
+      slot:
+        description: "Garmin-Konto (main, slot2, ...)"
+        required: false
+        default: "main"
 
 permissions:
   contents: read
 
 concurrency:
-  group: garmin-sync
+  group: garmin-sync-${{ inputs.slot || 'main' }}
   cancel-in-progress: false
 
 jobs:
@@ -28,9 +33,9 @@ jobs:
         run: pip install --quiet garminconnect==0.2.8 garth==0.4.47
       - name: Garmin-Daten übertragen
         env:
-          GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+          GARMIN_TOKENS: ${{ secrets[format('GARMIN_TOKENS_{0}', inputs.slot || 'main')] }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          SYNC_TOKEN: ${{ secrets[format('SYNC_TOKEN_{0}', inputs.slot || 'main')] }}
           PYTHONWARNINGS: ignore
         run: python garmin/garmin_sync.py --push --days 4
