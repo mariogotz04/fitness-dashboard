@@ -219,6 +219,7 @@ textarea.inp{min-height:84px;resize:vertical}
 .checkin .seg{background:var(--surface)}
 .checkin .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .tips .li{padding:9px 0}
+.restbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:2px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
 .av{width:36px;height:36px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
 .av.sm{width:22px;height:22px;font-size:12px}
 .feed{margin-bottom:12px}
@@ -257,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:30";
+const APP_VERSION = "04.10.2026 08:36";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -312,6 +313,7 @@ const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
 const GOALS = {cut: "Abnehmen (Cut)", bulk: "Muskeln aufbauen", maintain: "Gewicht halten"};
+const showRIR = () => cfg().showRIR === true;
 const goalType = () => GOALS[cfg().goalType] ? cfg().goalType : "maintain";
 const DEFAULTS = {kcal: 2400, p: 180, f: 70, c: 260, goalLo: 81, goalHi: 81, rateLo: 0.4, rateHi: 0.6, sleepGoal: 7.5, strengthPerWeek: 3, supplements: []};
 
@@ -902,7 +904,7 @@ function viewTemplates(){
   const tpls = templatesSorted();
   return (tpls.map(t => `<section class="card" style="margin-bottom:12px">
     <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
-    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)} · RIR ${esc(it.rir || "–")}${it.rest ? " · Pause " + esc(it.rest) : ""}</div></div></div>`).join("")}</div>
+    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir || "–") : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div></div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
@@ -1062,6 +1064,46 @@ function openReview(mon){
       ${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}
     </div></section>`;
   openSheet("Dein Wochenrückblick", body, `<button class="btn primary block" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
+}
+
+/* ----- Pausen-Timer im laufenden Training ----- */
+let rest = null, restTick = null;
+function restSeconds(txt){
+  const t = String(txt || "").toLowerCase().replace(",", ".");
+  const m = t.match(/(\d+(?:\.\d+)?)/); if (!m) return cfg().restDefault || 120;
+  const v = parseFloat(m[1]);
+  return Math.round(/s(ek|\b)/.test(t) && !/min/.test(t) ? v : v * 60);
+}
+function nextSetLabel(){
+  for (const e of (ws && ws.exercises) || []) { const i = (e.sets || []).findIndex(x => !x.done); if (i >= 0) return (exName(e.exId) || e.name) + " – Satz " + (i + 1); }
+  return null;
+}
+function startRest(ei){
+  const e = ws.exercises[ei]; const secs = restSeconds(e && e.target && e.target.rest);
+  rest = {end: Date.now() + secs * 1000};
+  clearInterval(restTick); restTick = setInterval(updateRestBar, 500); updateRestBar();
+  schedulePushRest(secs);
+}
+function schedulePushRest(secs){
+  if (pushState !== "on") return;
+  const nxt = nextSetLabel();
+  sb.rpc("start_rest_timer", {p_seconds: secs, p_title: "Pause vorbei 💪", p_body: nxt ? "Weiter mit " + nxt + "." : "Weiter geht's mit dem nächsten Satz."});
+}
+function restAdjust(d){
+  if (!rest) return; rest.end += d * 1000; updateRestBar();
+  schedulePushRest(Math.max(1, Math.round((rest.end - Date.now()) / 1000)));
+}
+function stopRest(cancel){
+  rest = null; clearInterval(restTick); restTick = null; updateRestBar();
+  if (cancel && mode === "db") sb.rpc("cancel_rest_timers");
+}
+function updateRestBar(){
+  const el = document.getElementById("restbar"); if (!el) return;
+  if (!rest) { el.hidden = true; return; }
+  const left = Math.ceil((rest.end - Date.now()) / 1000);
+  if (left <= 0) { rest = null; clearInterval(restTick); el.hidden = true; toast("Pause vorbei – nächster Satz! 💪"); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch(e) {} return; }
+  el.hidden = false;
+  el.innerHTML = `<span class="eyebrow">Pause</span><span class="mid num">${Math.floor(left / 60)}:${pad(left % 60)}</span><span class="row" style="gap:6px;margin-left:auto"><button class="btn" data-act="rest-plus">+30 s</button><button class="btn ghost" data-act="rest-skip">Überspringen</button></span>`;
 }
 
 /* ----- Körper ----- */
@@ -1452,7 +1494,7 @@ function renderWs(){
     let hint = "";
     if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft. Heute Gewicht erhöhen.</div>` : ""; }
     return `<div class="ex"><div class="spread"><div style="min-width:0"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
-      <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)} · RIR ${esc(e.target.rir || "–")}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
+      <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
       ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>${hint}
       <div class="sets"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span>
@@ -1465,7 +1507,8 @@ function renderWs(){
   if (!done) b += `<div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="wsadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="ws-ex-add">Hinzufügen</button></div>`;
   b += `<div class="field" style="margin-top:14px"><label for="wsn">Notiz</label><textarea class="inp" id="wsn" data-ws="note" ${done ? "readonly" : ""} placeholder="Wie lief's? Schmerzen, Energie, Technik …">${esc(ws.note || "")}</textarea></div>`;
   b += `<div class="row" style="margin-top:14px">${done ? `<button class="btn" data-act="ws-reopen">Bearbeiten</button>` : `<button class="btn primary" data-act="ws-finish">Training abschließen</button>`}<button class="btn ghost danger" data-act="ws-delete">Training löschen</button></div>`;
-  const sb = $("#sheet-b"); const st = sb.scrollTop; sb.innerHTML = b; sb.scrollTop = st;
+  const sb = $("#sheet-b"); const st = sb.scrollTop; sb.innerHTML = b + '<div id="restbar" class="restbar" hidden></div>'; sb.scrollTop = st;
+  updateRestBar();
 }
 
 /* ----- Übung ----- */
@@ -1507,7 +1550,7 @@ function renderTe(){
   $("#sheet-b").innerHTML = `<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
     <div class="section-title">Übungen</div>
     ${te.items.map((it, i) => `<div class="ex"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:2px;flex-wrap:nowrap"><button class="x" data-act="te-up" data-i="${i}" aria-label="Nach oben">↑</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>
-      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(4,minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}"></div><div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div><div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
+      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 4 : 3},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
     <div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="teadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="te-add">Hinzufügen</button></div>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="te-save">Plan speichern</button>${te.id ? '<button class="btn ghost danger" data-act="te-remove">Plan löschen</button>' : ""}</div>`;
 }
@@ -1533,6 +1576,7 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
     <div class="fields"><div class="field"><label for="gs">Krafteinheiten pro Woche</label><input class="inp num" id="gs" inputmode="numeric" value="${c.strengthPerWeek}"></div><div class="field"><label for="gsl">Schlafziel (h)</label><input class="inp num" id="gsl" inputmode="decimal" value="${fmt(c.sleepGoal, 1)}"></div></div>
+    <label class="row small"><input type="checkbox" id="grir" ${c.showRIR ? "checked" : ""}> RIR (Wiederholungen in Reserve) in Training und Plänen anzeigen</label>
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
     <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
@@ -1692,15 +1736,18 @@ document.addEventListener("click", async e => {
     case "ws-tick": { const s = ws.exercises[+D.ei].sets[+D.si]; s.done = !s.done;
       if (s.done) { const row = b.parentElement; const wi = row.querySelector(`[data-ws="w"][data-ei="${D.ei}"][data-si="${D.si}"]`), ri = row.querySelector(`[data-ws="r"][data-ei="${D.ei}"][data-si="${D.si}"]`);
         if (s.w === "" && wi && wi.placeholder && wi.placeholder !== "kg") s.w = num(wi.placeholder);
-        if (s.r === "" && ri && /^\d+$/.test(ri.placeholder)) s.r = +ri.placeholder; }
+        if (s.r === "" && ri && /^\d+$/.test(ri.placeholder)) s.r = +ri.placeholder;
+        startRest(+D.ei); }
       saveWs(); renderWs(); break; }
+    case "rest-plus": restAdjust(30); break;
+    case "rest-skip": stopRest(true); break;
     case "ws-set-add": { const ex = ws.exercises[+D.ei]; const prev = ex.sets[ex.sets.length - 1]; ex.sets.push({w: prev ? prev.w : "", r: "", done: false}); saveWs(); renderWs(); break; }
     case "ws-set-del": ws.exercises[+D.ei].sets.pop(); saveWs(); renderWs(); break;
     case "ws-ex-del": ws.exercises.splice(+D.ei, 1); saveWs(); renderWs(); break;
     case "ws-ex-add": { const v = $("#wsadd").value; if (!v) break; ws.exercises.push({exId: v, name: exName(v), sets: [{w: "", r: "", done: false}, {w: "", r: "", done: false}, {w: "", r: "", done: false}]}); saveWs(); renderWs(); break; }
-    case "ws-finish": ws.status = "done"; ws.end = new Date().toISOString(); saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); break;
+    case "ws-finish": stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
-    case "ws-delete": if (b.dataset.confirm) { const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
+    case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "open-ex": openExercise(D.id); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -1790,7 +1837,7 @@ document.addEventListener("submit", async e => {
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
+    case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked}); toast("Gespeichert."); closeSheet(); break; }
   }
 });
 
