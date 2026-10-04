@@ -219,6 +219,13 @@ textarea.inp{min-height:84px;resize:vertical}
 .checkin .seg{background:var(--surface)}
 .checkin .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .tips .li{padding:9px 0}
+.av{width:36px;height:36px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
+.av.sm{width:22px;height:22px;font-size:12px}
+.feed{margin-bottom:12px}
+.fhead{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+.ftitle{font-family:var(--display);font-size:22px;font-weight:600;margin-bottom:8px}
+.kudos{border:1px solid var(--line);background:var(--surface-2);border-radius:999px;padding:7px 14px;font-weight:600;cursor:pointer}
+.kudos[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 .plancat{font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:12px 0 4px}
 .planitem{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;margin-top:6px}
 .planitem .chk{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;flex:none;background:var(--surface);margin-top:1px}
@@ -250,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "03.10.2026 22:42";
+const APP_VERSION = "04.10.2026 07:57";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -355,6 +362,7 @@ async function initStore(){
   const {data: {session}} = await sb.auth.getSession();
   if (!session) { mode = "auth"; render(); return; }
   user = session.user; mode = "db";
+  sb.rpc("am_owner").then(({data}) => { isOwner = !!data; scheduleRender(); });
   try { const raw = localStorage.getItem("fd-cache"); if (raw) { const o = JSON.parse(raw); COLS.forEach(c => S[c] = o[c] || {}); loaded = true; render(); } } catch(e) {}
   await loadAll();
   if (COLS.every(c => !Object.keys(S[c]).length)) {
@@ -643,7 +651,7 @@ function viewHeute(){
   const taken = d.supps || {};
   const sl = d.sleep;
 
-  return `<div class="grid two">
+  return `${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
   ${recoverySection(curDate)}
   <section class="card">
     <div class="card-h"><h2>Kalorien</h2><button class="btn ghost" data-act="tab" data-tab="essen">Essen eintragen</button></div>
@@ -741,7 +749,7 @@ const QUOTES = [
   ["Ob du glaubst, du kannst es, oder ob du glaubst, du kannst es nicht: Du wirst recht behalten.", "Henry Ford"]
 ];
 function quoteOf(k){ const d = dateOf(k); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7; return QUOTES[n % QUOTES.length]; }
-let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false;
+let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false, isOwner = false;
 function recoverySection(k){
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), z = r ? zoneOf(r.score) : "none";
   const zc = {good: "var(--good)", warn: "var(--warn)", bad: "var(--bad)", none: "var(--muted)"}[z];
@@ -759,7 +767,7 @@ function recoverySection(k){
       ${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}
       ${dial(sl && sl.h ? sl.h / need : 0, "color-mix(in srgb, var(--accent) 55%, var(--good))", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
     </div>
-    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span><button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin jetzt abrufen"}</button></div>
+    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${isOwner ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin jetzt abrufen"}</button>` : ""}</div>
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}">${p.label} ${Math.round(p.score)}</span>`).join("")}</div>` : ""}
     ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
       <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
@@ -843,10 +851,11 @@ function viewEssen(){
 /* ----- Training ----- */
 function templatesSorted(){ return Object.entries(S.templates).map(([id, t]) => Object.assign({id}, t)).sort((a, b) => (a.order || 0) - (b.order || 0)); }
 function viewTraining(){
-  const seg = `<div class="seg" role="group" aria-label="Ansicht">${[["kalender","Kalender"],["plaene","Pläne"],["uebungen","Übungen"]].map(([k, l]) => `<button data-act="train-sub" data-sub="${k}" aria-pressed="${trainSub === k}">${l}</button>`).join("")}</div>`;
+  const seg = `<div class="seg" role="group" aria-label="Ansicht">${[["kalender","Kalender"],["plaene","Pläne"],["uebungen","Übungen"],["freunde","Freunde"]].map(([k, l]) => `<button data-act="train-sub" data-sub="${k}" aria-pressed="${trainSub === k}">${l}</button>`).join("")}</div>`;
   let body = "";
   if (trainSub === "kalender") body = viewCalendar();
   else if (trainSub === "plaene") body = viewTemplates();
+  else if (trainSub === "freunde") body = viewFriends();
   else body = viewExercises();
   return seg + '<div style="height:12px"></div>' + body;
 }
@@ -903,8 +912,55 @@ function viewExercises(){
   (order.map(g => `<div class="section-title">${esc(g)}</div><section class="card" style="padding-block:6px">${byG[g].sort((a, b) => a.name.localeCompare(b.name, "de")).map(e => {
       const h = exHistory(e.id); const last = h[h.length - 1];
       return `<button class="pick" data-act="open-ex" data-id="${e.id}"><span style="flex:1;min-width:0"><span class="title" style="display:block;font-weight:500">${esc(e.name)}</span><span class="sub small muted">${esc(e.equipment || "")}${last ? (e.equipment ? " · " : "") + "zuletzt " + setsStr(last.sets.slice(0, 3)) : ""}</span></span>${h.length ? `<span class="chip">${h.length}×</span>` : ""}</button>`;
-    }).join("")}</section>`).join("") || '<section class="card"><div class="empty">Das Register ist noch leer.</div></section>') +
+    }).join("")}</section>`).join("") || '<section class="card"><div class="empty">Das Register ist noch leer.${isOwner ? "" : `<div style="margin-top:10px"><button class="btn primary" data-act="starter-ex">Übungsregister von Mario übernehmen</button></div>`}</div></section>') +
   `<div style="height:12px"></div><button class="btn block" data-act="edit-ex" data-id="">+ Übung hinzufügen</button>`;
+}
+
+/* ----- Freunde ----- */
+let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: ""};
+async function loadFriends(force){
+  if (FR.busy || (!force && Date.now() - FR.loaded < 60000)) return;
+  FR.busy = true;
+  try {
+    const [f, l, n] = await Promise.all([sb.rpc("friend_feed", {p_days: 21}), sb.rpc("my_friends"), sb.rpc("my_name")]);
+    FR.feed = f.data || {items: [], steps: []}; FR.friends = l.data || []; FR.name = n.data || "";
+  } catch(e) { FR.msg = "Freunde konnten nicht geladen werden. Prüfe deine Internetverbindung."; }
+  FR.loaded = Date.now(); FR.busy = false; scheduleRender();
+}
+const initial = n => esc((n || "?").trim().charAt(0).toUpperCase());
+function viewFriends(){
+  if (!FR.loaded) { loadFriends(); return '<section class="card"><div class="empty">Freunde werden geladen …</div></section>'; }
+  if (Date.now() - FR.loaded > 60000) loadFriends();
+  const inc = FR.friends.filter(f => f.status === "pending" && f.incoming);
+  const out = FR.friends.filter(f => f.status === "pending" && !f.incoming);
+  const acc = FR.friends.filter(f => f.status === "accepted");
+  const feed = FR.feed || {items: [], steps: []};
+  let h = "";
+  if (FR.msg) h += `<div class="banner">${esc(FR.msg)}</div>`;
+  if (!FR.name) h += `<section class="card" style="margin-bottom:12px"><form class="stack" data-form="myname"><div class="eyebrow">Dein Name im Feed</div><div class="row" style="flex-wrap:nowrap"><input class="inp" id="mn" placeholder="z. B. Mario" required style="flex:1"><button class="btn primary" type="submit">Speichern</button></div></form></section>`;
+  if (inc.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:6px">Freundschaftsanfragen</div><div class="list">${inc.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn primary" data-act="fr-accept" data-id="${f.user_id}">Annehmen</button><button class="x" data-act="fr-decline" data-id="${f.user_id}" aria-label="Ablehnen">×</button></div>`).join("")}</div></section>`;
+  const steps = (feed.steps || []).filter(x => x.me || acc.length);
+  if (acc.length && steps.length) h += `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schritte heute</div><div class="stack" style="gap:8px">${(() => { const mx = Math.max(10000, ...steps.map(x => x.steps || 0)); return steps.sort((a, b) => (b.steps || 0) - (a.steps || 0)).map(x => `<div class="macro" style="grid-template-columns:96px 1fr auto"><span class="lbl"><span class="av sm">${initial(x.name)}</span>${esc(x.me ? "Du" : x.name)}</span><div class="bar"><i style="width:${(x.steps || 0) / mx * 100}%"></i></div><span class="num small"><b>${x.steps ? fmt(x.steps) : "–"}</b></span></div>`).join(""); })()}</div></section>`;
+  h += `<div class="section-title">Aktivitäten</div>`;
+  h += (feed.items || []).map(it => {
+    const act = it.kind === "activity";
+    const meta = [fmtMid(it.date), it.minutes ? it.minutes + " min" : ""].filter(Boolean).join(" · ");
+    const ex = (it.exercises || []);
+    return `<article class="card feed"><div class="fhead"><span class="av">${initial(it.name)}</span><div class="grow"><b>${esc(it.me ? "Du" : it.name)}</b><div class="small muted">${esc(meta)}</div></div></div>
+      <div class="ftitle">${esc(it.title || (act ? "Sport" : "Training"))}</div>
+      ${act ? "" : `<div class="kv" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div><span class="eyebrow">Übungen</span><div class="v">${ex.length}</div></div><div><span class="eyebrow">Sätze</span><div class="v">${it.sets}</div></div><div><span class="eyebrow">Bewegt</span><div class="v">${fmt(it.volume)}<span class="unit">kg</span></div></div></div>
+      <div class="small ink2" style="margin-top:8px">${esc(ex.slice(0, 4).join(" · "))}${ex.length > 4 ? " · +" + (ex.length - 4) : ""}</div>`}
+      <div class="row" style="margin-top:10px">${it.me ? `<span class="small muted">${it.kudos ? it.kudos + "× Respekt bekommen 💪" : ""}</span>` : `<button class="kudos" data-act="kudos" data-owner="${it.owner}" data-id="${esc(it.id)}" aria-pressed="${it.mykudos}">💪 Respekt${it.kudos ? " · " + it.kudos : ""}</button>`}</div>
+    </article>`;
+  }).join("") || '<section class="card"><div class="empty">In den letzten drei Wochen gibt es noch keine Aktivitäten.</div></section>';
+  h += `<div class="section-title">Freunde</div><section class="card">
+    <div class="list">${acc.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn ghost danger" data-act="fr-remove" data-id="${f.user_id}">Entfernen</button></div>`).join("")}
+    ${out.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.email)}</div><div class="sub">Anfrage gesendet, wartet auf Bestätigung</div></div><button class="x" data-act="fr-remove" data-id="${f.user_id}" aria-label="Anfrage zurückziehen">×</button></div>`).join("")}
+    ${!acc.length && !out.length ? '<p class="small muted" style="margin:0 0 6px">Noch keine Freunde. Füge jemanden über die E-Mail-Adresse hinzu, mit der die Person in der App angemeldet ist.</p>' : ""}</div>
+    <form class="row" data-form="addfriend" style="margin-top:10px;flex-wrap:nowrap"><input class="inp" type="email" id="fe" placeholder="E-Mail deines Freundes" required style="flex:1"><button class="btn primary" type="submit">Hinzufügen</button></form>
+    <p class="small muted" style="margin:8px 0 0">Freunde sehen deine Trainings, Sport-Einheiten und Schritte. Ernährung, Gewicht und Schlaf bleiben privat.</p>
+  </section>`;
+  return h;
 }
 
 /* ----- Körper ----- */
@@ -1445,7 +1501,7 @@ document.addEventListener("click", async e => {
   const a = b.dataset.act, D = b.dataset;
   switch (a) {
     case "auth-mode": authMode = authMode === "signup" ? "login" : "signup"; authMsg = ""; render(); break;
-    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; closeSheet(); render(); break;
+    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: ""}; isOwner = false; closeSheet(); render(); break;
     case "tab": tab = D.tab; try { history.replaceState(null, "", "#" + tab); } catch(_) {} window.scrollTo(0, 0); render(); break;
     case "day-prev": curDate = addDays(curDate, -1); render(); break;
     case "day-next": curDate = addDays(curDate, 1); render(); break;
@@ -1479,6 +1535,10 @@ document.addEventListener("click", async e => {
     case "ci-pick": { const form = b.closest("form"); const k = form.dataset.date; ciSel[k] = ciSel[k] || {}; ciSel[k][D.k] = +D.v; b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); break; }
     case "ci-reset": { const d = getDay(D.date); delete d.checkin; saveDay(D.date, d); break; }
     case "tips-ai": runTipsAI(D.date); break;
+    case "fr-accept": case "fr-decline": await sb.rpc("respond_friend", {p_user: D.id, p_accept: a === "fr-accept"}); toast(a === "fr-accept" ? "Ihr seid jetzt befreundet." : "Anfrage abgelehnt."); loadFriends(true); break;
+    case "fr-remove": if (b.dataset.confirm) { await sb.rpc("remove_friend", {p_user: D.id}); loadFriends(true); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich?"; } break;
+    case "kudos": { b.disabled = true; const {data: n} = await sb.rpc("toggle_kudos", {p_owner: D.owner, p_wid: D.id}); const it = (FR.feed.items || []).find(x => x.owner === D.owner && x.id === D.id); if (it && n >= 0) { it.mykudos = !it.mykudos; it.kudos = n; } render(); break; }
+    case "starter-ex": { const {data: n} = await sb.rpc("copy_starter_exercises"); toast((n || 0) + " Übungen übernommen."); await loadAll(); break; }
     case "garmin-now": {
       garminBusy = true; render();
       const {data: res, error} = await sb.rpc("trigger_garmin_sync");
@@ -1584,11 +1644,17 @@ document.addEventListener("submit", async e => {
       try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
       catch (err) { error = {message: String(err && err.message || err)}; }
       authBusy = "";
-      if (error) { authMsg = "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
+      if (error) { authMsg = /database error|not_allowed/i.test(error.message) ? "Für diese E-Mail-Adresse ist die Registrierung nicht freigegeben. Frag Mario, ob er dich freischaltet." : "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
       if (data.session) { authMsg = ""; initStore(); break; }
       authMode = "login";
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
       render(); return;
+    }
+    case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; toast("Gespeichert."); loadFriends(true); break; }
+    case "addfriend": {
+      const em = v("fe").trim(); const {data: r, error} = await sb.rpc("add_friend", {p_email: em});
+      const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", not_found: "Unter dieser E-Mail-Adresse gibt es noch kein Konto in der App.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
+      toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "not_found") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gh")) || DEFAULTS.goalHi, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }
