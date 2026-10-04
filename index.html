@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:04";
+const APP_VERSION = "04.10.2026 08:12";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -469,16 +469,16 @@ function baseline(k, field, days = 14){
 function recoveryOf(k){
   const c = cfg(), d = S.days[k] || {}, sl = d.sleep, ci = d.checkin;
   const parts = [];
-  if (sl && num(sl.score) > 0) parts.push({key: "sleep", label: "Schlaf", score: clamp(num(sl.score), 0, 100), w: 0.4});
-  else if (sl && sl.h) { let s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; if (sl.q) s *= 0.85 + 0.03 * sl.q; parts.push({key: "sleep", label: "Schlaf", score: clamp(s, 0, 100), w: 0.4}); }
-  if (sl && num(sl.bb) > 0) parts.push({key: "bb", label: "Body Battery", score: clamp(num(sl.bb), 0, 100), w: 0.25});
+  if (sl && num(sl.score) > 0) parts.push({key: "sleep", label: "Schlafwert", disp: fmt(num(sl.score)), score: clamp(num(sl.score), 0, 100), w: 0.4});
+  else if (sl && sl.h) { let s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; if (sl.q) s *= 0.85 + 0.03 * sl.q; parts.push({key: "sleep", label: "Schlaf", disp: fmt(sl.h, 1) + " h", score: clamp(s, 0, 100), w: 0.4}); }
+  if (sl && num(sl.bb) > 0) parts.push({key: "bb", label: "Body Battery", disp: fmt(num(sl.bb)), score: clamp(num(sl.bb), 0, 100), w: 0.25});
   const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
-  if (sl && num(sl.hrv) > 0 && hrvB) parts.push({key: "hrv", label: "HRV", score: clamp(50 + (num(sl.hrv) / hrvB - 1) * 150, 0, 100), w: 0.3});
-  if (sl && num(sl.rhr) > 0 && rhrB) parts.push({key: "rhr", label: "Ruhepuls", score: clamp(50 + (1 - num(sl.rhr) / rhrB) * 300, 0, 100), w: 0.15});
-  if (ci) parts.push({key: "feel", label: "Gefühl", score: ((ci.energy - 1) / 4 * 0.6 + (5 - ci.soreness) / 4 * 0.4) * 100, w: 0.3});
+  if (sl && num(sl.hrv) > 0 && hrvB) parts.push({key: "hrv", label: "HRV", disp: fmt(num(sl.hrv)) + " ms (Ø " + fmt(hrvB) + ")", score: clamp(50 + (num(sl.hrv) / hrvB - 1) * 150, 0, 100), w: 0.3});
+  if (sl && num(sl.rhr) > 0 && rhrB) parts.push({key: "rhr", label: "Ruhepuls", disp: fmt(num(sl.rhr)) + " (Ø " + fmt(rhrB) + ")", score: clamp(50 + (1 - num(sl.rhr) / rhrB) * 300, 0, 100), w: 0.15});
+  if (ci) parts.push({key: "feel", label: "Gefühl", disp: "Energie " + ci.energy + " · Kater " + ci.soreness, score: ((ci.energy - 1) / 4 * 0.6 + (5 - ci.soreness) / 4 * 0.4) * 100, w: 0.3});
   if (!parts.length) return null;
   const ys = strainOf(addDays(k, -1));
-  parts.push({key: "load", label: "Vortag", score: clamp(100 - Math.max(0, ys - 8) * 7, 0, 100), w: 0.15});
+  parts.push({key: "load", label: "Belastung gestern", disp: fmt(ys, 1) + " / 21", score: clamp(100 - Math.max(0, ys - 8) * 7, 0, 100), w: 0.15});
   const wsum = parts.reduce((a, p) => a + p.w, 0);
   const score = Math.round(parts.reduce((a, p) => a + p.score * p.w, 0) / wsum);
   return {score, parts, yStrain: ys};
@@ -769,7 +769,7 @@ function recoverySection(k){
       ${dial(sl && sl.h ? sl.h / need : 0, "color-mix(in srgb, var(--accent) 55%, var(--good))", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
     </div>
     <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${isOwner ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>
-    ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}">${p.label} ${Math.round(p.score)}</span>`).join("")}</div>` : ""}
+    ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}" title="Wirkt mit ${Math.round(p.score)} von 100 Punkten auf deine Erholung">${p.label} ${p.disp}</span>`).join("")}</div>` : ""}
     ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
       <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
       <div class="fields">
