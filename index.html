@@ -258,7 +258,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 08:53";
+const APP_VERSION = "04.10.2026 08:58";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1116,7 +1116,7 @@ function aiVoice(){
   const base = (($("#aiq") || {}).value || af.aiText || "").trim();
   recog.onresult = ev => { let t = ""; for (const r of ev.results) t += r[0].transcript; af.aiText = (base ? base + " " : "") + t; const el = $("#aiq"); if (el) el.value = af.aiText; };
   recog.onerror = ev => { af.listening = false; af.aiErr = ev.error === "not-allowed" || ev.error === "service-not-allowed" ? "Spracheingabe ist hier nicht erlaubt. Tippe im Textfeld auf das Mikrofon deiner Tastatur." : "Ich habe nichts verstanden. Versuch es noch einmal."; renderAddFood(); };
-  recog.onend = () => { const was = af && af.listening; if (!af) return; af.listening = false; renderAddFood(); if (was && af.aiText.trim() && !af.aiErr) runAiFood(af.aiText); };
+  recog.onend = () => { const was = af && af.listening; if (!af) return; af.listening = false; renderAddFood(); if (was && af.aiText.trim() && !af.aiErr) runQuickFood(af.aiText); };
   af.listening = true; af.aiErr = ""; renderAddFood();
   try { recog.start(); } catch(e) { af.listening = false; renderAddFood(); }
 }
@@ -1144,6 +1144,120 @@ async function runAiFood(text){
     return;
   }
   fail("Die KI hat zu lange gebraucht. Versuch es noch einmal.");
+}
+
+/* ----- Schnelleingabe ohne KI: "500 g Skyr und eine Banane" → Einträge ----- */
+/* Richtwerte pro 100 g (Getränke pro 100 ml): [Name, Suchbegriffe, kcal, Protein, Kohlenhydrate, Fett, Stückgewicht g] */
+const BASE_FOODS = [
+  ["Banane","banane,bananen",93,1.2,20,0.2,120],["Apfel","apfel,äpfel",54,0.3,11.4,0.2,150],["Birne","birne,birnen",55,0.5,12.4,0.3,160],
+  ["Orange","orange,orangen,apfelsine",47,1,9,0.2,150],["Mandarine","mandarine,mandarinen,clementine",50,0.7,10,0.3,70],["Kiwi","kiwi,kiwis",61,1.1,10.3,0.5,75],
+  ["Erdbeeren","erdbeeren,erdbeere",32,0.7,5.5,0.4,15],["Heidelbeeren","heidelbeeren,blaubeeren",42,0.6,7.4,0.6,0],["Beeren (TK)","beeren,tk-beeren,tk beeren,beerenmischung,himbeeren",50,1,9,0.5,0],
+  ["Weintrauben","weintrauben,trauben",70,0.7,15.6,0.3,0],["Ananas","ananas",55,0.5,12,0.2,0],["Mango","mango",62,0.6,13,0.4,300],["Wassermelone","wassermelone,melone",30,0.6,7.5,0.2,0],
+  ["Avocado","avocado",160,2,1.9,15,150],["Tomate","tomate,tomaten",18,0.9,2.6,0.2,80],["Gurke","gurke,gurken",12,0.6,1.8,0.2,400],["Paprika","paprika",29,1,4.6,0.4,160],
+  ["Karotte","karotte,karotten,möhre,möhren",36,0.9,7,0.2,70],["Brokkoli","brokkoli,broccoli",34,3.8,2.7,0.4,0],["Blumenkohl","blumenkohl",25,2,2.3,0.3,0],["Zucchini","zucchini",19,1.6,2,0.4,250],
+  ["Spinat","spinat",21,2.9,0.6,0.4,0],["Salat","salat,blattsalat,eisbergsalat",15,1.3,1.2,0.2,0],["Zwiebel","zwiebel,zwiebeln",33,1.2,5.2,0.3,80],["Champignons","champignons,pilze",21,3,0.6,0.3,0],
+  ["Mais (Dose)","mais",85,2.9,15.7,1.2,0],["Erbsen","erbsen",81,5.4,14,0.4,0],["Kartoffeln gekocht","kartoffeln,kartoffel,salzkartoffeln",72,2,15,0.1,90],["Süßkartoffel","süßkartoffel,süßkartoffeln",86,1.6,20,0.1,250],
+  ["Pommes frites","pommes,pommes frites",290,3.4,36,15,150],["Reis gekocht","reis,reis gekocht,basmatireis",130,2.7,28,0.3,0],["Reis roh","reis roh,reis ungekocht",350,7,78,0.6,0],
+  ["Nudeln gekocht","nudeln,pasta,spaghetti,penne,nudeln gekocht",150,5.3,29,0.9,0],["Nudeln roh","nudeln roh,pasta roh,nudeln ungekocht",355,12,71,1.5,0],
+  ["Haferflocken","haferflocken,hafer,oats",372,13.5,58.7,7,0],["Müsli","müsli,granola",360,9,62,6,0],["Cornflakes","cornflakes",370,7,83,1,0],
+  ["Mischbrot","brot,mischbrot,brotscheibe",230,7,45,1.5,50],["Vollkornbrot","vollkornbrot",220,7.5,39,1.5,50],["Dinkelbrot","dinkelbrot,dinkelvollkornbrot",230,9,42,2.5,50],
+  ["Brötchen","brötchen,semmel,weckle",270,9,53,2,60],["Toast","toast,toastbrot",260,8,48,4,25],["Wrap","wrap,tortilla,wraps",300,8,50,7,60],["Knäckebrot","knäckebrot",340,10,63,2,10],
+  ["Ei","ei,eier,spiegelei,rührei,gekochtes ei",155,13,1,11,60],["Eiklar","eiklar,eiweiß",48,11,0.7,0.2,33],["Skyr","skyr,skyr natur",63,11,4,0.2,150],
+  ["Magerquark","magerquark,quark",67,12,4,0.2,250],["Joghurt natur","joghurt,naturjoghurt,jogurt",63,3.4,4.5,3.5,150],["Griechischer Joghurt","griechischer joghurt,greek yogurt",120,4,4,10,150],
+  ["Körniger Frischkäse","körniger frischkäse,hüttenkäse,cottage cheese",98,12.5,3,4.3,200],["Milch 1,5 %","milch,fettarme milch",47,3.4,4.8,1.5,200],["Vollmilch","vollmilch",64,3.3,4.8,3.6,200],
+  ["Mandelmilch ungesüßt","mandelmilch",13,0.4,0,1.1,200],["Hafermilch","hafermilch,haferdrink",46,1,6.5,1.5,200],["Gouda","käse,gouda,käsescheibe",356,25,0,28,25],
+  ["Käse light","käse light,light käse,leichter käse",270,30,0,16,20],["Mozzarella","mozzarella",250,18,1,19,125],["Feta","feta,schafskäse",260,17,0.5,21,0],["Parmesan","parmesan",400,35,0,28,0],
+  ["Frischkäse","frischkäse",250,6,3.5,24,0],["Butter","butter",740,0.7,0.6,82,10],["Olivenöl","olivenöl,öl,rapsöl",884,0,0,100,10],["Erdnussbutter","erdnussbutter,erdnussmus,peanut butter",600,25,13,50,15],
+  ["Honig","honig",304,0.3,82,0,7],["Marmelade","marmelade,konfitüre",250,0.4,60,0.1,10],["Nuss-Nougat-Creme","nutella,nuss-nougat-creme,schokocreme",539,6,57,31,10],["Zucker","zucker",400,0,100,0,4],
+  ["Hähnchenbrust","hähnchenbrust,hähnchen,hühnchen,chicken,hühnerbrust,hähnchenfilet",165,31,0,3.6,150],["Putenbrust","putenbrust,pute,putenfilet",107,24,0,1,150],
+  ["Hackfleisch gemischt","hackfleisch,hack,gehacktes,rinderhack",260,18,0,21,0],["Rindersteak","steak,rindersteak,rumpsteak",140,22,0,5.5,200],["Schnitzel paniert","schnitzel,wiener schnitzel,schweineschnitzel",240,18,12,13,180],
+  ["Schweinebraten","schweinebraten,braten,krustenbraten",210,28,0,11,150],["Bratwurst","bratwurst,würstchen gebraten",300,13,1,27,100],["Wiener Würstchen","wiener,würstchen,wienerle,frankfurter",270,13,1,24,50],
+  ["Leberkäse","leberkäse,fleischkäse",290,12,1,27,100],["Salami","salami",370,23,1,30,10],["Kochschinken","kochschinken,schinken",110,20,1,3,20],["Schwarzwälder Schinken","schwarzwälder schinken,rohschinken",210,27,0.5,11,15],
+  ["Lachs","lachs,lachsfilet",200,20,0,13,125],["Thunfisch (Dose)","thunfisch",110,25,0,1,130],["Garnelen","garnelen,shrimps,crevetten",85,18,0,1,0],["Tofu","tofu",120,13,2,7,0],
+  ["Kichererbsen (Dose)","kichererbsen",120,7,15,2.5,0],["Linsen gekocht","linsen",116,9,20,0.4,0],["Kidneybohnen","kidneybohnen,bohnen",100,7,14,0.5,0],
+  ["Mandeln","mandeln",610,21,6,53,1.2],["Walnüsse","walnüsse,walnuss",680,15,7,65,5],["Erdnüsse","erdnüsse",580,26,10,48,1],["Cashews","cashews,cashewkerne",580,18,30,44,1.5],
+  ["Zartbitterschokolade","zartbitterschokolade,dunkle schokolade,bitterschokolade",580,8,34,42,10],["Vollmilchschokolade","schokolade,vollmilchschokolade,milchschokolade",540,7,57,31,10],
+  ["Chips","chips,kartoffelchips",540,6,50,34,0],["Gummibärchen","gummibärchen,haribo,fruchtgummi",340,7,77,0,2],["Proteinriegel","proteinriegel,eiweißriegel,protein bar",340,33,30,10,60],
+  ["Whey Protein","whey,proteinpulver,eiweißpulver,proteinshake,eiweißshake",380,75,8,6,30],["Pizza","pizza",260,11,30,10,350],["Döner","döner,dönerkebab,kebab",215,12,20,10,400],
+  ["Burger","burger,hamburger,cheeseburger",250,13,24,11,200],["Lasagne","lasagne",150,8,11,8,350],["Spaghetti Bolognese","bolognese,spaghetti bolognese",140,7,18,4.5,400],
+  ["Kartoffelsalat","kartoffelsalat",140,2,13,9,0],["Kartoffelknödel","knödel,knoedel,klöße,kloesse,kloß,kartoffelknödel",108,2.3,22,0.6,100],["Semmelknödel","semmelknödel,semmelknoedel",210,7,36,4,100],["Spätzle","spätzle,spaetzle,käsespätzle",160,6,30,2,0],["Bratensoße","soße,sosse,bratensoße,bratensosse,sauce",50,1,4,3,0],["Gemüse gemischt","gemüse,gemuese,mischgemüse",35,2,5,0.4,0],["Cola","cola,coca cola",42,0,10.6,0,330],["Cola Zero","cola zero,coke zero,cola light",0.3,0,0,0,330],
+  ["Orangensaft","orangensaft,o-saft,saft",45,0.7,10,0.2,200],["Bier","bier",43,0.5,3,0,500],["Apfelschorle","apfelschorle,schorle",24,0,5.5,0,330],
+  ["Kaffee schwarz","kaffee,espresso,kaffee schwarz",2,0.2,0.3,0,200],["Cappuccino","cappuccino",40,2.2,3.2,2,200],["Latte Macchiato","latte macchiato,milchkaffee,latte",50,3,4,2.4,300]
+];
+const normT = s => String(s || "").toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+const NUMW = {ein: 1, eine: 1, einen: 1, einem: 1, einer: 1, zwei: 2, drei: 3, vier: 4, fuenf: 5, sechs: 6, sieben: 7, acht: 8, zehn: 10, halb: 0.5, halbe: 0.5, halben: 0.5, anderthalb: 1.5, eineinhalb: 1.5};
+const UNIT_RE = "kg|kilo|g|gr|gramm|ml|l|liter|stueck|stk|scheiben|scheibe|portionen|portion|el|essloeffel|tl|teeloeffel|tassen|tasse|glaeser|glas|becher|dosen|dose|handvoll|messloeffel|scoops|scoop|riegel|flaschen|flasche|kugeln|kugel";
+const FILLER = /\b(ich|hab|habe|hatte|gerade|eben|heute|morgens|mittags|abends|gegessen|getrunken|gefruehstueckt|noch|dazu|zum|zur|fruehstueck|mittagessen|abendessen|snack|so|ca|circa|etwa|ungefaehr|bisschen|etwas|von|vom|aus|mit|dem|den|der|die|das|und)\b/g;
+function parseFoodText(text){
+  return String(text || "").split(/,(?!\d)|;|\n|\+|\bund\b|\bmit\b|\bsowie\b|\bplus\b/i).map(part => {
+    let t = normT(part); if (!t) return null;
+    const m = t.match(new RegExp("(?:^|\\s)(\\d+(?:[ .]\\d+)?|" + Object.keys(NUMW).join("|") + ")\\s*(" + UNIT_RE + ")?(?=\\s|$)"));
+    let n = null, unit = "";
+    if (m) { n = NUMW[m[1]] != null ? NUMW[m[1]] : parseFloat(m[1].replace(" ", ".")); unit = m[2] || ""; t = (t.slice(0, m.index) + " " + t.slice(m.index + m[0].length)); }
+    else { const u = t.match(new RegExp("(?:^|\\s)(" + UNIT_RE + ")(?=\\s|$)")); if (u) { unit = u[1]; t = t.replace(u[0], " "); } }
+    const name = t.replace(FILLER, " ").replace(/\s+/g, " ").trim();
+    return name ? {raw: part.trim(), name, n: n == null ? 1 : n, unit, hasNum: n != null} : null;
+  }).filter(Boolean);
+}
+function matchFood(name){
+  const q = normT(name), qw = q.split(" ");
+  let best = null, bs = 0;
+  const consider = (cand, keys) => keys.forEach(k => { k = normT(k); if (!k) return; let sc = 0;
+    if (q === k) sc = 100; else if ((" " + q + " ").includes(" " + k + " ")) sc = 70 + k.length; else if (k.includes(q) && q.length >= 4) sc = 50 + q.length; else if (qw.every(w => k.includes(w)) && q.length >= 4) sc = 45;
+    if (sc > bs) { bs = sc; best = cand; } });
+  BASE_FOODS.forEach(b => consider({src: "base", name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], piece: b[6]}, b[1].split(",")));
+  const baseBest = best, baseScore = bs;
+  Object.entries(S.foods).forEach(([id, f]) => consider({src: "mine", id, name: f.name, kcal: f.kcal, p: f.p, c: f.c, f: f.f, piece: f.portion}, [f.name]));
+  if (best && best.src === "mine" && baseBest && baseScore >= bs - 5 && baseScore >= 70) { best = baseBest; bs = baseScore; }
+  return bs >= 45 ? best : null;
+}
+async function offLookup(name){
+  try {
+    const u = "https://de.openfoodfacts.org/cgi/search.pl?search_terms=" + encodeURIComponent(name) + "&search_simple=1&action=process&json=1&page_size=12&sort_by=unique_scans_n&fields=product_name_de,product_name,brands,nutriments,serving_quantity";
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(u, {signal: ctl.signal}); clearTimeout(tm); if (!r.ok) return null;
+    const d = await r.json(); const qw = normT(name).split(" ");
+    const ok = (d.products || []).filter(p => { const n = p.nutriments || {}; return n["energy-kcal_100g"] != null && n.proteins_100g != null && (p.product_name_de || p.product_name); });
+    const pick = ok.find(p => qw.every(w => normT(p.product_name_de || p.product_name).includes(w))) || ok[0];
+    if (!pick) return null;
+    const n = pick.nutriments, nm = (pick.product_name_de || pick.product_name).trim() + (pick.brands ? " (" + String(pick.brands).split(",")[0].trim() + ")" : "");
+    return {src: "off", name: nm, kcal: +n["energy-kcal_100g"], p: +(n.proteins_100g || 0), c: +(n.carbohydrates_100g || 0), f: +(n.fat_100g || 0), piece: +(pick.serving_quantity || 0) || null};
+  } catch(e) { return null; }
+}
+function gramsFor(it, food){
+  const u = it.unit, n = it.n, piece = food.piece || 100;
+  if (u === "g" || u === "gr" || u === "gramm" || u === "ml") return n;
+  if (u === "kg" || u === "kilo" || u === "l" || u === "liter") return n * 1000;
+  if (u === "el" || u === "essloeffel") return n * (food.f > 80 ? 10 : 15);
+  if (u === "tl" || u === "teeloeffel") return n * 5;
+  if (u.startsWith("tasse")) return n * 200;
+  if (u.startsWith("glas") || u.startsWith("glaes")) return n * 250;
+  if (u.startsWith("flasche")) return n * 500;
+  if (u === "handvoll") return n * 30;
+  if (u.startsWith("messloeffel") || u.startsWith("scoop")) return n * 30;
+  if (u.startsWith("scheibe")) return n * (food.piece && food.piece <= 60 ? food.piece : 30);
+  return n * piece;
+}
+async function runQuickFood(text){
+  if (!af || af.aiBusy) return;
+  text = String(text || "").trim(); if (text.length < 2) { af.aiErr = "Schreib kurz, was du gegessen hast, z. B. „500 g Skyr und eine Banane“."; renderAddFood(); return; }
+  af.aiText = text; af.aiBusy = true; af.aiErr = ""; renderAddFood();
+  const meal = af.meal, date = curDate, parts = parseFoodText(text), items = [], missing = [];
+  for (const it of parts) {
+    let food = matchFood(it.name);
+    if (!food) { food = await offLookup(it.name); if (food) { const id = uid("f"); put("foods", id, {name: food.name, kcal: Math.round(food.kcal), p: food.p, c: food.c, f: food.f, portion: food.piece || undefined, uses: 1, src: "openfoodfacts"}); } }
+    if (!food) { missing.push(it.raw); continue; }
+    const g = Math.round(gramsFor(it, food)), k = g / 100;
+    items.push({name: food.name, g, kcal: Math.round(food.kcal * k), p: Math.round(food.p * k * 10) / 10, c: Math.round(food.c * k * 10) / 10, f: Math.round(food.f * k * 10) / 10, src: "schnell"});
+  }
+  if (!af) return;
+  if (!items.length) { af.aiBusy = false; af.aiErr = "Dazu habe ich nichts gefunden. Nenne das Lebensmittel etwas einfacher, z. B. „200 g Hähnchen“, oder leg es unter „Neues Lebensmittel“ an."; renderAddFood(); return; }
+  const d = getDay(date); d.meals = d.meals || {}; d.meals[meal] = (d.meals[meal] || []).concat(items); saveDay(date, d);
+  const kc = items.reduce((a, x) => a + x.kcal, 0), pr = items.reduce((a, x) => a + x.p, 0);
+  af.aiBusy = false; af.aiText = "";
+  if (missing.length) { af.aiErr = "Eingetragen: " + items.map(x => x.name + " " + fmt(x.g) + " g").join(", ") + ". Nicht gefunden: " + missing.join(", ") + "."; renderAddFood(); return; }
+  closeSheet();
+  toast(items.map(x => x.name + " " + fmt(x.g) + " g").join(", ") + " · " + fmt(kc) + " kcal, " + fmt(pr) + " g Protein");
 }
 
 /* ----- Körper ----- */
@@ -1418,22 +1532,22 @@ function foodsSorted(q){
   return all.filter(f => !ql || f.name.toLowerCase().includes(ql)).sort((a, b) => (b.uses || 0) - (a.uses || 0) || a.name.localeCompare(b.name, "de"));
 }
 function openAddFood(meal){
-  af = {meal, mode: "suchen", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
+  af = {meal, mode: "ki", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
   const label = MEALS.find(m => m[0] === meal)[1];
   openSheet(label + " hinzufügen", "", null, () => { if (af && af.ctl) af.ctl.abort(); af = null; });
   renderAddFood();
 }
 function renderAddFood(){
   if (!af) return;
-  const tabs = [["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Schnell"],["neu","Neues Lebensmittel"]]);
+  const tabs = [["ki","Schnelleingabe"],["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Manuell"],["neu","Neues Lebensmittel"]]);
   let b = `<div class="seg" role="group" aria-label="Art">${tabs.map(([k, l]) => `<button data-act="af-mode" data-m="${k}" aria-pressed="${af.mode === k}">${l}</button>`).join("")}</div><div style="height:14px"></div>`;
   if (af.mode === "ki") {
     const canTalk = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     b += `<form class="stack" data-form="ai-food">
       <div class="field"><label for="aiq">Was hast du gegessen?</label><textarea class="inp" id="aiq" placeholder="z. B. 500 g Skyr mit 100 g Beeren und einer Banane" ${af.aiBusy ? "disabled" : ""}>${esc(af.aiText)}</textarea></div>
-      <div class="row">${canTalk ? `<button type="button" class="btn ${af.listening ? "primary" : ""}" data-act="ai-voice" ${af.aiBusy ? "disabled" : ""}>${af.listening ? "● Ich höre zu … (tippen zum Stoppen)" : "🎤 Sprechen"}</button>` : ""}<button class="btn primary" type="submit" ${af.aiBusy ? "disabled" : ""}>${af.aiBusy ? "KI rechnet …" : "Eintragen"}</button></div>
+      <div class="row">${canTalk ? `<button type="button" class="btn ${af.listening ? "primary" : ""}" data-act="ai-voice" ${af.aiBusy ? "disabled" : ""}>${af.listening ? "● Ich höre zu … (tippen zum Stoppen)" : "🎤 Sprechen"}</button>` : ""}<button class="btn primary" type="submit" ${af.aiBusy ? "disabled" : ""}>${af.aiBusy ? "Wird eingetragen …" : "Eintragen"}</button></div>
       ${af.aiErr ? `<div class="hint" role="alert">${esc(af.aiErr)}</div>` : ""}
-      <p class="small muted" style="margin:0">Die KI berechnet Kalorien und Makros und trägt alles direkt ein. Stimmt etwas nicht, löschst du den Eintrag in der Mahlzeit mit ×.${canTalk ? "" : " Zum Sprechen tippe im Textfeld auf das Mikrofon deiner Tastatur."}</p>
+      <p class="small muted" style="margin:0">Mehrere Lebensmittel trennst du mit „und“ oder Komma. Die Nährwerte kommen aus deiner Lebensmittel-Liste, aus Richtwerten oder aus Open Food Facts, kostenlos. Alles wird direkt eingetragen. Stimmt etwas nicht, löschst du den Eintrag in der Mahlzeit mit ×.${canTalk ? "" : " Zum Sprechen tippe im Textfeld auf das Mikrofon deiner Tastatur."}</p>
     </form>`;
   } else if (af.mode === "suchen") {
     if (af.pick) {
@@ -1853,7 +1967,7 @@ document.addEventListener("submit", async e => {
       saveDay(k, d);
       document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmt(mins / 60, 1) + " h."); break;
     }
-    case "ai-food": runAiFood(v("aiq")); break;
+    case "ai-food": runQuickFood(v("aiq")); break;
     case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
     case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
