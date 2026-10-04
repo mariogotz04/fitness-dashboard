@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 16:27";
+const APP_VERSION = "04.10.2026 16:33";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1200,7 +1200,7 @@ function viewEssen(){
     return `<div class="section-title spread"><span>${label}${items.length ? ` <span class="small num" style="font-weight:500;text-transform:none;letter-spacing:0;color:${pm >= 30 ? "var(--good)" : "var(--ink-2)"}">${pm >= 30 ? "✓ " : ""}${fmt(pm)} g Eiweiß</span>` : ""}</span><span class="num">${fmt(sum)} kcal</span></div>
     <section class="card" style="padding-block:8px">
       <div class="list">${items.map((it, i) => `<div class="li"><div class="grow"><div class="title">${esc(it.name)}</div>
-        <div class="sub num">${it.g ? fmt(it.g) + " g · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
+        <div class="sub num">${it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
         <button class="x" data-act="item-del" data-meal="${m}" data-i="${i}" aria-label="${esc(it.name)} entfernen">×</button></div>`).join("") || '<div class="empty" style="padding:10px">Noch nichts eingetragen.</div>'}</div>
       <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="add-food" data-meal="${m}">+ Hinzufügen</button>${hasY && !items.length ? `<button class="btn ghost" data-act="copy-meal" data-meal="${m}">Wie gestern</button>` : ""}</div>
     </section>`;
@@ -1637,9 +1637,9 @@ async function runQuickFood(text){
   const d = getDay(date); d.meals = d.meals || {}; d.meals[meal] = (d.meals[meal] || []).concat(items); saveDay(date, d);
   const kc = items.reduce((a, x) => a + x.kcal, 0), pr = items.reduce((a, x) => a + x.p, 0);
   af.aiBusy = false; af.aiText = "";
-  if (missing.length) { af.aiErr = "Eingetragen: " + items.map(x => x.name + " " + fmt(x.g) + " g").join(", ") + ". Nicht gefunden: " + missing.join(", ") + "."; renderAddFood(); return; }
+  if (missing.length) { af.aiErr = "Eingetragen: " + items.map(x => x.name + " " + fmt(x.g) + " " + unitOfItem(x)).join(", ") + ". Nicht gefunden: " + missing.join(", ") + "."; renderAddFood(); return; }
   closeSheet();
-  toast(items.map(x => x.name + " " + fmt(x.g) + " g").join(", ") + " · " + fmt(kc) + " kcal, " + fmt(pr) + " g Protein");
+  toast(items.map(x => x.name + " " + fmt(x.g) + " " + unitOfItem(x)).join(", ") + " · " + fmt(kc) + " kcal, " + fmt(pr) + " g Protein");
 }
 
 /* ----- Körper ----- */
@@ -1935,10 +1935,10 @@ function renderAddFood(){
     </form>`;
   } else if (af.mode === "suchen") {
     if (af.pick) {
-      const f = S.foods[af.pick]; const g = num(af.g) || f.portion || 100; const k = g / 100;
-      b += `<div class="card"><div class="title" style="font-weight:600;font-size:17px">${esc(f.name)}</div><div class="small muted num">pro 100 g: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · K ${fmt(f.c, 1)} · F ${fmt(f.f, 1)}</div>
-        <div class="fields" style="margin-top:12px"><div class="field"><label for="afg">Menge (g)</label><input class="inp num" id="afg" inputmode="decimal" value="${esc(af.g || f.portion || 100)}"></div></div>
-        <div class="row" style="margin-top:8px">${[f.portion, 50, 100, 150, 200, 250].filter((v, i, a) => v && a.indexOf(v) === i).map(v => `<button class="chip" data-act="af-g" data-g="${v}">${v} g${v === f.portion ? " (Portion)" : ""}</button>`).join("")}</div>
+      const f = S.foods[af.pick]; const g = num(af.g) || f.portion || 100; const k = g / 100, u = unitOfFood(f);
+      b += `<div class="card"><div class="title" style="font-weight:600;font-size:17px">${esc(f.name)}</div><div class="small muted num">pro 100 ${u}: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · K ${fmt(f.c, 1)} · F ${fmt(f.f, 1)}</div>
+        <div class="fields" style="margin-top:12px"><div class="field"><label for="afg">Menge (${u})</label><input class="inp num" id="afg" inputmode="decimal" value="${esc(af.g || f.portion || 100)}"></div></div>
+        <div class="row" style="margin-top:8px">${[f.portion, 50, 100, 150, 200, 250].filter((v, i, a) => v && a.indexOf(v) === i).map(v => `<button class="chip" data-act="af-g" data-g="${v}">${v} ${u}${v === f.portion ? " (Portion)" : ""}</button>`).join("")}<button class="chip" data-act="af-unit" style="margin-left:auto">${u === "ml" ? "In Gramm anzeigen" : "In ml anzeigen"}</button></div>
         <p class="num" id="afcalc" style="margin:12px 0 0"><b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}</p>
         <div class="row" style="margin-top:12px"><button class="btn primary" data-act="af-add-pick">Hinzufügen</button><button class="btn ghost" data-act="af-unpick">Zurück</button><button class="btn ghost danger" data-act="food-del" data-id="${af.pick}">Aus Liste löschen</button></div></div>`;
     } else {
@@ -1958,9 +1958,9 @@ function renderAddFood(){
       <button class="btn primary" type="submit">Hinzufügen</button></form>`;
   } else {
     b += `<form class="stack" data-form="af-new"><div class="field"><label for="nn">Name</label><input class="inp" id="nn" placeholder="z. B. Skyr natur (Milbona)" required></div>
-      <div class="eyebrow">Nährwerte pro 100 g (steht auf der Packung)</div>
+      <div class="eyebrow">Nährwerte pro 100 g bzw. 100 ml (steht auf der Packung)</div>
       <div class="fields"><div class="field"><label for="nk">kcal</label><input class="inp num" id="nk" inputmode="decimal" required></div><div class="field"><label for="np">Protein g</label><input class="inp num" id="np" inputmode="decimal" required></div><div class="field"><label for="nc">Kohlenhydr. g</label><input class="inp num" id="nc" inputmode="decimal" required></div><div class="field"><label for="nf">Fett g</label><input class="inp num" id="nf" inputmode="decimal" required></div></div>
-      <div class="field"><label for="npo">Übliche Portion in g (optional)</label><input class="inp num" id="npo" inputmode="decimal"></div>
+      <div class="field"><label for="npo">Übliche Portion in g bzw. ml (optional)</label><input class="inp num" id="npo" inputmode="decimal"></div>
       <button class="btn primary" type="submit">Speichern und auswählen</button></form>`;
   }
   $("#sheet-b").innerHTML = b;
@@ -1968,13 +1968,13 @@ function renderAddFood(){
 function foodResults(res){
   const q = (af && af.q || "").trim();
   let h = "";
-  if (q.length >= 2) { const qn = normT(q); h += BASE_FOODS.filter(b => b[1].split(",").some(k => normT(k).includes(qn) || qn.includes(normT(k)))).slice(0, 4).map(b => `<button class="pick" data-act="af-base" data-name="${esc(b[0])}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(b[0])}</span><span class="small muted num">${fmt(b[2])} kcal · P ${fmt(b[3], 1)} pro 100 g</span></span><span class="chip">Richtwert</span></button>`).join(""); }
-  h += res.slice(0, q ? 8 : 40).map(f => `<button class="pick" data-act="af-pick" data-id="${f.id}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(f.name)}</span><span class="small muted num">${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} pro 100 g${f.portion ? " · Portion " + fmt(f.portion) + " g" : ""}${f.nova === 4 ? ' · <span style="color:var(--warn)">stark verarbeitet</span>' : ""}</span></span><span class="chip">Meine</span></button>`).join("");
+  if (q.length >= 2) { const qn = normT(q); h += BASE_FOODS.filter(b => b[1].split(",").some(k => normT(k).includes(qn) || qn.includes(normT(k)))).slice(0, 4).map(b => `<button class="pick" data-act="af-base" data-name="${esc(b[0])}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(b[0])}</span><span class="small muted num">${fmt(b[2])} kcal · P ${fmt(b[3], 1)} pro 100 ${isLiquidName(b[0]) ? "ml" : "g"}</span></span><span class="chip">Richtwert</span></button>`).join(""); }
+  h += res.slice(0, q ? 8 : 40).map(f => `<button class="pick" data-act="af-pick" data-id="${f.id}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(f.name)}</span><span class="small muted num">${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} pro 100 ${unitOfFood(f)}${f.portion ? " · Portion " + fmt(f.portion) + " " + unitOfFood(f) : ""}${f.nova === 4 ? ' · <span style="color:var(--warn)">stark verarbeitet</span>' : ""}</span></span><span class="chip">Meine</span></button>`).join("");
   if (q.length >= 3) {
     const o = af.off;
     if (!o || o.q !== q || o.loading) h += `<div class="empty" style="padding:10px">Suche in Open Food Facts …</div>`;
     else if (o.error) h += `<div class="empty" style="padding:10px">Open Food Facts ist gerade nicht erreichbar. Versuch es gleich noch einmal.</div>`;
-    else h += o.items.map((p, i) => `<button class="pick" data-act="af-off" data-i="${i}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(p.name)}</span><span class="small muted num">${fmt(p.kcal)} kcal · P ${fmt(p.p, 1)} · K ${fmt(p.c, 1)} · F ${fmt(p.f, 1)} pro 100 g</span></span>${p.nova === 4 ? '<span class="chip" style="color:var(--warn)">stark verarbeitet</span>' : ""}</button>`).join("") || `<div class="empty" style="padding:10px">In Open Food Facts nichts gefunden.</div>`;
+    else h += o.items.map((p, i) => `<button class="pick" data-act="af-off" data-i="${i}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(p.name)}</span><span class="small muted num">${fmt(p.kcal)} kcal · P ${fmt(p.p, 1)} · K ${fmt(p.c, 1)} · F ${fmt(p.f, 1)} pro 100 ${p.unit === "ml" || isLiquidName(p.name) ? "ml" : "g"}</span></span>${p.nova === 4 ? '<span class="chip" style="color:var(--warn)">stark verarbeitet</span>' : ""}</button>`).join("") || `<div class="empty" style="padding:10px">In Open Food Facts nichts gefunden.</div>`;
   } else if (!res.length) h = `<div class="empty">Tippe mindestens 3 Buchstaben, dann suche ich in deiner Liste und in Open Food Facts.</div>`;
   return h;
 }
@@ -2039,7 +2039,14 @@ ${file ? "Auf dem Foto ist die Mahlzeit zu sehen. " : ""}Beschreibung: ${desc.tr
   if (!af) return;
   af.busy = false; af.ctl = null; renderAddFood();
 }
+/* Getränke in Milliliter statt Gramm (Nährwerte gelten dann pro 100 ml) */
+const LIQ_YES = /(milch|drink|saft|wasser|cola|limo|schorle|\btee\b|eistee|kaffee|espresso|cappuccino|latte|macchiato|smoothie|kefir|shake|getraenk|bier|wein|sekt|energy|bruehe|suppe|sirup|kakao|ayran|lassi|nektar|spezi|fanta|sprite|redbull|red bull|monster|oatly|alpro)/;
+const LIQ_NO = /(schokolade|reis|pulver|broetchen|brot|quark|joghurt|kaese|\beis\b|riegel|keks|creme|pudding|mus\b|flocken|bonbon|gummi|nudel|kuchen|torte|whey|tabs|tablette|kapsel|granulat|melone|schnitte|bar\b)/;
+const isLiquidName = n => { const t = normT(n || ""); return LIQ_YES.test(t) && !LIQ_NO.test(t); };
+const unitOfFood = f => (f && f.unit) || (isLiquidName(f && f.name) ? "ml" : "g");
+const unitOfItem = it => it.unit || (it.foodId && S.foods[it.foodId] ? unitOfFood(S.foods[it.foodId]) : isLiquidName(it.name) ? "ml" : "g");
 function addItems(meal, items){
+  items.forEach(it => { if (!it.unit && unitOfItem(it) === "ml") it.unit = "ml"; });
   const d = getDay(curDate); d.meals = d.meals || {}; d.meals[meal] = (d.meals[meal] || []).concat(items);
   saveDay(curDate, d);
 }
@@ -2276,13 +2283,14 @@ document.addEventListener("click", async e => {
       if (!ex) put("foods", id, {name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], portion: b[6] || undefined, uses: 0, src: "richtwert"});
       af.pick = id; af.g = ""; renderAddFood(); break; }
     case "af-off": { const p = af.off && af.off.items[+D.i]; if (!p) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === p.name); const id = ex ? ex[0] : uid("f");
-      if (!ex) put("foods", id, {name: p.name, kcal: p.kcal, p: p.p, c: p.c, f: p.f, portion: p.portion || undefined, nova: p.nova || undefined, uses: 0, src: "openfoodfacts"});
+      if (!ex) put("foods", id, {name: p.name, kcal: p.kcal, p: p.p, c: p.c, f: p.f, portion: p.portion || undefined, nova: p.nova || undefined, unit: p.unit === "ml" || isLiquidName(p.name) ? "ml" : undefined, uses: 0, src: "openfoodfacts"});
       af.pick = id; af.g = ""; renderAddFood(); break; }
     case "af-unpick": af.pick = null; renderAddFood(); break;
     case "af-g": af.g = D.g; renderAddFood(); break;
+    case "af-unit": { const f = S.foods[af.pick]; if (!f) break; put("foods", af.pick, Object.assign(clone(f), {unit: unitOfFood(f) === "ml" ? "g" : "ml"})); setTimeout(renderAddFood, 0); break; }
     case "af-add-pick": {
       const f = S.foods[af.pick]; const g = num(($("#afg") || {}).value) || f.portion || 100; const k = g / 100;
-      addItems(af.meal, [{name: f.name, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), foodId: af.pick}]);
+      addItems(af.meal, [{name: f.name, unit: unitOfFood(f) === "ml" ? "ml" : undefined, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), foodId: af.pick}]);
       put("foods", af.pick, Object.assign(clone(f), {uses: (f.uses || 0) + 1, lastG: Math.round(g)}));
       toast(f.name + " hinzugefügt."); closeSheet(); break;
     }
