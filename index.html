@@ -257,7 +257,7 @@ textarea.inp{min-height:84px;resize:vertical}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 07:57";
+const APP_VERSION = "04.10.2026 08:00";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -767,7 +767,7 @@ function recoverySection(k){
       ${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}
       ${dial(sl && sl.h ? sl.h / need : 0, "color-mix(in srgb, var(--accent) 55%, var(--good))", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
     </div>
-    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${isOwner ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin jetzt abrufen"}</button>` : ""}</div>
+    <div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${isOwner ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}">${p.label} ${Math.round(p.score)}</span>`).join("")}</div>` : ""}
     ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
       <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
@@ -922,8 +922,8 @@ async function loadFriends(force){
   if (FR.busy || (!force && Date.now() - FR.loaded < 60000)) return;
   FR.busy = true;
   try {
-    const [f, l, n] = await Promise.all([sb.rpc("friend_feed", {p_days: 21}), sb.rpc("my_friends"), sb.rpc("my_name")]);
-    FR.feed = f.data || {items: [], steps: []}; FR.friends = l.data || []; FR.name = n.data || "";
+    const [f, l, n, iv] = await Promise.all([sb.rpc("friend_feed", {p_days: 21}), sb.rpc("my_friends"), sb.rpc("my_name"), sb.rpc("my_invites")]);
+    FR.feed = f.data || {items: [], steps: []}; FR.friends = l.data || []; FR.name = n.data || ""; FR.invites = iv.data || [];
   } catch(e) { FR.msg = "Freunde konnten nicht geladen werden. Prüfe deine Internetverbindung."; }
   FR.loaded = Date.now(); FR.busy = false; scheduleRender();
 }
@@ -956,8 +956,9 @@ function viewFriends(){
   h += `<div class="section-title">Freunde</div><section class="card">
     <div class="list">${acc.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.name)}</div><div class="sub">${esc(f.email)}</div></div><button class="btn ghost danger" data-act="fr-remove" data-id="${f.user_id}">Entfernen</button></div>`).join("")}
     ${out.map(f => `<div class="li"><span class="av">${initial(f.name)}</span><div class="grow"><div class="title">${esc(f.email)}</div><div class="sub">Anfrage gesendet, wartet auf Bestätigung</div></div><button class="x" data-act="fr-remove" data-id="${f.user_id}" aria-label="Anfrage zurückziehen">×</button></div>`).join("")}
-    ${!acc.length && !out.length ? '<p class="small muted" style="margin:0 0 6px">Noch keine Freunde. Füge jemanden über die E-Mail-Adresse hinzu, mit der die Person in der App angemeldet ist.</p>' : ""}</div>
-    <form class="row" data-form="addfriend" style="margin-top:10px;flex-wrap:nowrap"><input class="inp" type="email" id="fe" placeholder="E-Mail deines Freundes" required style="flex:1"><button class="btn primary" type="submit">Hinzufügen</button></form>
+    ${(FR.invites || []).map(iv => `<div class="li"><span class="av">✉</span><div class="grow"><div class="title">${esc(iv.email)}</div><div class="sub">Eingeladen, hat sich noch nicht registriert</div></div><button class="x" data-act="inv-cancel" data-email="${esc(iv.email)}" aria-label="Einladung zurückziehen">×</button></div>`).join("")}
+    ${!acc.length && !out.length && !(FR.invites || []).length ? '<p class="small muted" style="margin:0 0 6px">Noch keine Freunde. Gib die E-Mail-Adresse einer Person ein. Hat sie schon ein Konto, bekommt sie eine Anfrage. Sonst wird sie eingeladen: Sie kann sich dann mit genau dieser Adresse in der App registrieren, und ihr seid automatisch befreundet.</p>' : ""}</div>
+    <form class="row" data-form="addfriend" style="margin-top:10px;flex-wrap:nowrap"><input class="inp" type="email" id="fe" placeholder="E-Mail-Adresse" required style="flex:1"><button class="btn primary" type="submit">Hinzufügen oder einladen</button></form>
     <p class="small muted" style="margin:8px 0 0">Freunde sehen deine Trainings, Sport-Einheiten und Schritte. Ernährung, Gewicht und Schlaf bleiben privat.</p>
   </section>`;
   return h;
@@ -1501,7 +1502,7 @@ document.addEventListener("click", async e => {
   const a = b.dataset.act, D = b.dataset;
   switch (a) {
     case "auth-mode": authMode = authMode === "signup" ? "login" : "signup"; authMsg = ""; render(); break;
-    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: ""}; isOwner = false; closeSheet(); render(); break;
+    case "logout": await sb.auth.signOut(); try { localStorage.removeItem("fd-cache"); } catch(_) {} COLS.forEach(c => S[c] = {}); loaded = false; mode = "auth"; FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, msg: "", invites: []}; isOwner = false; closeSheet(); render(); break;
     case "tab": tab = D.tab; try { history.replaceState(null, "", "#" + tab); } catch(_) {} window.scrollTo(0, 0); render(); break;
     case "day-prev": curDate = addDays(curDate, -1); render(); break;
     case "day-next": curDate = addDays(curDate, 1); render(); break;
@@ -1538,14 +1539,23 @@ document.addEventListener("click", async e => {
     case "fr-accept": case "fr-decline": await sb.rpc("respond_friend", {p_user: D.id, p_accept: a === "fr-accept"}); toast(a === "fr-accept" ? "Ihr seid jetzt befreundet." : "Anfrage abgelehnt."); loadFriends(true); break;
     case "fr-remove": if (b.dataset.confirm) { await sb.rpc("remove_friend", {p_user: D.id}); loadFriends(true); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich?"; } break;
     case "kudos": { b.disabled = true; const {data: n} = await sb.rpc("toggle_kudos", {p_owner: D.owner, p_wid: D.id}); const it = (FR.feed.items || []).find(x => x.owner === D.owner && x.id === D.id); if (it && n >= 0) { it.mykudos = !it.mykudos; it.kudos = n; } render(); break; }
+    case "inv-cancel": await sb.rpc("cancel_invite", {p_email: D.email}); toast("Einladung zurückgezogen."); loadFriends(true); break;
     case "starter-ex": { const {data: n} = await sb.rpc("copy_starter_exercises"); toast((n || 0) + " Übungen übernommen."); await loadAll(); break; }
     case "garmin-now": {
+      const tk = todayKey(), before = (S.days[tk] || {}).garminAt || "";
       garminBusy = true; render();
       const {data: res, error} = await sb.rpc("trigger_garmin_sync");
       if (error) { garminBusy = false; render(); toast("Der Abruf konnte nicht gestartet werden."); break; }
       toast(res === "already_running" ? "Läuft gerade schon, die Werte kommen gleich." : "Abruf gestartet. Die Werte kommen in etwa einer Minute.");
-      [50, 80, 120].forEach(sec => setTimeout(() => loadAll(), sec * 1000));
-      setTimeout(() => { garminBusy = false; render(); }, 120000);
+      const t0 = Date.now();
+      const poll = async () => {
+        await loadAll();
+        const now = (S.days[tk] || {}).garminAt || "";
+        if (now && now !== before) { garminBusy = false; render(); toast("Garmin-Daten aktualisiert (" + now + " Uhr)."); return; }
+        if (Date.now() - t0 > 180000) { garminBusy = false; render(); toast("Garmin hat noch keine neuen Werte geliefert. Versuch es gleich noch einmal."); return; }
+        setTimeout(poll, 10000);
+      };
+      setTimeout(poll, 25000);
       break;
     }
     case "plan-done": { const d = getDay(D.date); d.recDone = d.recDone || {}; if (d.recDone[D.key]) delete d.recDone[D.key]; else d.recDone[D.key] = true; saveDay(D.date, d); break; }
@@ -1644,7 +1654,7 @@ document.addEventListener("submit", async e => {
       try { ({data, error} = await sb.auth.signUp({email: em.trim(), password: pw, options: {emailRedirectTo: location.origin + location.pathname}})); }
       catch (err) { error = {message: String(err && err.message || err)}; }
       authBusy = "";
-      if (error) { authMsg = /database error|not_allowed/i.test(error.message) ? "Für diese E-Mail-Adresse ist die Registrierung nicht freigegeben. Frag Mario, ob er dich freischaltet." : "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
+      if (error) { authMsg = /database error|not_allowed/i.test(error.message) ? "Für diese E-Mail-Adresse gibt es noch keine Einladung. Bitte die Person, die dich eingeladen hat, deine E-Mail-Adresse unter Training → Freunde einzutragen." : "Das Konto konnte nicht angelegt werden: " + error.message; render(); return; }
       if (data.session) { authMsg = ""; initStore(); break; }
       authMode = "login";
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
@@ -1653,8 +1663,8 @@ document.addEventListener("submit", async e => {
     case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; toast("Gespeichert."); loadFriends(true); break; }
     case "addfriend": {
       const em = v("fe").trim(); const {data: r, error} = await sb.rpc("add_friend", {p_email: em});
-      const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", not_found: "Unter dieser E-Mail-Adresse gibt es noch kein Konto in der App.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
-      toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "not_found") f.reset(); loadFriends(true); break;
+      const m = {requested: "Anfrage gesendet. Sobald sie bestätigt ist, seht ihr eure Aktivitäten.", accepted: "Ihr seid jetzt befreundet.", invited: "Eingeladen. Sie kann sich jetzt mit dieser E-Mail-Adresse registrieren, danach seid ihr automatisch befreundet. Schick ihr einfach den Link zur App.", invalid: "Bitte eine gültige E-Mail-Adresse eingeben.", limit: "Du hast schon 20 offene Einladungen.", self: "Das ist deine eigene E-Mail-Adresse.", pending: "Die Anfrage läuft bereits."};
+      toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { saveCfg({kcal: num(v("gk")) || DEFAULTS.kcal, p: num(v("gp")) || DEFAULTS.p, c: num(v("gc")) || DEFAULTS.c, f: num(v("gf")) || DEFAULTS.f, goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gh")) || DEFAULTS.goalHi, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal}); toast("Ziele gespeichert."); closeSheet(); break; }

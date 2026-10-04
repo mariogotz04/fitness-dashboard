@@ -1,7 +1,5 @@
 name: Garmin-Abruf
 
-# Läuft nur nach Zeitplan oder per Hand durch den Besitzer.
-# Keine pull_request-Auslöser: Änderungsvorschläge von außen können diesen Ablauf nicht starten.
 # Läuft nur auf Knopfdruck aus der App (workflow_dispatch über die Datenbank) oder per Hand.
 # Keine pull_request-Auslöser: Änderungsvorschläge von außen können diesen Ablauf nicht starten.
 on:
