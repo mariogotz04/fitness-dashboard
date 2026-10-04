@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 16:55";
+const APP_VERSION = "04.10.2026 17:03";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -527,7 +527,9 @@ function exHistory(exId){
   });
   return out;
 }
-const setsStr = sets => sets.map(s => (num(s.w) ? fmt(num(s.w), num(s.w) % 1 ? 2 : 0).replace(/,?0+$/, "") + "×" : "") + (s.r || (s.sec ? s.sec + " s" : "–"))).join(" · ");
+/* Gewicht ohne überflüssige Nachkommanullen: 50 → "50", 52,50 → "52,5" */
+const fmtKg = w => { const t = fmt(w, w % 1 ? 2 : 0); return t.includes(",") ? t.replace(/0+$/, "").replace(/,$/, "") : t; };
+const setsStr = sets => sets.map(s => (num(s.w) ? fmtKg(num(s.w)) + "×" : "") + (s.r || (s.sec ? s.sec + " s" : "–"))).join(" · ");
 function weekSummary(k){
   const mon = mondayOf(k), sun = addDays(mon, 6);
   const ws = workoutsSorted().filter(w => w.status === "done" && w.date >= mon && w.date <= sun);
@@ -698,6 +700,7 @@ function render(){
   const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
   v.innerHTML = html;
   drawCharts();
+  if (!coachChecked && EXDB) { coachChecked = true; setTimeout(coachWeekly, 800); }
   setTimeout(maybeShowReview, 600);
 }
 function renderTop(){
@@ -1284,8 +1287,8 @@ function viewCalendar(){
 }
 function viewTemplates(){
   const tpls = templatesSorted();
-  return (tpls.map(t => `<section class="card" style="margin-bottom:12px">
-    <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
+  return coachCard() + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
+    <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip ${t.coach ? "acc" : ""}">${t.coach ? "🤖 Coach · " : ""}${(t.items || []).length} Übungen</span></div>
     <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir || "–") : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div></div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
@@ -1303,6 +1306,216 @@ function viewExercises(){
       return `<button class="pick" data-act="open-ex" data-id="${e.id}">${e.ref && EXDBI[e.ref] ? exAnim(EXDBI[e.ref], "44px") : ""}<span style="flex:1;min-width:0"><span class="title" style="display:block;font-weight:500">${esc(e.name)}</span><span class="sub small muted">${esc(e.equipment || "")}${last ? (e.equipment ? " · " : "") + "zuletzt " + setsStr(last.sets.slice(0, 3)) : ""}</span></span>${h.length ? `<span class="chip">${h.length}×</span>` : ""}</button>`;
     }).join("")}</section>`).join("") || '<section class="card"><div class="empty">Das Register ist noch leer.${isOwner ? "" : `<div style="margin-top:10px"><button class="btn primary" data-act="starter-ex">Übungsregister von Mario übernehmen</button></div>`}</div></section>') +
   `<div style="height:12px"></div><button class="btn block" data-act="edit-ex" data-id="">+ Übung hinzufügen</button>`;
+}
+
+/* ---------- Coach: automatischer Trainingsplan ----------
+   Regelbasiert und kostenlos (keine KI-Dienste). Quellen: 10–20 harte Sätze pro Muskelgruppe und Woche, RIR 1–3,
+   freie Wiederholungsbereiche, 3–5 min Pause bei schweren Sätzen, 24 h Pause für gleiche Muskeln (Hessmann),
+   Muskelaufbau mit ca. 60–70 % der Maximalkraft. Passt sich wöchentlich an Ziel, Fortschritt, Erholung, Fußball und
+   tatsächlich trainierte Sätze an. Eigene Pläne bleiben unverändert. */
+const COACH_SLOTS = {
+  brustSchraeg: ["Brust", ["Smith_Machine_Incline_Bench_Press", "Incline_Dumbbell_Press", "Barbell_Incline_Bench_Press_-_Medium_Grip", "Leverage_Incline_Chest_Press", "Push-Ups_With_Feet_Elevated"]],
+  brustFlach: ["Brust", ["Smith_Machine_Bench_Press", "Dumbbell_Bench_Press", "Barbell_Bench_Press_-_Medium_Grip", "Leverage_Chest_Press", "Pushups"]],
+  brustIso: ["Brust", ["Butterfly", "Cable_Crossover", "Low_Cable_Crossover", "Dumbbell_Flyes", "Push-Up_Wide"]],
+  latzug: ["Rücken", ["Wide-Grip_Lat_Pulldown", "Pullups", "Close-Grip_Front_Lat_Pulldown", "Band_Assisted_Pull-Up", "Inverted_Row"]],
+  latzugEng: ["Rücken", ["Close-Grip_Front_Lat_Pulldown", "One_Arm_Lat_Pulldown", "Underhand_Cable_Pulldowns", "Chin-Up", "Inverted_Row"]],
+  rudern: ["Rücken", ["Leverage_Iso_Row", "Seated_Cable_Rows", "T-Bar_Row_with_Handle", "One-Arm_Dumbbell_Row", "Bent_Over_Barbell_Row", "Inverted_Row"]],
+  schulterDruck: ["Schultern", ["Machine_Shoulder_Military_Press", "Seated_Dumbbell_Press", "Standing_Military_Press", "Standing_Dumbbell_Press"]],
+  seitheben: ["Schultern", ["Standing_Low-Pulley_Deltoid_Raise", "Cable_Seated_Lateral_Raise", "Side_Lateral_Raise", "Seated_Side_Lateral_Raise"]],
+  hintereSchulter: ["Schultern", ["Reverse_Machine_Flyes", "Face_Pull", "Cable_Rear_Delt_Fly", "Reverse_Flyes", "Band_Pull_Apart"]],
+  bizeps: ["Bizeps", ["Standing_Biceps_Cable_Curl", "Machine_Preacher_Curls", "Incline_Dumbbell_Curl", "Dumbbell_Bicep_Curl", "Barbell_Curl"]],
+  bizepsHammer: ["Bizeps", ["Hammer_Curls", "Cable_Hammer_Curls_-_Rope_Attachment", "Concentration_Curls", "Dumbbell_Alternate_Bicep_Curl"]],
+  trizeps: ["Trizeps", ["Triceps_Pushdown", "Triceps_Pushdown_-_V-Bar_Attachment", "Triceps_Pushdown_-_Rope_Attachment", "Bench_Dips", "Tricep_Dumbbell_Kickback"]],
+  trizepsUeber: ["Trizeps", ["Cable_Rope_Overhead_Triceps_Extension", "Standing_Dumbbell_Triceps_Extension", "EZ-Bar_Skullcrusher", "Lying_Dumbbell_Tricep_Extension"]],
+  kniebeuge: ["Beine", ["Hack_Squat", "Smith_Machine_Squat", "Barbell_Squat", "Leg_Press", "Goblet_Squat", "Bodyweight_Squat"]],
+  beinpresse: ["Beine", ["Leg_Press", "Hack_Squat", "Split_Squat_with_Dumbbells", "Goblet_Squat", "Bodyweight_Walking_Lunge"]],
+  huefte: ["Beine", ["Romanian_Deadlift", "Smith_Machine_Stiff-Legged_Deadlift", "Stiff-Legged_Dumbbell_Deadlift", "Single_Leg_Glute_Bridge"]],
+  po: ["Beine", ["Barbell_Hip_Thrust", "Pull_Through", "Single_Leg_Glute_Bridge", "Thigh_Abductor"]],
+  beinbeuger: ["Beine", ["Seated_Leg_Curl", "Lying_Leg_Curls", "Standing_Leg_Curl", "Glute_Ham_Raise", "Single_Leg_Glute_Bridge"]],
+  beinstrecker: ["Beine", ["Leg_Extensions", "Single-Leg_Leg_Extension", "Dumbbell_Step_Ups", "Bodyweight_Squat"]],
+  ausfall: ["Beine", ["Split_Squat_with_Dumbbells", "Dumbbell_Lunges", "Dumbbell_Rear_Lunge", "Bodyweight_Walking_Lunge"]],
+  waden: ["Waden", ["Calf_Press_On_The_Leg_Press_Machine", "Standing_Calf_Raises", "Seated_Calf_Raise", "Standing_Dumbbell_Calf_Raise"]],
+  bauch: ["Bauch", ["Ab_Crunch_Machine", "Cable_Crunch", "Knee_Hip_Raise_On_Parallel_Bars", "Reverse_Crunch", "Plank"]]
+};
+const COACH_DAYS = {
+  UA: ["Oberkörper A", "OK A", ["brustSchraeg", "latzug", "rudern", "seitheben", "brustIso", "trizeps", "bizeps"]],
+  UB: ["Oberkörper B", "OK B", ["brustFlach", "rudern", "latzugEng", "schulterDruck", "hintereSchulter", "bizepsHammer", "trizepsUeber"]],
+  LA: ["Unterkörper A", "UK A", ["kniebeuge", "huefte", "beinbeuger", "beinstrecker", "waden", "bauch"]],
+  LB: ["Unterkörper B", "UK B", ["beinpresse", "po", "beinbeuger", "ausfall", "waden", "bauch"]],
+  FA: ["Ganzkörper A", "GK A", ["kniebeuge", "brustFlach", "latzug", "huefte", "seitheben", "bizeps", "bauch"]],
+  FB: ["Ganzkörper B", "GK B", ["beinpresse", "brustSchraeg", "rudern", "beinbeuger", "schulterDruck", "trizeps", "waden"]],
+  FC: ["Ganzkörper C", "GK C", ["ausfall", "brustIso", "latzugEng", "po", "hintereSchulter", "bizepsHammer", "bauch"]]
+};
+const COACH_EQUIP = {gym: null, kh: ["Kurzhanteln", "Körpergewicht", "Sonstiges", "Widerstandsband"], home: ["Körpergewicht", "Widerstandsband", "Sonstiges"]};
+const COACH_DEF = {on: false, days: null, minutes: 60, equip: "gym", focus: ""};
+const coachCfg = () => Object.assign({}, COACH_DEF, cfgRaw().coach || {});
+/* Wiederholungen, RIR und Pause je Übung (gleiche Regeln wie die Empfehlung bei den Übungen) */
+function coachScheme(x, gt){
+  if (x.g === "Bauch") return /Plank/.test(x.id) ? {reps: "30–60 s", rir: "–", rest: "1 min"} : {reps: "10–15", rir: "1–2", rest: "1 min"};
+  if (x.g === "Waden") return {reps: "10–15", rir: "1–2", rest: "1,5 min"};
+  if (x.mc === "c" && x.bw) return {reps: "6–12", rir: "1–3", rest: "2–3 min"};
+  if (x.mc === "c") return gt === "cut" ? {reps: "6–10", rir: "1–2", rest: "2–3 min"} : {reps: "6–12", rir: "1–2", rest: "2–3 min"};
+  return {reps: "10–15", rir: "0–2", rest: "1,5 min"};
+}
+/* e1RM-Trend einer Muskelgruppe: letzte 3 Einheiten gegen die 3 davor */
+function groupTrend(g){
+  const since = addDays(todayKey(), -70);
+  const rs = Object.keys(S.exercises).filter(id => (S.exercises[id].group || "") === g).map(id => exHistory(id).filter(h => h.k >= since && h.kind === "kg")).filter(h => h.length >= 4);
+  if (!rs.length) return null;
+  const ratios = rs.map(h => { const a = h.slice(-3), b = h.slice(-6, -3); const m = xs => xs.reduce((s, x) => s + x.v, 0) / xs.length; return b.length ? m(a) / m(b) : null; }).filter(Boolean);
+  return ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
+}
+function coachPlan(cc){
+  cc = cc || coachCfg();
+  const c = cfgRaw(), gt = goalType(), today = todayKey();
+  const ws = workoutsSorted().filter(w => w.status === "done");
+  const strength = ws.filter(w => w.kind !== "activity");
+  const level = strength.length >= 40 ? "Fortgeschritten" : strength.length >= 12 ? "Etwas Erfahrung" : "Einsteiger";
+  const days = clamp(num(cc.days) || num(c.strengthPerWeek) || 3, 1, 5);
+  const football = ws.filter(w => w.kind === "activity" && w.date >= addDays(today, -28) && /fu(ss|ß)ball|soccer/i.test(w.title || "")).length;
+  const reasons = [];
+  let split;
+  if (days === 1) split = ["FA"]; else if (days === 2) split = ["FA", "FB"];
+  else if (days === 3) split = football >= 3 ? ["UA", "LA", "UB"] : ["FA", "FB", "FC"];
+  else if (days === 4) split = ["UA", "LA", "UB", "LB"]; else split = ["UA", "LA", "UB", "LB", "FA"];
+  reasons.push(days === 3 && football >= 3 ? `3 Krafttage: Oberkörper/Unterkörper/Oberkörper, weil du in den letzten 4 Wochen ${football}× Fußball gespielt hast und die Beine dort schon viel arbeiten.` : `${days} Krafttag${days > 1 ? "e" : ""} pro Woche: ${split.map(k => COACH_DAYS[k][0]).join(", ")}.`);
+  // Erholung der letzten 7 Tage
+  const recs = [0, 1, 2, 3, 4, 5, 6].map(i => recoveryOf(addDays(today, -i))).filter(Boolean).map(r => r.score);
+  const recAvg = recs.length >= 3 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
+  const deload = recAvg != null && recAvg < 38;
+  // Wochenvolumen pro Muskelgruppe
+  const base = level === "Einsteiger" ? 10 : level === "Etwas Erfahrung" ? 12 : 14;
+  const goalAdj = gt === "bulk" ? 2 : gt === "cut" ? 0 : -1;
+  const weeks4 = [1, 2, 3, 4].map(i => weekSummary(addDays(today, -7 * i)));
+  const vol = {}, why = {};
+  ["Brust", "Rücken", "Schultern", "Bizeps", "Trizeps", "Beine", "Waden", "Bauch"].forEach(g => {
+    const small = g === "Waden" || g === "Bauch", arm = g === "Bizeps" || g === "Trizeps";
+    let v = small ? 6 : arm ? base - 4 : base + goalAdj;
+    const notes = [];
+    if (g === "Beine" && football >= 3) { v -= 2; notes.push("Fußball belastet die Beine schon"); }
+    if (cc.focus && (cc.focus === g || (cc.focus === "Arme" && arm))) { v += 4; notes.push("dein Schwerpunkt"); }
+    const tr = groupTrend(g);
+    if (tr != null && tr < 1.01 && (recAvg == null || recAvg >= 55) && !small) { v += 2; notes.push("Kraft stagniert, daher etwas mehr Volumen"); }
+    else if (tr != null && tr >= 1.03) notes.push("du wirst stärker, Volumen passt");
+    if (recAvg != null && recAvg < 50) { v -= 2; notes.push("Erholung zuletzt niedrig"); }
+    const done = weeks4.reduce((a, w) => a + (w.groups[g] || 0), 0) / 4;
+    if (done > 0 && v > done + 6 && !small) { v = Math.round(done + 6); for (let i = notes.length - 1; i >= 0; i--) if (/mehr Volumen|Volumen passt/.test(notes[i])) notes.splice(i, 1); notes.push("langsam steigern, bisher Ø " + Math.round(done) + " Sätze pro Woche"); }
+    v = small ? clamp(v, 4, 12) : arm ? clamp(v, 6, 14) : clamp(v, 8, 20);
+    if (deload) v = Math.round(v * 0.6);
+    vol[g] = v; why[g] = notes;
+  });
+  if (deload) reasons.push(`Entlastungswoche: Deine Erholung lag die letzten Tage bei Ø ${Math.round(recAvg)} %. Etwa 40 % weniger Sätze und 3 Wdh. vor dem Versagen aufhören, dann geht es wieder hoch.`);
+  else if (recAvg != null) reasons.push(`Erholung Ø 7 Tage: ${Math.round(recAvg)} %${recAvg < 50 ? ", daher etwas weniger Sätze." : ", normales Volumen."}`);
+  reasons.push(`Ziel ${GOALS[gt]}: ${gt === "cut" ? "schwere Grundübungen mit 6–10 Wdh. erhalten Kraft und Muskeln im Defizit." : gt === "bulk" ? "etwas mehr Volumen, um den Kalorienüberschuss in Muskeln umzusetzen." : "solides Volumen, Gewichte langsam steigern."}`);
+  reasons.push(`Erfahrung: ${level} (${strength.length} Krafttrainings gespeichert).`);
+  // Übungen wählen: bevorzugt deine bekannten Übungen, passend zur Ausstattung, ohne Doppelungen
+  const allowed = COACH_EQUIP[cc.equip] || null;
+  const ownByRef = {};
+  Object.entries(S.exercises).forEach(([id, e]) => { if (e.ref) { const n = exHistory(id).length; if (!ownByRef[e.ref] || n > ownByRef[e.ref].n) ownByRef[e.ref] = {id, n}; } });
+  const used = new Set();
+  const pickEx = slot => {
+    const [g, cands] = COACH_SLOTS[slot];
+    let list = cands.map(id => EXDBI[id]).filter(x => x && (!allowed || allowed.includes(x.e)));
+    if (!list.length) list = (EXDB || []).filter(x => x.g === g && (!allowed || allowed.includes(x.e)));
+    const fresh = list.filter(x => !used.has(x.id));
+    const pool = fresh.length ? fresh : list;
+    const known = pool.filter(x => ownByRef[x.id]).sort((a, b) => ownByRef[b.id].n - ownByRef[a.id].n);
+    const x = known[0] || pool[0];
+    if (x) used.add(x.id);
+    return x;
+  };
+  const dayPlans = split.map(k => ({key: k, name: COACH_DAYS[k][0], short: COACH_DAYS[k][1], slots: COACH_DAYS[k][2].map(s => ({slot: s, x: pickEx(s)})).filter(s => s.x)}));
+  // Sätze verteilen: Wochenziel der Gruppe / Anzahl Übungen dieser Gruppe in der Woche
+  const count = {};
+  dayPlans.forEach(d => d.slots.forEach(s => count[s.x.g] = (count[s.x.g] || 0) + 1));
+  const maxSets = Math.round((num(cc.minutes) || 60) / 3.2);
+  dayPlans.forEach(d => {
+    d.items = d.slots.map(s => {
+      const g = s.x.g, sc = coachScheme(s.x, gt);
+      const sets = clamp(Math.round((vol[g] || 8) / (count[g] || 1)), deload ? 1 : 2, g === "Bauch" || g === "Waden" ? 3 : 4);
+      const own = ownByRef[s.x.id];
+      return {ref: s.x.id, exId: own ? own.id : null, name: own ? exName(own.id) : s.x.n, g, sets, reps: sc.reps, rir: deload ? "3–4" : sc.rir, rest: sc.rest, comp: s.x.mc === "c"};
+    });
+    let total = () => d.items.reduce((a, it) => a + it.sets, 0);
+    for (let guard = 0; total() > maxSets && guard < 30; guard++) {
+      const iso = d.items.filter(it => !it.comp && it.sets > 2).sort((a, b) => b.sets - a.sets)[0] || d.items.filter(it => it.sets > 2).sort((a, b) => b.sets - a.sets)[0];
+      if (iso) iso.sets--; else if (d.items.length > 4) d.items.pop(); else break;
+    }
+    d.total = total();
+  });
+  const weekSets = {};
+  dayPlans.forEach(d => d.items.forEach(it => weekSets[it.g] = (weekSets[it.g] || 0) + it.sets));
+  return {week: mondayOf(today), days: dayPlans, vol, why, weekSets, reasons, level, deload, recAvg, football, maxSets};
+}
+/* Plan als Vorlagen speichern (coach-1 …); eigene Pläne bleiben, fehlende Übungen kommen ins Register */
+function coachAdopt(plan, silent){
+  const keep = new Set();
+  plan.days.forEach((d, i) => {
+    const items = d.items.map(it => {
+      let id = it.exId;
+      if (!id) { const x = EXDBI[it.ref]; id = "x-" + it.ref.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50); if (!S.exercises[id]) put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); }
+      return {exId: id, sets: it.sets, reps: it.reps, rir: it.rir, rest: it.rest};
+    });
+    const tid = "coach-" + (i + 1); keep.add(tid);
+    put("templates", tid, {name: "Coach: " + d.name, short: "C " + d.short, order: i - 50, items, coach: true, week: plan.week});
+  });
+  Object.keys(S.templates).filter(id => id.startsWith("coach-") && !keep.has(id)).forEach(id => del("templates", id));
+  saveCfg({coach: Object.assign({}, coachCfg(), {on: true, week: plan.week, at: new Date().toISOString()})});
+  if (!silent) toast("Coach-Plan übernommen. Du findest ihn unter Pläne.");
+}
+/* Einmal pro Woche (ab Montag) neu berechnen, wenn der Coach aktiv ist */
+let coachChecked = false;
+function coachWeekly(){
+  const cc = coachCfg();
+  if (!cc.on || !EXDB) return;
+  if (cc.week === mondayOf(todayKey())) return;
+  coachAdopt(coachPlan(cc), true);
+  toast("🤖 Dein Coach-Plan für diese Woche ist aktualisiert.");
+}
+function coachCard(){
+  const cc = coachCfg();
+  if (!EXDB) { loadExdb(); return `<section class="card" style="margin-bottom:12px"><div class="empty">Coach wird geladen …</div></section>`; }
+  const p = coachPlan(cc);
+  return `<section class="card" style="margin-bottom:12px">
+    <div class="card-h"><h2>🤖 Dein Coach-Plan</h2>${cc.on ? `<span class="chip good">aktiv</span>` : ""}</div>
+    <p class="small ink2" style="margin:0 0 8px">${cc.on ? `Wird jeden Montag automatisch an deine Daten angepasst. Zuletzt: ${fmtShort(cc.week || p.week)}.` : "Ich stelle dir aus deinen Daten einen Plan zusammen: Ziel, Erfahrung, Fortschritt, Erholung, Fußball und deine Lieblingsübungen. Er passt sich danach jede Woche an."}</p>
+    <ul class="small" style="margin:0 0 10px;padding-left:18px;display:flex;flex-direction:column;gap:4px">${p.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+    ${p.days.map(d => `<div class="ex" style="margin-top:8px"><div class="spread"><b>${esc(d.name)}</b><span class="chip">${d.total} Sätze</span></div>
+      <div class="list">${d.items.map(it => `<div class="li" style="padding:7px 0">${EXDBI[it.ref] ? exAnim(EXDBI[it.ref], "38px") : ""}<div class="grow"><div class="title small" style="font-weight:600">${esc(it.name)}${it.exId ? "" : ' <span class="chip acc" style="padding:1px 7px;font-size:11px">neu</span>'}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir) : ""} · Pause ${esc(it.rest)}</div></div></div>`).join("")}</div></div>`).join("")}
+    <details class="small" style="margin-top:10px"><summary class="ink2" style="cursor:pointer">Sätze pro Muskelgruppe und Woche</summary>
+      <div class="stack" style="gap:4px;margin-top:6px">${Object.entries(p.weekSets).map(([g, n]) => `<div><b>${esc(g)}: ${n}</b>${p.why[g] && p.why[g].length ? ` <span class="muted">· ${esc(p.why[g].join(", "))}</span>` : ""}</div>`).join("")}</div></details>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="coach-adopt">${cc.on ? "Jetzt neu berechnen" : "Plan übernehmen"}</button><button class="btn" data-act="coach-settings">Einstellungen</button>${cc.on ? `<button class="btn ghost danger" data-act="coach-off">Coach aus</button>` : ""}</div>
+    <p class="small muted" style="margin:8px 0 0">Deine eigenen Pläne bleiben unverändert. Der Coach legt eigene Pläne mit „Coach:“ an.</p>
+  </section>`;
+}
+function openCoachSettings(){
+  const cc = coachCfg(), c = cfgRaw();
+  openSheet("Coach-Einstellungen", `<form class="stack" data-form="coach">
+    <div class="fields"><div class="field"><label for="cod">Krafttage pro Woche</label><select class="inp" id="cod">${[1, 2, 3, 4, 5].map(n => `<option ${(num(cc.days) || num(c.strengthPerWeek) || 3) === n ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div class="field"><label for="com">Zeit pro Training</label><select class="inp" id="com">${[[45, "45 min"], [60, "60 min"], [75, "75 min"], [90, "90 min"]].map(([v, l]) => `<option value="${v}" ${(num(cc.minutes) || 60) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
+    <div class="field"><label for="coe">Ausstattung</label><select class="inp" id="coe">${[["gym", "Fitnessstudio (alles)"], ["kh", "Kurzhanteln und Bank"], ["home", "Zu Hause ohne Geräte"]].map(([v, l]) => `<option value="${v}" ${cc.equip === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="field"><label for="cof">Schwerpunkt</label><select class="inp" id="cof">${[["", "Kein Schwerpunkt"], ["Brust", "Brust"], ["Rücken", "Rücken"], ["Schultern", "Schultern"], ["Arme", "Arme"], ["Beine", "Beine und Po"]].map(([v, l]) => `<option value="${v}" ${cc.focus === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <p class="small muted" style="margin:0">Dein Ziel (${esc(GOALS[goalType()])}) stellst du im Zahnrad ein, der Coach richtet sich danach.</p>
+    <button class="btn primary" type="submit">Speichern</button></form>`);
+}
+/* Gewichtsvorschlag nach doppelter Progression: alle Sätze am oberen Ende → mehr Gewicht, sonst gleiches Gewicht, mehr Wdh. */
+function weightSuggestion(exId, target, date, wid){
+  const last = lastPerformance(exId, date, wid); if (!last || !target) return "";
+  const hi = repHi(target.reps); const ws = last.sets.map(s => num(s.w) || 0); const top = Math.max(...ws);
+  if (!(top > 0) || !hi) return "";
+  const rx = exRef(exId), comp = rx ? rx.mc === "c" : true;
+  const all = last.sets.filter(s => (num(s.w) || 0) >= top).every(s => num(s.r) >= hi);
+  const next = all ? Math.round((top + (comp ? 2.5 : 1.25)) * 4) / 4 : top;
+  return `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">Vorschlag heute: ${fmtKg(next)} kg × ${esc(target.reps)}${all ? " (Gewicht rauf)" : " (gleiches Gewicht, mehr Wdh.)"}</div>`;
+}
+/* Tagesform: aus der heutigen Erholung */
+function dayFormHint(w){
+  if (!w || w.date !== todayKey() || w.status === "done") return "";
+  const r = recoveryOf(w.date); if (!r) return "";
+  const z = zoneOf(r.score);
+  if (z === "bad") return `<div class="hint" style="margin-bottom:12px;border:1.5px solid var(--warn)"><b>Tagesform niedrig (Erholung ${r.score} %):</b> Mach heute pro Übung einen Satz weniger und hör 3 Wdh. vor dem Versagen auf.</div>`;
+  if (z === "good") return `<div class="hint good" style="margin-bottom:12px"><b>Gut erholt (${r.score} %):</b> Guter Tag, um bei den Übungen mit „Gewicht rauf“ zu steigern.</div>`;
+  return `<div class="hint" style="margin-bottom:12px"><b>Erholung ${r.score} %:</b> Normal trainieren, Gewichte halten oder leicht steigern.</div>`;
 }
 
 /* ----- Freunde ----- */
@@ -2097,16 +2310,16 @@ function renderWs(){
   if (!ws) return;
   const done = ws.status === "done";
   const exOpts = Object.entries(S.exercises).sort((a, b) => a[1].name.localeCompare(b[1].name, "de")).map(([id, e]) => `<option value="${id}">${esc(e.name)}</option>`).join("");
-  let b = `<div class="row small muted" style="margin-bottom:12px"><span>${fmtLong(ws.date)}</span>${done ? '<span class="chip good">Erledigt</span>' : '<span class="chip warn">Läuft</span>'}</div>`;
+  let b = `<div class="row small muted" style="margin-bottom:12px"><span>${fmtLong(ws.date)}</span>${done ? '<span class="chip good">Erledigt</span>' : '<span class="chip warn">Läuft</span>'}</div>` + dayFormHint(ws);
   b += (ws.exercises || []).map((e, ei) => {
     const last = lastPerformance(e.exId, ws.date, ws.id);
     const hi = e.target ? repHi(e.target.reps) : null;
     let hint = "";
-    if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft. Heute Gewicht erhöhen.</div>` : ""; }
+    if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all && done ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft.</div>` : ""; }
     const rx = exRef(e.exId), open = wsInfo[ei];
     return `<div class="ex"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done ? "" : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
       ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
@@ -2389,6 +2602,9 @@ document.addEventListener("click", async e => {
     case "exdb-back": openExdb(); break;
     case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
     case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && d.water >= g.total && d.water - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
+    case "coach-adopt": { if (!EXDB) await loadExdb(); coachAdopt(coachPlan()); trainSub = "plaene"; render(); break; }
+    case "coach-settings": openCoachSettings(); break;
+    case "coach-off": saveCfg({coach: Object.assign({}, coachCfg(), {on: false})}); toast("Coach aus. Die Coach-Pläne bleiben, du kannst sie löschen oder weiter nutzen."); break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -2479,6 +2695,7 @@ document.addEventListener("submit", async e => {
       const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
       if (r.goal === "cut") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
       saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
+    case "coach": { const was = coachCfg().on; saveCfg({coach: Object.assign({}, coachCfg(), {days: num(v("cod")) || 3, minutes: num(v("com")) || 60, equip: v("coe") || "gym", focus: v("cof") || ""})}); if (was) coachAdopt(coachPlan(), true); closeSheet(); toast(was ? "Gespeichert, Coach-Plan neu berechnet." : "Gespeichert."); break; }
     case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; FR.editProfile = false; toast("Gespeichert."); loadFriends(true); break; }
     case "addfriend": {
       const em = v("fe").trim(); const {data: r, error} = await sb.rpc("add_friend", {p_email: em});
