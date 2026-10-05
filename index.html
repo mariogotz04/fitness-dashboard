@@ -296,7 +296,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 10:59";
+const APP_VERSION = "05.10.2026 11:09";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1985,6 +1985,143 @@ function openSleepDetail(k){
   openSheet("Schlaf im Detail", body);
 }
 
+/* ---------- Export fürs Second Brain ----------
+   Erstellt eine Markdown-Datei mit allen Daten seit dem letzten Export (beim ersten Mal: alles).
+   Am iPhone über das Teilen-Menü („In Dateien sichern“ oder Kurzbefehl), am Mac als Download.
+   Enthält nur eigene Daten: keine Freunde, keine Zugangsdaten. */
+const SB_DEFAULT_DIR = "iCloud Drive › Second Brain › Privat › raw › inbox";
+const de = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString("de-DE", {minimumFractionDigits: d, maximumFractionDigits: d});
+function sbRange(){
+  const c = cfgRaw(), to = todayKey();
+  let from = c.lastExport ? String(c.lastExport).slice(0, 10) : null;
+  if (!from) {
+    const ks = Object.keys(S.days).concat(Object.values(S.workouts).map(w => w.date)).filter(Boolean).sort();
+    from = ks.length ? ks[0] : to;
+  }
+  return {from, to, first: !c.lastExport};
+}
+function sbFileName(){
+  const c = cfgRaw(), t = todayKey();
+  const n = c.lastExportDay === t ? (num(c.exportsToday) || 1) + 1 : 1;
+  return {name: "fitness-export_" + t + (n > 1 ? "_" + n : "") + ".md", n};
+}
+function sbKind(w){
+  if (w.kind !== "activity") return "Krafttraining";
+  const k = actKind(w);
+  return {fussball: "Fußball", lauf: "Laufen", rad: "Radfahren", wandern: "Wandern", gehen: "Gehen", schwimmen: "Schwimmen", tennis: "Tennis"}[k] || "Sport";
+}
+function buildExport(){
+  const c = cfgRaw(), gt = goalType(), {from, to, first} = sbRange();
+  const inR = k => k >= from && k <= to;
+  const L = [];
+  const now = new Date();
+  L.push(`# Fitness-Export ${to}`, "");
+  L.push(`- **Exportiert am:** ${to}, ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")} Uhr`);
+  L.push(`- **Zeitraum:** ${from} bis ${to}${first ? " (erster Export, alle vorhandenen Daten)" : " (seit dem letzten Export)"}`);
+  L.push(`- **App:** Fitness-Dashboard (mariogotz04.github.io/fitness-dashboard)`, "");
+  // Training
+  const ws = workoutsSorted().filter(w => w.status === "done" && inR(w.date));
+  if (ws.length) {
+    L.push(`## Trainingseinheiten (${ws.length})`, "");
+    ws.forEach(w => {
+      const min = w.kind === "activity" ? num(w.minutes) : (w.start && w.end ? Math.round((new Date(w.end) - new Date(w.start)) / 60000) : null);
+      const meta = [sbKind(w), min && min < 400 ? min + " min" : "", w.km ? de(num(w.km), 1) + " km" : "", w.avgHR ? "Ø Puls " + w.avgHR : "", w.kcal ? de(num(w.kcal)) + " kcal" : "", w.teAer != null ? "Trainingseffekt aerob " + de(num(w.teAer), 1) + " / anaerob " + de(num(w.teAna), 1) : ""].filter(Boolean).join(" · ");
+      L.push(`### ${w.date} · ${w.title || sbKind(w)}`, meta);
+      (w.exercises || []).forEach(e => {
+        const sets = (e.sets || []).filter(q => num(q.r) > 0 || num(q.sec) > 0);
+        if (!sets.length) return;
+        L.push(`- ${exName(e.exId) || e.name}: ${sets.map(q => (q.type === "warmup" ? "(Aufwärmen) " : "") + (num(q.sec) ? q.sec + " s" : (num(q.w) ? fmtKg(num(q.w)) + " kg × " : "") + q.r + " Wdh.")).join(", ")}`);
+      });
+      if (w.note) L.push(`- Notiz: ${String(w.note).replace(/\n+/g, " ")}`);
+      L.push("");
+    });
+  }
+  // Bestwerte
+  const prs = [];
+  Object.keys(S.exercises).forEach(id => {
+    const h = exHistory(id).filter(x => x.kind === "kg"), before = h.filter(x => x.k < from), inside = h.filter(x => inR(x.k));
+    if (!inside.length) return;
+    const best = inside.reduce((a, x) => x.v > a.v ? x : a, inside[0]), prev = before.length ? Math.max(...before.map(x => x.v)) : 0;
+    if (first || best.v > prev * 1.005) { const top = best.sets.reduce((a, q) => num(q.w) > num(a.w) ? q : a, best.sets[0]); prs.push(`- ${exName(id)}: ${fmtKg(num(top.w))} kg × ${top.r} Wdh. (geschätztes 1RM ${de(best.v, 1)} kg, Stand ${best.k})${first ? "" : prev ? `, vorher ${de(prev, 1)} kg` : ", erster Wert"}`); }
+  });
+  if (prs.length) L.push(first ? `## Bestwerte je Übung (${prs.length})` : `## Neue Bestwerte (${prs.length})`, "", ...prs, "");
+  // Körper
+  const wts = weightSeries().filter(p => inR(p.k)), waist = Object.keys(S.days).filter(k => inR(k) && typeof S.days[k].waist === "number").sort();
+  const vo2 = Object.keys(S.days).filter(k => inR(k) && num(S.days[k].vo2) > 0).sort();
+  if (wts.length || waist.length || vo2.length) {
+    L.push("## Körperwerte", "");
+    if (wts.length) { L.push("| Datum | Gewicht |", "|---|---|"); wts.forEach(p => L.push(`| ${p.k} | ${de(p.v, 1)} kg |`)); L.push(""); }
+    if (waist.length) { L.push("Taillenumfang: " + waist.map(k => `${de(S.days[k].waist, 1)} cm (Stand ${k})`).join(", "), ""); }
+    if (vo2.length) L.push(`VO2max (Garmin): ${vo2.map(k => `${de(num(S.days[k].vo2), 1)} (Stand ${k})`).slice(-5).join(", ")}`, "");
+  }
+  // Ernährung
+  const eatDays = Object.keys(S.days).filter(k => inR(k) && dayTotals(S.days[k]).kcal > 0).sort();
+  if (eatDays.length) {
+    L.push("## Ernährung", "", "| Datum | Kalorien | Eiweiß | Kohlenhydrate | Fett | Getrunken |", "|---|---|---|---|---|---|");
+    eatDays.forEach(k => { const t = dayTotals(S.days[k]), wa = num(S.days[k].water); L.push(`| ${k}${k === todayKey() ? " (heute, noch offen)" : ""} | ${de(t.kcal)} kcal | ${de(t.p)} g | ${de(t.c)} g | ${de(t.f)} g | ${wa ? de(wa / 1000, 2) + " l" : "–"} |`); });
+    const wk = {}; eatDays.forEach(k => { const m = mondayOf(k); (wk[m] = wk[m] || []).push(dayTotals(S.days[k])); });
+    L.push("", "Wochendurchschnitt (nur eingetragene Tage):");
+    Object.keys(wk).sort().forEach(m => { const xs = wk[m]; L.push(`- Woche ab ${m}: Ø ${de(xs.reduce((a, t) => a + t.kcal, 0) / xs.length)} kcal, Ø ${de(xs.reduce((a, t) => a + t.p, 0) / xs.length)} g Eiweiß (${xs.length} ${xs.length === 1 ? "Tag" : "Tage"})`); });
+    L.push("");
+  }
+  // Schritte, Schlaf, Erholung
+  const vitDays = Object.keys(S.days).filter(k => inR(k) && (num(S.days[k].steps) || (S.days[k].sleep && num(S.days[k].sleep.h)))).sort();
+  if (vitDays.length) {
+    L.push("## Schritte, Schlaf und Erholung", "", "| Datum | Schritte | Schlaf | Schlafwert | Tiefschlaf | HRV | Ruhepuls | Erholung |", "|---|---|---|---|---|---|---|---|");
+    vitDays.forEach(k => { const d = S.days[k], sl = d.sleep || {}, r = recoveryOf(k);
+      L.push(`| ${k} | ${num(d.steps) ? de(num(d.steps)) : "–"} | ${num(sl.h) ? de(num(sl.h), 1) + " h" : "–"} | ${sl.score || "–"} | ${num(sl.deep) ? sl.deep + " min" : "–"} | ${sl.hrv ? sl.hrv + " ms" : "–"} | ${sl.rhr || "–"} | ${r ? r.score + " %" : "–"} |`); });
+    L.push("");
+  }
+  // Notizen, Befinden
+  const notes = [];
+  ws.filter(w => w.note).forEach(w => notes.push(`- ${w.date}, ${w.title}: ${String(w.note).replace(/\n+/g, " ")}`));
+  Object.keys(S.days).filter(k => inR(k) && S.days[k].checkin).sort().forEach(k => { const ci = S.days[k].checkin; if (ci.soreness >= 4 || ci.energy <= 2) notes.push(`- ${k}: Check-in Energie ${ci.energy}/5, Muskelkater ${ci.soreness}/5`); });
+  Object.entries(S.exercises).filter(([, e]) => /schmerz|verletz|reha|prellung/i.test((e.notes || "") + " " + e.name)).forEach(([, e]) => notes.push(`- Übung „${e.name}“: ${e.notes || "Reha-Übung"}`));
+  if (notes.length) L.push("## Notizen, Befinden, Schmerzen", "", ...notes, "");
+  // Ziele
+  const ser = weightSeries(), last = ser.length ? ser[ser.length - 1] : null, avgW = last ? avgAt(ser, last.k) : null;
+  const strengthN = ws.filter(w => w.kind !== "activity").length, weeks = Math.max(1, (diffDays(from, to) + 1) / 7);
+  const cc = cfg();
+  L.push("## Ziele und Stand", "");
+  L.push(`- Ziel: ${GOALS[gt]}${c.calc && c.calc.on ? ` (Kalorienrechner aktiv, Tempo ${num(c.calc.pace) > 0 ? "+" : ""}${num(c.calc.pace)} kcal)` : ""}`);
+  if (c.goalLo) L.push(`- Zielgewicht: ${de(num(c.goalLo), 1)} kg${avgW ? ` · aktuell Ø 7 Tage ${de(avgW, 1)} kg (Stand ${last.k}), noch ${de(Math.abs(avgW - num(c.goalLo)), 1)} kg` : ""}`);
+  L.push(`- Tagesziel Ernährung: ${de(cc.kcal)} kcal, ${de(cc.p)} g Eiweiß (Stand ${to})`);
+  L.push(`- Krafttraining: Ziel ${cc.strengthPerWeek} Einheiten pro Woche · im Zeitraum Ø ${de(strengthN / weeks, 1)} pro Woche`);
+  L.push(`- Schlafziel: ${de(cc.sleepGoal, 1)} h`, "");
+  // Zusammenfassung (nur Fakten)
+  const sum = [];
+  const acts = ws.filter(w => w.kind === "activity");
+  sum.push(`Im Zeitraum ${from} bis ${to} gab es ${strengthN} Krafttrainings und ${acts.length} weitere Sporteinheiten${acts.length ? ` (${[...new Set(acts.map(sbKind))].join(", ")})` : ""}.`);
+  if (wts.length >= 2) sum.push(`Das Gewicht ging von ${de(wts[0].v, 1)} kg (${wts[0].k}) auf ${de(wts[wts.length - 1].v, 1)} kg (${wts[wts.length - 1].k}).`);
+  if (eatDays.length) { const tt = eatDays.map(k => dayTotals(S.days[k])); sum.push(`An ${eatDays.length} eingetragenen Tagen lagen die Kalorien im Schnitt bei ${de(tt.reduce((a, t) => a + t.kcal, 0) / tt.length)} kcal und das Eiweiß bei ${de(tt.reduce((a, t) => a + t.p, 0) / tt.length)} g.`); }
+  const sls = vitDays.map(k => num((S.days[k].sleep || {}).h)).filter(h => h >= 3);
+  if (sls.length) sum.push(`Der Schlaf lag im Schnitt bei ${de(sls.reduce((a, b) => a + b, 0) / sls.length, 1)} h pro Nacht.`);
+  if (prs.length) sum.push(first ? `Für ${prs.length} Übungen sind Bestwerte gespeichert.` : `${prs.length} Übung${prs.length > 1 ? "en haben" : " hat"} einen neuen Bestwert erreicht.`);
+  L.push("## Zusammenfassung", "", sum.slice(0, 5).join(" "), "");
+  // Rohdaten (nur eigene Daten im Zeitraum, ohne Zugangsdaten)
+  const raw = {app: "Fitness-Dashboard", exportiert: now.toISOString(), zeitraum: {von: from, bis: to},
+    tage: Object.fromEntries(Object.keys(S.days).filter(inR).sort().map(k => [k, S.days[k]])),
+    trainings: ws.map(w => Object.assign({}, w, {exercises: (w.exercises || []).map(e => Object.assign({}, e, {name: exName(e.exId) || e.name}))})),
+    ziele: {ziel: gt, kcal: cc.kcal, eiweiss: cc.p, kohlenhydrate: cc.c, fett: cc.f, zielgewicht: c.goalLo, krafteinheitenProWoche: cc.strengthPerWeek, schlafziel: cc.sleepGoal}};
+  L.push("## Rohdaten (JSON)", "", "```json", JSON.stringify(raw, null, 1), "```", "");
+  return {text: L.join("\n"), from, to};
+}
+async function runExport(){
+  const ex = buildExport(), fn = sbFileName();
+  const file = new File([ex.text], fn.name, {type: "text/markdown"});
+  let ok = false;
+  try {
+    if (navigator.canShare && navigator.canShare({files: [file]})) { await navigator.share({files: [file], title: fn.name}); ok = true; }
+  } catch(e) { if (e && e.name === "AbortError") { toast("Export abgebrochen."); return; } }
+  if (!ok) {
+    const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = fn.name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); ok = true;
+  }
+  const t = todayKey();
+  saveCfg({lastExport: new Date().toISOString(), lastExportDay: t, exportsToday: fn.n});
+  toast("Export erstellt: " + fn.name);
+}
+
 /* ----- Freunde ----- */
 let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, avatar: null, msg: "", editProfile: false};
 async function loadFriends(force){
@@ -3010,6 +3147,9 @@ function openSettings(){
     <p class="small ink2" style="margin:0 0 8px">Exportiere in Hevy unter Profil → Einstellungen → Daten exportieren deine Trainings als CSV und wähle die Datei hier aus. Bereits importierte Trainings werden nicht doppelt angelegt.</p>
     <input class="inp" type="file" id="hevyfile" accept=".csv,text/csv">
     <div id="hevymsg" class="small muted" style="margin-top:6px"></div>
+    <div class="section-title">Second Brain</div>
+    <button class="btn primary" data-act="sb-export">🧠 Export fürs Second Brain</button>
+    <p class="small muted" style="margin:6px 0 0">Erstellt eine Notiz mit allen Daten seit dem letzten Export${cfgRaw().lastExport ? ` (zuletzt am ${String(cfgRaw().lastExport).slice(0, 10)})` : " (beim ersten Mal: alles)"}. Am iPhone im Teilen-Menü „In Dateien sichern“ wählen und den Ordner ${SB_DEFAULT_DIR} nehmen, oder deinen Kurzbefehl „Ins Second Brain“.</p>
     <div class="section-title">Sicherung</div><button class="btn" data-act="export">Alle Daten als Datei sichern</button>
     <div class="section-title">Konto</div>
     <p class="small muted" style="margin:0 0 8px">Angemeldet als ${esc(user ? user.email : "")}. Deine Daten liegen geschützt in deiner eigenen Datenbank und sind auf iPhone und Mac gleich.</p>
@@ -3206,6 +3346,7 @@ document.addEventListener("click", async e => {
     case "wp-fb": if (wp) { wp.days[D.date].fb = D.v; renderPlanner(); } break;
     case "wp-save": if (wp) { savePlanner(); toast("Woche gespeichert. Die Tipps richten sich jetzt nach deinem Plan."); closeSheet(); } break;
     case "wp-clear": if (wp) { if (b.dataset.confirm) { const all = Object.assign({}, weekPlans()); delete all[wp.mon]; saveCfg({weekPlan: all}); workoutsSorted().filter(w => w.planner && w.status === "planned" && w.date >= wp.mon && w.date <= addDays(wp.mon, 6)).forEach(w => del("workouts", w.id)); toast("Plan gelöscht."); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } } break;
+    case "sb-export": await runExport(); break;
     case "rec-detail": openRecoveryDetail(D.date || todayKey()); break;
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
