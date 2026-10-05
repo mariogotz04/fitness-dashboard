@@ -71,8 +71,8 @@ h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin
 
 /* Tab-Leiste */
 .tabs{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:30;max-width:560px;margin:0 auto;background:color-mix(in srgb,var(--surface) 86%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(18px);backdrop-filter:saturate(1.6) blur(18px);border:1px solid var(--line);border-radius:24px;box-shadow:0 8px 30px rgba(20,16,50,.14)}
-.tabs nav{display:grid;grid-template-columns:repeat(6,1fr);padding:6px}
-.tabs button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:10.5px;min-width:0;font-weight:600;cursor:pointer;border-radius:18px;transition:background .2s,color .2s}
+.tabs nav{display:grid;grid-template-columns:repeat(7,1fr);padding:5px}
+.tabs button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:9.5px;letter-spacing:-.01em;min-width:0;font-weight:600;cursor:pointer;border-radius:18px;transition:background .2s,color .2s}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .tabs button[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
 
@@ -229,7 +229,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .checkin .seg{background:var(--surface)}
 .checkin .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .tips .li{padding:9px 0}
-.restbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:3px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+.restbar{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:3px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
 .dialbtn{background:none;border:0;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;min-width:0;border-radius:16px}
 .dialbtn:active{transform:scale(.97)}
 .av{width:36px;height:36px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
@@ -296,7 +296,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 11:09";
+const APP_VERSION = "05.10.2026 20:01";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -338,6 +338,7 @@ const ICON = {
   training:'<svg viewBox="0 0 24 24"><path d="M6.5 6.5v11M17.5 6.5v11M3.5 9v6M20.5 9v6M6.5 12h11"/></svg>',
   koerper:'<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M8.5 10a5 5 0 0 1 7 0"/><path d="M12 10l1.5-2"/></svg>',
   freunde:'<svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19.5c.6-3.3 3-5.2 6-5.2s5.4 1.9 6 5.2"/><circle cx="17" cy="9" r="2.6"/><path d="M16.2 14.4c2.5.2 4.3 1.9 4.8 4.6"/></svg>',
+  tipps:'<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/></svg>',
   routine:'<svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
   gear:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   left:'<svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>',
@@ -346,7 +347,7 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 };
 
-const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["freunde","Freunde"],["koerper","Körper"],["routine","Erholung"]];
+const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["tipps","Tipps"],["koerper","Körper"],["routine","Erholung"],["freunde","Freunde"]];
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
@@ -465,7 +466,7 @@ function groupTarget(g){
 /* Was deine eigenen Pläne pro Woche für eine Muskelgruppe vorsehen */
 function plannedSets(g){
   let sets = 0, n = 0;
-  templatesSorted().filter(t => !t.coach).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (e && (e.group || "") === g) { sets += num(it.sets) || 0; n++; } }));
+  templatesSorted().filter(t => !t.coach && !/reha/i.test(t.name || "")).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (e && (e.group || "") === g) { sets += num(it.sets) || 0; n++; } }));
   return {sets, n};
 }
 /* Empfehlung für eine Übung in deinem Plan (nur Info) */
@@ -728,16 +729,17 @@ function render(){
   renderTop(); renderTabs();
   const v = $("#view");
   if (!loaded) { v.innerHTML = '<div class="empty">Daten werden geladen …</div>'; return; }
-  const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
+  const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine, tipps: viewTipps})[tab]();
   v.innerHTML = html;
   if (animNext) { animNext = false; v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter"); clearTimeout(animT); animT = setTimeout(() => v.classList.remove("enter"), 1200); }
   drawCharts();
+  if (loaded && EXDB) setTimeout(autoPlanDaily, 600);
   if (openPlanOnLoad && mode === "db") { openPlanOnLoad = false; setTimeout(() => openPlanner(), 400); }
   setTimeout(maybeShowReview, 600);
 }
 function renderTop(){
   const dated = tab === "heute" || tab === "essen";
-  const titles = {heute: "Übersicht", essen: "Ernährung", training: "Training", freunde: "Freunde", koerper: "Gewicht & Körper", routine: "Erholung & Schlaf"};
+  const titles = {heute: "Übersicht", essen: "Ernährung", training: "Training", freunde: "Freunde", koerper: "Gewicht & Körper", routine: "Erholung & Schlaf", tipps: "Tipps & Wissen"};
   let h = "";
   if (dated) {
     const rel = relDay(curDate);
@@ -785,14 +787,14 @@ function burnedOf(k){
   if (m === "off") return 0;
   return Math.round((num(d.burnManual) || 0) + burnAuto(d, c) + stepBonus(k, c).kcal);
 }
-/* Kalorienrechner: Schritte über dem gewählten Aktivitätslevel zusätzlich anrechnen.
+/* Kalorienrechner: alle Garmin-Schritte des Tages zusätzlich anrechnen (das Aktivitätslevel enthält keine Schritte).
    Schritte aus Sport (Fußball, Laufen …) zählen nicht doppelt, die stecken schon in den Trainingskalorien. */
 const FOOT_SPORT = /fu(ß|ss)ball|lauf|run|jogg|spazier|walk|wander|hik|tennis/i;
 function stepBonus(k, c){
   const none = {kcal: 0, extra: 0, inc: 0};
   if (!(c.calc && c.calc.on) || (c.burnMode || "workouts") === "off") return none;
   const d = S.days[k] || {}, steps = num(d.steps) || 0; if (!steps) return none;
-  const lvl = PALS.find(x => x[0] === (num(c.calc.pal) || 1.4)) || PALS[1], inc = lvl[3];
+  const inc = 0;
   const sportSteps = workoutsSorted().filter(w => w.date === k && w.kind === "activity" && FOOT_SPORT.test(w.title || "")).reduce((a, w) => a + (num(w.minutes) || 0) * 110, 0);
   const extra = Math.max(0, steps - sportSteps - inc);
   // Gehen kostet netto etwa 0,5 kcal pro kg und km, bei ca. 1.300 Schritten pro km
@@ -1029,6 +1031,48 @@ function setsWeeks(k){
   if (vals.filter(Boolean).length < 2) return "";
   return `<div class="eyebrow" style="margin:16px 0 4px">Sätze pro Woche · letzte 8 Wochen</div>${weekBars(vals, {h: 100, label: "Sätze pro Woche", fmt: v => fmt(v) + " Sätze", short: v => fmt(v), xlabels: mons.map(m => fmtShort(m).replace(/\.$/, "")), today: 7, color: (v, i) => i === 7 ? "var(--accent)" : "color-mix(in srgb,var(--accent) 45%,var(--surface))"})}`;
 }
+/* ---------- Automatik in den eigenen Plänen ----------
+   Ist „Ernährung & Training automatisch“ an, trägt die App Sätze, Wiederholungen, Pausen und das Gewicht direkt in deine Pläne ein
+   (Übungen bleiben gleich, Reha-Pläne bleiben unberührt). Die ursprünglichen Werte werden gemerkt (orig) und beim Ausschalten zurückgesetzt. */
+function suggestKg(exId, reps){
+  const last = lastPerformance(exId, todayKey()); if (!last) return null;
+  const top = Math.max(...last.sets.map(q => num(q.w) || 0)); if (!(top > 0)) return null;
+  const hi = repHi(reps), rx = exRef(exId), comp = rx ? rx.mc === "c" : true;
+  const all = hi && last.sets.filter(q => (num(q.w) || 0) >= top).every(q => num(q.r) >= hi);
+  return all ? Math.round((top + (comp ? 2.5 : 1.25)) * 4) / 4 : top;
+}
+const autoTemplate = t => t && !t.coach && !/reha/i.test(t.name || "");
+function autoPlanSync(){
+  if (!loaded || mode !== "db" || !EXDB) return 0;
+  const on = autoOn(); let n = 0;
+  templatesSorted().forEach(t => {
+    let changed = false;
+    const items = (t.items || []).map(it => {
+      const x = clone(it);
+      if (!on || !autoTemplate(t)) {
+        if (x.orig) { Object.assign(x, x.orig); delete x.orig; delete x.kg; changed = true; }
+        return x;
+      }
+      const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
+      const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
+      const nv = {sets: r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
+      if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
+        if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
+        Object.assign(x, nv); if (!nv.kg) delete x.kg; changed = true;
+      }
+      return x;
+    });
+    if (changed) { const {id, ...data} = t; put("templates", id, Object.assign(clone(data), {items})); n++; }
+  });
+  // geplante, noch nicht gestartete Trainings aus diesen Plänen ebenfalls aktualisieren
+  if (n) workoutsSorted().filter(w => w.status === "planned" && w.templateId && S.templates[w.templateId] && w.date >= todayKey()).forEach(w => {
+    const t = S.templates[w.templateId], nw = newWorkoutFromTemplate(w.templateId, w.date);
+    const {id, ...data} = w; put("workouts", w.id, Object.assign(clone(data), {exercises: nw.exercises, title: t.name}));
+  });
+  return n;
+}
+let autoPlanDay = null;
+function autoPlanDaily(){ const t = todayKey(); if (autoPlanDay === t || !EXDB || !loaded) return; autoPlanDay = t; autoPlanSync(); }
 /* Vorschau eines Trainings: alle Übungen mit Sätzen, ohne es zu starten */
 function openWorkoutPreview(id){
   const w = S.workouts[id]; if (!w) return;
@@ -1065,7 +1109,7 @@ function burnRow(k){
   if (m === "off") return "";
   const sb = stepBonus(k, c), auto = burnAuto(d, c) + sb.kcal, man = num(d.burnManual) || 0, share = num(c.burnShare) || 100;
   return `<div class="spread" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);flex-wrap:wrap">
-    <span class="small"><b>🔥 ${fmt(auto + man)} kcal verbrannt</b><span class="muted"> · ${m === "active" ? "aktive Kalorien" : "Trainings"} von Garmin ${fmt(auto - sb.kcal)}${share < 100 ? " (" + share + " %)" : ""}${sb.kcal ? " + " + fmt(sb.kcal) + " für " + fmt(sb.extra) + " Schritte über deinem Level (bis " + fmt(sb.inc) + ")" : ""}${man ? " + manuell " + fmt(man) : ""}. Ziel heute: ${fmt(c.kcal)} + ${fmt(auto + man)} = ${fmt(c.kcal + auto + man)} kcal</span></span>
+    <span class="small"><b>🔥 ${fmt(auto + man)} kcal verbrannt</b><span class="muted"> · ${m === "active" ? "aktive Kalorien" : "Trainings"} von Garmin ${fmt(auto - sb.kcal)}${share < 100 ? " (" + share + " %)" : ""}${sb.kcal ? " + Schritte " + fmt(sb.kcal) + " (" + fmt(sb.extra) + " Schritte)" : ""}${man ? " + manuell " + fmt(man) : ""}. Ziel heute: ${fmt(c.kcal)} + ${fmt(auto + man)} = ${fmt(c.kcal + auto + man)} kcal</span></span>
     <form class="row" data-form="burn" data-date="${k}" style="flex-wrap:nowrap;gap:6px"><input class="inp num" id="burnin" inputmode="numeric" placeholder="+ kcal" style="width:90px;min-height:36px;padding:5px 8px" aria-label="Verbrannte Kalorien manuell hinzufügen"><button class="btn" type="submit" style="min-height:36px">Hinzufügen</button>${man ? `<button class="btn ghost" type="button" data-act="burn-reset" data-date="${k}" style="min-height:36px">Manuell zurücksetzen</button>` : ""}</form>
   </div>`;
 }
@@ -1094,12 +1138,16 @@ function fuelBox(k){
    und NotebookLM-Zusammenfassung (Defizit höchstens ca. 500 kcal, Überschuss ca. 200–300, Eiweiß 1,6–2,2 g/kg,
    Uhren überschätzen Trainingskalorien). Sport kommt täglich über „Verbrannte Kalorien“ dazu.
    Dynamisch: rechnet mit dem aktuellen Gewicht (Ø 7 Tage) und lernt aus Essen + Gewichtsverlauf der letzten 3 Wochen. */
+/* Aktivitätslevel = Belastung durch Job und Alltag OHNE Schritte und Sport (Hessmann: PAL; die Gehanteile sind herausgerechnet,
+   weil echte Garmin-Schritte jeden Tag extra dazukommen). Wer körperlich arbeitet, beansprucht die Muskulatur stärker. */
 const PALS = [
-  [1.3, "Sehr niedrig", "Fast nur Sitzen oder Liegen, kaum Wege zu Fuß. Z. B. Homeoffice, Studium am Schreibtisch, bis 5.000 Schritte am Tag.", 5000],
-  [1.4, "Niedrig", "Viel Sitzen. Z. B. Büroarbeit, IT, Verwaltung, Autofahren, bis 7.500 Schritte.", 7500],
-  [1.6, "Mittel", "Sitzen mit regelmäßig Bewegung. Z. B. Lehrer, Labor, Außendienst, bis 10.000 Schritte.", 10000],
-  [1.8, "Hoch", "Viel Stehen und Gehen. Z. B. Verkauf, Pflege, Gastronomie, Handwerk, bis 12.500 Schritte.", 12500],
-  [2.0, "Sehr hoch", "Körperlich schwere Arbeit. Z. B. Bau, Landwirtschaft, Lager, Möbelpacker, bis 15.000 Schritte.", 15000]];
+  [1.2, "Sehr niedrig", "Fast nur Sitzen oder Liegen. Z. B. Homeoffice, Studium am Schreibtisch."],
+  [1.3, "Niedrig", "Sitzende Arbeit. Z. B. Büro, IT, Verwaltung, viel Autofahren."],
+  [1.45, "Mittel", "Sitzen und Stehen im Wechsel. Z. B. Lehrer, Labor, Außendienst."],
+  [1.6, "Hoch", "Viel Stehen und Muskelarbeit. Z. B. Verkauf, Pflege, Gastronomie, Handwerk."],
+  [1.8, "Sehr hoch", "Körperlich schwere Arbeit. Z. B. Bau, Landwirtschaft, Lager, Möbelpacker."]];
+const PAL_OLD = {1.3: 1.2, 1.4: 1.3, 1.6: 1.45, 1.8: 1.6, 2.0: 1.8, 2: 1.8};
+const palOf = p => { const v = num(p && p.pal) || 1.3; return p && p.palV === 2 ? v : (PAL_OLD[v] || v); };
 const palName = v => (PALS.find(x => x[0] === v) || [0, "Eigener Wert"])[1];
 const PACE = {
   cut: [[-300, "Sanft: −300 kcal (ca. 0,3 kg pro Woche)"], [-500, "Empfohlen: −500 kcal (ca. 0,5 kg pro Woche)"], [-750, "Zügig: −750 kcal (ca. 0,7 kg pro Woche)"]],
@@ -1131,7 +1179,7 @@ function calcTargets(p, goal){
   const bm = (cfgRaw().burnMode || "workouts") === "off" ? "off" : "workouts";
   const bmr = bmrOf(p, w);
   // Aktivitätslevel = Alltag ohne Sport (Hessmann: PAL). Sport kommt täglich von Garmin dazu; ohne Garmin-Anrechnung pauschal +0,2
-  const factor = (num(p.pal) || 1.4) + (bm === "off" ? 0.2 : 0);
+  const factor = palOf(p) + (bm === "off" ? 0.3 : 0);
   const formula = bmr * factor;
   const L = learnedBase(p);
   let base = formula, share = 0;
@@ -1159,12 +1207,12 @@ function calcExplain(t, goal){
   const L = t.learned;
   return `<div class="stack" style="gap:6px">
     <div class="spread"><span>Grundumsatz (${fmt(t.w, 1)} kg)</span><b class="num">${fmt(t.bmr)} kcal</b></div>
-    <div class="spread"><span>× Aktivität „${palName(Math.round((t.factor - (bm === "off" ? 0.2 : 0)) * 10) / 10)}“ (${fmt(t.factor, 1)}${bm === "off" ? ", inkl. Sport" : ""})</span><b class="num">${fmt(t.formula)} kcal</b></div>
+    <div class="spread"><span>× Aktivität „${palName(Math.round((t.factor - (bm === "off" ? 0.3 : 0)) * 100) / 100)}“ (${fmt(t.factor, 1)}${bm === "off" ? ", inkl. Sport" : ""})</span><b class="num">${fmt(t.formula)} kcal</b></div>
     ${L ? `<div class="spread"><span>Gelernt aus ${L.days} Tagen Essen + Gewicht (zählt ${Math.round(t.share * 100)} %)</span><b class="num">${fmt(L.base)} kcal</b></div>` : ""}
     <div class="spread"><span>${GOALS[goal]}</span><b class="num">${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal</b></div>
     <div class="spread" style="border-top:1px solid var(--line);padding-top:6px"><b>Tagesziel</b><b class="num" style="font-size:20px">${fmt(t.kcal)} kcal</b></div>
     <div class="small muted num">Eiweiß ${t.p} g · Kohlenhydrate ${t.c} g · Fett ${t.f} g</div>
-    ${bm !== "off" ? `<div class="small ink2">+ an jedem Tag deine Trainingskalorien von Garmin und Schritte über deinem Level${num(cfgRaw().burnShare) && num(cfgRaw().burnShare) < 100 ? " (" + cfgRaw().burnShare + " %)" : ""}.</div>` : ""}
+    ${bm !== "off" ? `<div class="small ink2">+ an jedem Tag deine Schritte und Trainingskalorien von Garmin${num(cfgRaw().burnShare) && num(cfgRaw().burnShare) < 100 ? " (" + cfgRaw().burnShare + " %)" : ""}.</div>` : ""}
     ${t.floorHit ? `<div class="hint">Weniger als ${fmt(t.floor)} kcal (ohne Sport) empfehle ich nicht, deshalb ist das Ziel hier begrenzt.</div>` : ""}
     ${L ? `<div class="small muted">In den letzten 3 Wochen: Ø ${fmt(L.eat)} kcal gegessen, Gewicht ${L.rate > 0 ? "+" : ""}${fmt(L.rate, 2)} kg pro Woche. Daraus lernt der Rechner deinen echten Verbrauch und passt das Ziel an, damit dein Ziel auch wirklich eintritt.</div>` : `<div class="small muted">Sobald du etwa 2 Wochen dein Essen einträgst und dich wiegst, lernt der Rechner deinen echten Verbrauch dazu und passt das Ziel an.</div>`}
   </div>`;
@@ -1177,8 +1225,8 @@ function calcForm(p, goal){
     <div class="fields"><div class="field"><label for="csx">Geschlecht</label><select class="inp" id="csx"><option value="m" ${p.sex !== "w" ? "selected" : ""}>Mann</option><option value="w" ${p.sex === "w" ? "selected" : ""}>Frau</option></select></div>
     <div class="field"><label for="cby">Geburtsjahr</label><input class="inp num" id="cby" inputmode="numeric" value="${esc(p.birth || "")}" placeholder="z. B. 2004"></div>
     <div class="field"><label for="cht">Größe (cm)</label><input class="inp num" id="cht" inputmode="numeric" value="${esc(p.height || "")}" placeholder="z. B. 182"></div></div>
-    <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Aktivitätslevel im Alltag (ohne Sport)</legend><div class="stack" style="gap:6px">${PALS.map(([v, l, ex]) => `<label class="pick" style="align-items:flex-start;gap:10px;cursor:pointer"><input type="radio" name="cpal" value="${v}" ${(num(p.pal) || 1.4) === v ? "checked" : ""} style="margin-top:4px"><span style="flex:1;min-width:0"><b>${l}</b><span class="small muted" style="display:block">${ex}</span></span></label>`).join("")}</div>
-      <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Training und Fußball nicht mitrechnen: Die kommen jeden Tag über Garmin dazu. Schritte bis zur Grenze deines Levels stecken schon drin. Gehst du mehr, rechnet die App die zusätzlichen Schritte an diesem Tag obendrauf."}</span></fieldset>
+    <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Aktivitätslevel durch Job und Alltag (ohne Schritte und Sport)</legend><div class="stack" style="gap:6px">${PALS.map(([v, l, ex]) => `<label class="pick" style="align-items:flex-start;gap:10px;cursor:pointer"><input type="radio" name="cpal" value="${v}" ${palOf(p) === v ? "checked" : ""} style="margin-top:4px"><span style="flex:1;min-width:0"><b>${l}</b><span class="small muted" style="display:block">${ex}</span></span></label>`).join("")}</div>
+      <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Schritte, Training und Fußball gehören nicht hierher: Die kommen jeden Tag über Garmin dazu. An Tagen mit wenig Schritten ist dein Ziel dadurch niedriger, an Tagen mit vielen höher."}</span></fieldset>
     <div class="field"><label for="cpace">Tempo</label><select class="inp" id="cpace">${paces.map(([v, l]) => `<option value="${v}" ${pace === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
     <div class="field"><label for="cft">Fett-Anteil</label><select class="inp" id="cft">${[25, 30].map(v => `<option value="${v}" ${(num(p.fat) || 25) === v ? "selected" : ""}>${v} %</option>`).join("")}</select></div></div>
@@ -1189,7 +1237,7 @@ function calcForm(p, goal){
 }
 function calcRead(){
   const v = id => ($("#" + id) || {}).value;
-  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birth: num(v("cby")) || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.4, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
+  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birth: num(v("cby")) || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
 }
 function openCalc(){
   const st = S.settings.main || {};
@@ -1374,9 +1422,9 @@ function viewCalendar(){
 }
 function viewTemplates(){
   const tpls = templatesSorted();
-  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">Automatik ist an: Unter jeder Übung steht eine Empfehlung für Sätze und Wiederholungen, passend zu Ziel, Ernährung und Erholung. Dein Plan bleibt, wie du ihn angelegt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
+  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast. Reha-Pläne bleiben unverändert.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
     <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
-    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir || "–") : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div>${planRecLine(it)}</div></div>`).join("")}</div>
+    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${fmtKg(it.kg)} kg</b>` : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
@@ -2122,6 +2170,105 @@ async function runExport(){
   toast("Export erstellt: " + fn.name);
 }
 
+/* ---------- Tipps: Informationscenter ----------
+   Wissen aus deinen Quellen (H = Hessmann „Sporternährung für jeden Tag“, N = Zusammenfassung NotebookLM,
+   S = Spieltagsvorbereitung Fußball), plus „Für dich heute“ aus deinen Daten. Jeder Tipp hat einen Deep Dive. */
+const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)"};
+const TIP_CATS = [["", "Alle"], ["ernaehrung", "🍽️ Ernährung"], ["training", "🏋️ Training"], ["erholung", "🌿 Erholung"], ["schlaf", "😴 Schlaf"], ["trinken", "💧 Trinken"], ["fussball", "⚽ Fußball"], ["supps", "💊 Supplements"]];
+const KB = [
+  {id: "protein", cat: "ernaehrung", icon: "🥩", title: "1,6–2,2 g Eiweiß pro kg Körpergewicht", short: "Die wichtigste Stellschraube für Muskelaufbau und -erhalt, egal ob Aufbau, Diät oder Halten.", why: "Muskeln bestehen aus Eiweiß. Bekommt der Körper zu wenig, kann er nach dem Training kaum neue Muskelmasse aufbauen, und im Kaloriendefizit baut er sie sogar ab. Eiweiß sättigt außerdem am stärksten.", how: ["Rechne dein Ziel: Körpergewicht × 1,6 bis 2,2.", "Verteile es auf 3–4 Mahlzeiten.", "Gute Quellen: Skyr, Magerquark, Hähnchen, Pute, Eier, Thunfisch, körniger Frischkäse, Linsen."], src: "N"},
+  {id: "protein30", cat: "ernaehrung", icon: "🍳", title: "Mindestens 30 g Eiweiß pro Mahlzeit", short: "Erst ab etwa 30 g hochwertigem Eiweiß springt der Muskelaufbau richtig an.", why: "Etwa 30 g Eiweiß liefern genug Leucin (2–3 g), um die Muskelproteinsynthese voll zu starten. 3–4 solche Mahlzeiten mit 3–5 Stunden Abstand bringen mehr als ständiges Snacken.", how: ["30 g sind z. B. 150–200 g Hähnchen, 300 g Skyr oder 30 g Whey.", "Frühstück nicht vergessen, da fehlt es am häufigsten.", "Abends Skyr oder Quark versorgt die Muskeln über Nacht."], src: "N"},
+  {id: "carbs", cat: "ernaehrung", icon: "🍝", title: "Kohlenhydrate rund ums Training", short: "Vor dem Sport schnell verfügbar, im Alltag langsam, danach zusammen mit Eiweiß.", why: "Kohlenhydrate sind der Treibstoff für intensives Training und Fußball. Wer davor gut gefüllte Speicher hat, ist leistungsfähiger, und danach helfen sie zusammen mit Eiweiß bei der Regeneration.", how: ["Ca. 3 h vorher: kohlenhydratreich, fettarm, leicht verdaulich.", "30 Min. vorher etwas Schnelles: Banane, Datteln, Reiswaffeln.", "Im Alltag lieber langsame Kohlenhydrate: Vollkorn, Haferflocken, Kartoffeln.", "Nach dem Sport ca. 1 h später Kohlenhydrate mit Eiweiß."], src: "H"},
+  {id: "deficit", cat: "ernaehrung", icon: "📉", title: "Im Cut: höchstens ca. 500 kcal Defizit", short: "Ein größeres Defizit kostet Muskeln und Leistung. 0,5–1 kg pro Woche ist die Obergrenze.", why: "Bei Trainierten bremst ein Defizit über etwa 500 kcal den Muskelerhalt. Langsamer abnehmen heißt: mehr Fett, weniger Muskeln verlieren.", how: ["Ziel: etwa 0,5 % Körpergewicht pro Woche.", "Kohlenhydrate nicht komplett streichen, lieber bei Fett und Snacks sparen.", "Schritte hochhalten, im Defizit bewegt man sich sonst unbewusst weniger."], src: "N"},
+  {id: "surplus", cat: "ernaehrung", icon: "📈", title: "Im Aufbau: nur 200–300 kcal Überschuss", short: "Mehr Kalorien bringen nicht mehr Muskeln, sondern vor allem mehr Fett.", why: "Muskeln wachsen langsam. Der Körper kann nur einen kleinen Überschuss sinnvoll in Muskeln umsetzen, der Rest wird gespeichert.", how: ["Zunahme von etwa 0,25–0,5 % Körpergewicht pro Woche anpeilen.", "Genug Kohlenhydrate schützen das Muskeleiweiß."], src: "N"},
+  {id: "fat", cat: "ernaehrung", icon: "🥑", title: "Fett: nicht zu viel, aber auch nicht zu wenig", short: "Höchstens etwa 30 % der Kalorien, aber mindestens 2–3 EL gutes Öl pro Tag.", why: "Fett liefert viel Energie pro Gramm, wird aber auch für Hormone und fettlösliche Vitamine gebraucht. Zu wenig Fett über längere Zeit ist ungünstig.", how: ["Gute Fette: Oliven- und Rapsöl, Nüsse, Avocado, fetter Fisch.", "Gesättigte Fette (Butter, Kokosöl) eher sparsam."], src: "H"},
+  {id: "combo", cat: "ernaehrung", icon: "🥔", title: "Eiweiß clever kombinieren", short: "Kartoffeln mit Ei ergeben hochwertigeres Eiweiß als jedes für sich.", why: "Die biologische Wertigkeit sagt, wie gut der Körper Nahrungseiweiß in eigenes umbauen kann. Kartoffel + Ei (64:36) kommt auf 136, mehr als Ei allein (100).", how: ["Bratkartoffeln mit Spiegelei.", "Kartoffelpüree mit Milch.", "Bohnen oder Linsen mit Reis oder Vollkornbrot."], src: "H"},
+  {id: "fiber", cat: "ernaehrung", icon: "🌾", title: "30 g Ballaststoffe am Tag", short: "Gut für Verdauung und Sättigung, besonders wichtig im Cut.", why: "Ballaststoffe sättigen lange, stabilisieren den Blutzucker und sind gut für die Darmflora. Die Quelle nennt 30–50 g oder etwa 15 g pro 1.000 kcal.", how: ["Haferflocken, Vollkorn, Hülsenfrüchte, Beeren.", "Geschrotete Leinsamen oder Chiasamen in Skyr oder Müsli."], src: "N"},
+  {id: "nova", cat: "ernaehrung", icon: "🏭", title: "Stark verarbeitete Lebensmittel begrenzen", short: "NOVA 4 (z. B. Chips, Softdrinks, Fertigsnacks) machen es leicht, zu viel zu essen.", why: "Hochverarbeitete Produkte sind oft energiedicht und wenig sättigend. Beim Suchen markiert die App solche Produkte als „stark verarbeitet“.", how: ["Grundlage aus unverarbeiteten Lebensmitteln.", "Verarbeitete Produkte bewusst und eingeplant essen."], src: "N"},
+  {id: "fatloss", cat: "ernaehrung", icon: "🔥", title: "So verlässt Fett den Körper", short: "Abgebautes Fett wird größtenteils als CO₂ ausgeatmet. Entscheidend ist die Kalorienbilanz.", why: "Ob nüchtern oder nicht, mit Fettverbrennungspuls oder ohne: Über den Tag zählt nur die Bilanz. Nüchterntraining bringt keinen zusätzlichen Fettverlust.", how: ["Konstantes, moderates Defizit.", "Viel Eiweiß und Krafttraining, damit die Muskeln bleiben."], src: "N"},
+  {id: "watch", cat: "ernaehrung", icon: "⌚", title: "Uhren überschätzen Trainingskalorien", short: "Fitness-Uhren liegen laut Quelle 28–93 % zu hoch.", why: "Wer die angezeigten Trainingskalorien komplett zurückisst, landet schnell ohne Defizit. Deshalb kannst du in den Einstellungen nur 50 oder 75 % anrechnen lassen.", how: ["Zahnrad → „Davon anrechnen“ auf 75 % oder 50 %.", "Den Erfolg am Gewichtstrend über 2–3 Wochen prüfen."], src: "N"},
+  {id: "volume", cat: "training", icon: "📊", title: "10–20 harte Sätze pro Muskel und Woche", short: "Der beste Bereich für Muskelaufbau. Weniger bringt wenig, deutlich mehr kaum noch etwas.", why: "Muskeln wachsen durch genug harte Reize. Unter etwa 10 Sätzen pro Woche fehlt der Reiz, über 20 überwiegt meist die Ermüdung.", how: ["Aufwärmsätze zählen nicht.", "Lieber auf 2–3 Einheiten pro Woche verteilen.", "Die Wochenübersicht unter Training zeigt deine Sätze pro Muskelgruppe."], src: "N"},
+  {id: "failure", cat: "training", icon: "💪", title: "Sätze nah ans Muskelversagen", short: "Jeder Arbeitssatz sollte 1–3 Wiederholungen vor dem Versagen enden.", why: "Erst die letzten, schweren Wiederholungen setzen den Wachstumsreiz. Der Wiederholungsbereich ist dabei frei, etwa 4–30, Hauptsache nah am Versagen.", how: ["Wenn du nach dem Satz noch 5 saubere Wiederholungen schaffen würdest: schwerer werden.", "Bei Isolationsübungen darf der letzte Satz bis ans Versagen gehen."], src: "N"},
+  {id: "rest", cat: "training", icon: "⏱️", title: "Lange Pausen bei schweren Sätzen", short: "Bei 3–5 Wiederholungen 3–5 Minuten Pause, sonst etwa 2–3 Minuten.", why: "Nach einer längeren Pause schaffst du im nächsten Satz mehr Gewicht und Wiederholungen, und das bringt mehr Fortschritt als kurze Pausen.", how: ["Der Pausen-Timer in der App läuft automatisch nach dem Abhaken.", "Isolationsübungen: 1–2 Minuten reichen."], src: "N"},
+  {id: "progression", cat: "training", icon: "📈", title: "Doppelte Progression", short: "Erst Wiederholungen steigern, dann Gewicht.", why: "Schaffst du in allen Sätzen das obere Ende des Wiederholungsbereichs, ist es Zeit für mehr Gewicht. So wird der Reiz langsam, aber stetig größer, wie es für Muskelaufbau nötig ist (ca. 60–70 % der Maximalkraft).", how: ["Beispiel 3 × 6–10: erst 10/10/10 schaffen, dann +2,5 kg.", "Mit „Ernährung & Training automatisch“ trägt die App das Gewicht selbst in deinen Plan ein."], src: "H"},
+  {id: "rest24", cat: "training", icon: "🗓️", title: "24 Stunden Pause für gleiche Muskeln", short: "Den gleichen Muskel frühestens nach 24 h wieder hart belasten.", why: "Muskeln wachsen in der Erholungsphase nach dem Training, nicht währenddessen. Ohne Pause bleibt der Fortschritt aus und das Verletzungsrisiko steigt.", how: ["Oberkörper und Unterkörper abwechseln.", "Am Tag vor einem Spiel kein hartes Beintraining."], src: "H"},
+  {id: "zone2", cat: "training", icon: "❤️", title: "Zone 2 plus einmal pro Woche richtig hart", short: "Lockere Ausdauer, bei der du dich noch unterhalten kannst, plus ein intensiver Reiz.", why: "Zone 2 stärkt Herz und Mitochondrien und hilft der Erholung zwischen Sprints. Intensive Einheiten wie Sprints oder Fußball verbessern die VO2max.", how: ["2–3 × 30–60 Min. locker laufen, radeln oder zügig gehen.", "1 × pro Woche Intervalle oder ein Spiel.", "Die Auswertung jeder Einheit zeigt dir deine Pulszonen."], src: "N"},
+  {id: "vo2", cat: "training", icon: "🫁", title: "VO2max: der wichtigste Langlebigkeits-Wert", short: "Wie viel Sauerstoff dein Körper maximal verwerten kann.", why: "Laut deiner Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben. Sie lässt sich in jedem Alter verbessern.", how: ["Zone-2-Grundlage plus intensive Intervalle.", "Die Uhr misst sie bei Läufen oder zügigen Gehrunden mit GPS.", "Verlauf unter Körper → Fitness-Werte."], src: "N"},
+  {id: "stretch", cat: "erholung", icon: "🧘", title: "Statisch dehnen nach dem Sport", short: "30–60 Sekunden pro Dehnung, mindestens 5 Minuten pro Muskelgruppe und Woche.", why: "So verbessert sich die Beweglichkeit am stärksten. Vor Krafttraining, Sprints und Fußball dagegen dynamisch aufwärmen, weil statisches Dehnen kurzfristig Kraft kostet.", how: ["Nach dem Training Waden, Oberschenkel, Hüfte und Brust dehnen.", "Vorher: Beinschwingen, Ausfallschritte, lockere Sprints."], src: "N"},
+  {id: "cold", cat: "erholung", icon: "🧊", title: "Kälte nicht direkt nach Krafttraining", short: "Eisbad oder sehr kalte Dusche erst mit etwa 6 Stunden Abstand.", why: "Kälte dämpft die Signale, die nach dem Krafttraining das Muskelwachstum anstoßen. Nach Fußball oder an freien Tagen ist Kälte gut gegen Muskelkater.", how: ["Nach dem Krafttraining lieber Sauna oder warm duschen.", "Eisbad: 10 Min. bei 10–15 °C."], src: "N"},
+  {id: "hrv", cat: "erholung", icon: "📉", title: "HRV als Ampel für dein Training", short: "Liegt die HRV deutlich unter deinem Schnitt, ist dein Körper noch nicht erholt.", why: "Die Herzfrequenzvariabilität zeigt, wie entspannt dein Nervensystem ist. Ein deutlich niedrigerer Wert oder ein höherer Ruhepuls sind ein Signal für mehr Erholung.", how: ["HRV unter Schnitt: locker trainieren oder Ruhetag.", "Erholung im Detail: unter Heute auf den Erholungs-Kreis tippen."], src: "N"},
+  {id: "nsdr", cat: "erholung", icon: "🌙", title: "Tiefenentspannung (NSDR / Yoga Nidra)", short: "10–30 Minuten geführte Entspannung gleichen ein Stück fehlenden Schlaf aus.", why: "NSDR senkt den Stress und erholt das Nervensystem, ohne dass du schlafen musst. Ideal an Tagen mit wenig Schlaf.", how: ["Hinlegen, Augen zu, eine geführte Audio auf YouTube („NSDR“ oder „Yoga Nidra“).", "Am besten mittags oder nachmittags."], src: "N"},
+  {id: "sleep", cat: "schlaf", icon: "😴", title: "7,5–9 Stunden Schlaf", short: "Im Schlaf erholen sich Muskeln, Nervensystem und Hormone.", why: "Wer zu wenig schläft, regeneriert schlechter, hat mehr Hunger und weniger Kraft. Profis wie Lewandowski planen 8–9 Stunden ein.", how: ["Fester Rhythmus, auch am Wochenende.", "Schlafzimmer kühl (ca. 18 °C), dunkel und ruhig.", "Eine Stunde vorher Handy weg."], src: "H"},
+  {id: "light", cat: "schlaf", icon: "☀️", title: "Morgenlicht und abends dimmen", short: "10–30 Min. Tageslicht in der ersten Stunde, ab ca. 22 Uhr wenig helles Licht.", why: "Licht stellt die innere Uhr. Morgenlicht macht abends früher müde, helles Licht am Abend verschiebt das Einschlafen nach hinten.", how: ["Morgens raus, auch bei Wolken, ohne Sonnenbrille.", "Abends Deckenlicht aus, warmes, gedimmtes Licht."], src: "N"},
+  {id: "caffeine", cat: "schlaf", icon: "☕", title: "Koffein nicht spät am Tag", short: "Koffein blockiert den Schlafdruck noch viele Stunden.", why: "Koffein besetzt die Andockstellen von Adenosin, dem Stoff, der müde macht. Spät getrunken verschlechtert es den Tiefschlaf, auch wenn du einschlafen kannst.", how: ["Letzter Kaffee oder Energydrink am frühen Nachmittag.", "Vor dem Training: 1–3 mg pro kg, 30–60 Min. vorher."], src: "N"},
+  {id: "drink", cat: "trinken", icon: "💧", title: "Nach dem Sport: Verlust × 1,5 trinken", short: "Wiege dich vor und nach dem Training und trink das 1,5-Fache des Verlusts.", why: "Ein Teil der getrunkenen Menge wird gleich wieder ausgeschieden. Mit dem Faktor 1,5 füllst du den Wasserhaushalt wirklich auf.", how: ["Beispiel: 0,8 kg weniger → etwa 1,2 l trinken.", "Gut: Wasser, Saftschorle, isotonische Getränke.", "Der Trink-Rechner unter Heute rechnet das für dich."], src: "H"},
+  {id: "electro", cat: "trinken", icon: "🧂", title: "Elektrolyte bei langem Sport", short: "Ab etwa einer Stunde Belastung gehen vor allem Natrium und Kalium verloren.", why: "Mit dem Schweiß verlierst du Salz. Nur Wasser nachzutrinken gleicht das nicht aus, mit etwas Salz bleibt die Flüssigkeit besser im Körper.", how: ["Selbst gemacht: 1 Teil Saft, 2 Teile Wasser, eine Prise Salz (ca. 1 g pro Liter).", "Kalium: Bananen, Kartoffeln."], src: "H"},
+  {id: "prematch", cat: "fussball", icon: "📅", title: "Der Tag vor dem Spiel", short: "Leicht trainieren, kohlenhydratreich essen, früh schlafen.", why: "Volle Glykogenspeicher und erholte Beine entscheiden über die Leistung im Spiel. Profis wie Ronaldo und Lewandowski trainieren am Vortag nur locker.", how: ["Leichte Einheit oder Technik, kein hartes Beintraining.", "Mittags Nudeln oder Reis mit magerem Fleisch oder Fisch.", "Abends leichtes Fischgericht mit Nudeln.", "Ab 22 Uhr Bildschirme weg, 8 Stunden Schlaf."], src: "S"},
+  {id: "matchday", cat: "fussball", icon: "🏆", title: "Spieltag-Routine", short: "Frühstück, Powernap, letzte Mahlzeit 3 h vorher, dynamisch aufwärmen.", why: "Eine feste Routine sorgt für volle Energie und einen klaren Kopf. Die Mahlzeit 3 h vorher ist verdaut, die Banane 30 Min. vorher gibt schnelle Energie.", how: ["Frühstück: Eier, Vollkornbrot, Haferflocken, Obst.", "Powernap 20–30 Min.", "3 h vorher: Reis oder Nudeln mit Hähnchen.", "Aufwärmen mit Sprints und Rumpfübungen, kurz das Spiel im Kopf durchgehen.", "Danach zuerst trinken, dann Eiweiß und Kohlenhydrate."], src: "S"},
+  {id: "creatine", cat: "supps", icon: "💊", title: "Kreatin: 3–5 g täglich", short: "Das am besten untersuchte Supplement für Kraft und Muskelaufbau.", why: "Kreatin füllt die schnellen Energiespeicher im Muskel. So schaffst du bei schweren Sätzen eine oder zwei Wiederholungen mehr. Über 100 kg Körpergewicht laut Quelle 5–10 g.", how: ["Jeden Tag nehmen, auch an Ruhetagen, die Uhrzeit ist egal.", "Kreatin-Monohydrat reicht völlig."], src: "N"},
+  {id: "omega3", cat: "supps", icon: "🐟", title: "Omega-3: über 1.000 mg EPA", short: "Gemeint ist der EPA-Anteil, nicht die Kapselmenge.", why: "Omega-3-Fettsäuren wirken entzündungshemmend und unterstützen die Regeneration. Viele Kapseln enthalten pro Stück nur wenig EPA.", how: ["Auf der Packung den EPA-Gehalt pro Tagesdosis prüfen.", "Zusätzlich 1–2 Fischmahlzeiten pro Woche (Lachs, Hering)."], src: "N"},
+  {id: "magnesium", cat: "supps", icon: "🌙", title: "Magnesium abends", short: "Als Bisglycinat oder Threonat kann es beim Schlaf helfen.", why: "Magnesium ist an Muskel- und Nervenfunktion beteiligt. Abends genommen kann es Entspannung und Schlaf unterstützen.", how: ["Form auf der Packung prüfen: Bisglycinat oder Threonat.", "Lebensmittel: Haferflocken, Bananen, dunkle Schokolade, Kürbiskerne."], src: "N"}
+];
+const KBI = Object.fromEntries(KB.map(t => [t.id, t]));
+/* Persönliche Daten zu einem Tipp: kurze Zeile „Bei dir“ und ob er gerade wichtig ist */
+function tipPersonal(id){
+  const c = cfg(), today = todayKey(), w = curWeight();
+  const d7 = Array.from({length: 7}, (_, i) => addDays(today, -i - 1));
+  const eat = d7.map(k => S.days[k]).filter(d => d && dayTotals(d).kcal > 800);
+  const avgP = eat.length ? eat.reduce((a, d) => a + dayTotals(d).p, 0) / eat.length : null;
+  const sl = d7.map(k => num(((S.days[k] || {}).sleep || {}).h)).filter(h => h >= 3), avgS = sl.length ? sl.reduce((a, b) => a + b, 0) / sl.length : null;
+  switch (id) {
+    case "protein": if (avgP == null || !w) return null; return {note: `Ø ${fmt(avgP)} g Eiweiß in den letzten Tagen, das sind ${fmt(avgP / w, 1)} g/kg.`, hot: avgP / w < 1.6 ? 8 : 0, why: avgP / w < 1.6 ? `Du liegst mit ${fmt(avgP / w, 1)} g/kg unter 1,6 g/kg.` : ""};
+    case "protein30": { let m = 0, ok = 0; eat.forEach(d => MEALS.forEach(([k]) => { const it = (d.meals || {})[k] || []; if (it.length) { m++; if (it.reduce((a, x) => a + (+x.p || 0), 0) >= 30) ok++; } })); if (!m) return null; return {note: `${ok} von ${m} Mahlzeiten hatten zuletzt mindestens 30 g Eiweiß.`, hot: ok / m < 0.5 ? 6 : 0, why: ok / m < 0.5 ? `Nur ${ok} von ${m} Mahlzeiten hatten 30 g Eiweiß.` : ""}; }
+    case "sleep": if (avgS == null) return null; return {note: `Ø ${fmt(avgS, 1)} h Schlaf in den letzten 7 Nächten, Ziel ${fmt(c.sleepGoal, 1)} h.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmt(avgS, 1)} h geschlafen.` : ""};
+    case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const low = num(s0.hrv) < b * 0.9; return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms.`, hot: low ? 9 : 0, why: low ? `Deine HRV liegt heute deutlich unter deinem Schnitt.` : ""}; }
+    case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + n).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
+    case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
+    case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmt(z2)} Minuten in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
+    case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
+    case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
+    case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
+    case "drink": { const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.drunk < g.total * 0.7; return {note: `Gestern ${fmtL(g.drunk)} von ${fmtL(g.total)} getrunken.`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
+    case "prematch": return footballDay(today) === "pre" ? {note: "Morgen ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Morgen ist Spieltag."} : null;
+    case "matchday": return footballDay(today) === "match" ? {note: "Heute ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Heute ist Spieltag."} : null;
+    case "watch": { const c2 = cfgRaw(); return (num(c2.burnShare) || 100) === 100 && goalType() === "cut" ? {note: "Du rechnest Trainingskalorien gerade zu 100 % an.", hot: 2, why: "Im Cut rechnest du Uhr-Kalorien voll an."} : null; }
+    case "creatine": case "omega3": case "magnesium": { const name = {creatine: /kreatin|creatin/i, omega3: /omega/i, magnesium: /magnes/i}[id]; const s = (c.supplements || []).find(x => name.test(x.name)); return s ? {note: `Du nimmst ${s.name}${s.dose ? " (" + s.dose + ")" : ""}.`, hot: 0} : null; }
+  }
+  return null;
+}
+let tipsCat = "";
+function tipsForYou(){
+  const n = Math.floor(dateOf(todayKey()) / 864e5);
+  const scored = KB.map(t => ({t, p: tipPersonal(t.id)})).filter(x => x.p && x.p.hot > 0).sort((a, b) => b.p.hot - a.p.hot);
+  const out = scored.slice(0, 4);
+  // ergänzen mit einem täglich wechselnden Wissens-Tipp
+  const rest = KB.filter(t => !out.some(x => x.t.id === t.id));
+  while (out.length < 3 && rest.length) { const t = rest.splice(n % rest.length, 1)[0]; out.push({t, p: tipPersonal(t.id)}); }
+  return out;
+}
+function viewTipps(){
+  const fy = tipsForYou(), list = KB.filter(t => !tipsCat || t.cat === tipsCat);
+  return `<section class="card" style="background:var(--grad);color:#fff;border:0;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.9">Für dich heute</div>
+      <div style="font-size:19px;font-weight:700;margin:4px 0 12px">Tipps aus deinen Daten</div>
+      <div class="stack" style="gap:8px">${fy.map(x => `<button data-act="tip" data-id="${x.t.id}" style="display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;background:rgba(255,255,255,.16);border:0;border-radius:14px;padding:10px 12px;color:#fff;cursor:pointer"><span style="font-size:22px;line-height:1.1">${x.t.icon}</span><span style="flex:1;min-width:0"><b style="display:block">${esc(x.t.title)}</b><span style="font-size:13px;opacity:.92">${esc(x.p && x.p.why ? "Warum jetzt: " + x.p.why : x.t.short)}</span></span><span style="opacity:.8">›</span></button>`).join("")}</div></section>
+    <div class="filt" style="margin:0 0 8px">${TIP_CATS.map(([k, l]) => `<button data-act="tips-cat" data-c="${k}" aria-pressed="${tipsCat === k}">${l}</button>`).join("")}</div>
+    <section class="card" style="padding-block:6px"><div class="list">${list.map(t => { const p = tipPersonal(t.id);
+      return `<button class="pick" data-act="tip" data-id="${t.id}" style="align-items:flex-start"><span style="font-size:22px;line-height:1.2;width:30px;text-align:center">${t.icon}</span><span style="flex:1;min-width:0"><span style="display:block;font-weight:600">${esc(t.title)}</span><span class="small muted" style="display:block">${esc(t.short)}</span>${p && p.note ? `<span class="small" style="display:block;color:var(--accent);margin-top:2px">Bei dir: ${esc(p.note)}</span>` : ""}</span><span class="muted">›</span></button>`; }).join("")}</div></section>
+    <p class="small muted" style="margin:10px 4px 0">Quellen: ${Object.values(SRC).join(" · ")}. Tippe auf einen Tipp für den Deep Dive.</p>`;
+}
+function openTip(id){
+  const t = KBI[id]; if (!t) return;
+  const p = tipPersonal(id), cat = (TIP_CATS.find(c => c[0] === t.cat) || [])[1] || "";
+  const related = KB.filter(x => x.cat === t.cat && x.id !== t.id).slice(0, 3);
+  openSheet(t.title, `<div class="row" style="margin-bottom:10px"><span class="chip">${esc(cat)}</span><span class="chip">Quelle: ${esc(SRC[t.src])}</span></div>
+    <p style="margin:0 0 12px;font-size:16px">${t.icon} ${esc(t.short)}</p>
+    ${p && (p.why || p.note) ? `<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="eyebrow" style="margin-bottom:6px">Bei dir</div>${p.why ? `<div class="small"><b>${esc(p.why)}</b></div>` : ""}${p.note ? `<div class="small ink2" style="margin-top:2px">${esc(p.note)}</div>` : ""}</section>` : ""}
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:6px">Warum das hilft</div><div class="small ink2" style="line-height:1.55">${esc(t.why)}</div></section>
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:6px">So setzt du es um</div><ol class="steps">${t.how.map(h => `<li class="small">${esc(h)}</li>`).join("")}</ol></section>
+    ${related.length ? `<div class="eyebrow" style="margin:4px 2px 6px">Passt dazu</div><section class="card" style="padding-block:4px"><div class="list">${related.map(r => `<button class="pick" data-act="tip" data-id="${r.id}"><span style="font-size:20px;width:28px;text-align:center">${r.icon}</span><span style="flex:1;min-width:0;font-weight:500">${esc(r.title)}</span><span class="muted">›</span></button>`).join("")}</div></section>` : ""}`);
+}
+
 /* ----- Freunde ----- */
 let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, avatar: null, msg: "", editProfile: false};
 async function loadFriends(force){
@@ -2359,7 +2506,18 @@ function nextSetLabel(){
   for (const e of (ws && ws.exercises) || []) { const i = (e.sets || []).findIndex(x => !x.done); if (i >= 0) return (exName(e.exId) || e.name) + " – Satz " + (i + 1); }
   return null;
 }
+/* Ton am Pausenende: AudioContext wird beim Abhaken (Antippen) entsperrt, sonst spielt iOS keinen Ton ab */
+let audioCtx = null;
+function unlockAudio(){ try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); const o = audioCtx.createOscillator(), g = audioCtx.createGain(); g.gain.value = 0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.02); } catch(e) {} }
+function restBeep(){
+  try { if (!audioCtx) return; if (audioCtx.state === "suspended") audioCtx.resume();
+    [0, 0.25, 0.5].forEach((t, i) => { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = "sine"; o.frequency.value = i === 2 ? 1175 : 880;
+      const t0 = audioCtx.currentTime + t; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t0); o.stop(t0 + 0.22); });
+  } catch(e) {}
+}
 function startRest(ei){
+  unlockAudio();
   const e = ws.exercises[ei]; const secs = restSeconds(e && e.target && e.target.rest);
   rest = {end: Date.now() + secs * 1000};
   clearInterval(restTick); restTick = setInterval(updateRestBar, 500); updateRestBar();
@@ -2382,9 +2540,9 @@ function updateRestBar(){
   const el = document.getElementById("restbar"); if (!el) return;
   if (!rest) { el.hidden = true; return; }
   const left = Math.ceil((rest.end - Date.now()) / 1000);
-  if (left <= 0) { rest = null; clearInterval(restTick); el.hidden = true; toast("Pause vorbei – nächster Satz! 💪"); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch(e) {} return; }
+  if (left <= 0) { rest = null; clearInterval(restTick); el.hidden = true; restBeep(); toast("Pause vorbei – nächster Satz! 💪"); try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch(e) {} return; }
   el.hidden = false;
-  el.innerHTML = `<span class="eyebrow">Pause</span><span class="mid num">${Math.floor(left / 60)}:${pad(left % 60)}</span><span class="row" style="gap:6px;margin-left:auto"><button class="btn" data-act="rest-plus">+30 s</button><button class="btn ghost" data-act="rest-skip">Überspringen</button></span>`;
+  el.innerHTML = `<span class="eyebrow">Pause</span><span class="mid num">${Math.floor(left / 60)}:${pad(left % 60)}</span><span class="row" style="gap:6px;margin-left:auto"><button class="btn" data-act="rest-plus">+30 s</button><button class="btn ghost" data-act="rest-skip">Überspringen</button></span>${pushState === "on" ? "" : `<span class="small muted" style="flex-basis:100%">Für eine Mitteilung bei gesperrtem Handy: unter Erholung „Mitteilungen aktivieren“.</span>`}`;
 }
 
 /* ----- KI-Essenseingabe (Text oder Sprache) ----- */
@@ -3015,7 +3173,7 @@ let ws = null, wsTimer = null;
 function newWorkoutFromTemplate(tid, date){
   const t = S.templates[tid];
   return {date, title: t.name, templateId: tid, status: "planned", kind: "strength",
-    exercises: (t.items || []).map(it => ({exId: it.exId, name: exName(it.exId), target: {sets: it.sets, reps: it.reps, rir: it.rir, rest: it.rest}, sets: Array.from({length: +it.sets || 3}, () => ({w: "", r: "", done: false}))}))};
+    exercises: (t.items || []).map(it => ({exId: it.exId, name: exName(it.exId), target: {sets: it.sets, reps: it.reps, rir: it.rir, rest: it.rest, kg: it.kg}, sets: Array.from({length: +it.sets || 3}, () => ({w: "", r: "", done: false}))}))};
 }
 function openWorkout(id){
   const w = S.workouts[id]; if (!w) return;
@@ -3044,13 +3202,13 @@ function renderWs(){
     const rx = exRef(e.exId), open = wsInfo[ei];
     return `<div class="ex"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done || !autoOn() ? "" : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
       ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
       <div class="sets"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span>
       ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
-        <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
+        <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
         <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
         <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button>`; }).join("")}</div>
       ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}</div>`;
@@ -3100,7 +3258,7 @@ function openTemplateEdit(id){
 }
 function renderTe(){
   const exOpts = Object.entries(S.exercises).sort((a, b) => a[1].name.localeCompare(b[1].name, "de")).map(([id, e]) => `<option value="${id}">${esc(e.name)}</option>`).join("");
-  $("#sheet-b").innerHTML = `<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
+  $("#sheet-b").innerHTML = `${autoOn() && autoTemplate(te) ? `<div class="hint small" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Pausen und Gewicht setzt die App selbst. Hier legst du die Übungen und ihre Reihenfolge fest.</div>` : ""}<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
     <div class="section-title">Übungen</div>
     ${te.items.map((it, i) => `<div class="ex"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:2px;flex-wrap:nowrap"><button class="x" data-act="te-up" data-i="${i}" aria-label="Nach oben">↑</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>
       <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 4 : 3},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
@@ -3329,7 +3487,7 @@ document.addEventListener("click", async e => {
     case "ws-set-del": ws.exercises[+D.ei].sets.pop(); saveWs(); renderWs(); break;
     case "ws-ex-del": ws.exercises.splice(+D.ei, 1); saveWs(); renderWs(); break;
     case "ws-ex-add": { const v = $("#wsadd").value; if (!v) break; ws.exercises.push({exId: v, name: exName(v), sets: [{w: "", r: "", done: false}, {w: "", r: "", done: false}, {w: "", r: "", done: false}]}); saveWs(); renderWs(); break; }
-    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => openEval(fid), 300); break; }
+    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => { autoPlanSync(); openEval(fid); }, 300); break; }
     case "eval": openEval(D.id); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
     case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -3349,6 +3507,8 @@ document.addEventListener("click", async e => {
     case "sb-export": await runExport(); break;
     case "rec-detail": openRecoveryDetail(D.date || todayKey()); break;
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
+    case "tip": openTip(D.id); break;
+    case "tips-cat": tipsCat = D.c; render(); break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -3459,6 +3619,7 @@ document.addEventListener("submit", async e => {
       if (!wantN && rc.calc && rc.calc.on) { const t = autoTargets(); saveCfg(Object.assign({calc: Object.assign({}, rc.calc, {on: false})}, t ? {kcal: t.kcal, p: t.p, c: t.c, f: t.f} : {})); }
       if (rc.coach && rc.coach.on) saveCfg({coach: Object.assign({}, rc.coach, {on: false})});
       closeSheet();
+      setTimeout(autoPlanSync, 300);
       if (openCalcNext) { openCalc(); toast("Trag noch Geburtsjahr und Größe ein, dann läuft die Ernährung automatisch."); } else toast("Gespeichert.");
       break; }
   }
