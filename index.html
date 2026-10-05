@@ -302,7 +302,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 20:15";
+const APP_VERSION = "05.10.2026 20:18";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1039,7 +1039,7 @@ function setsWeeks(k){
 }
 /* ---------- Automatik in den eigenen Plänen ----------
    Ist „Ernährung & Training automatisch“ an, trägt die App Sätze, Wiederholungen, Pausen und das Gewicht direkt in deine Pläne ein
-   (Übungen bleiben gleich, Reha-Pläne bleiben unberührt). Die ursprünglichen Werte werden gemerkt (orig) und beim Ausschalten zurückgesetzt. */
+   (Übungen bleiben gleich, gilt für alle eigenen Pläne). Die ursprünglichen Werte werden gemerkt (orig) und beim Ausschalten zurückgesetzt. */
 function suggestKg(exId, reps){
   const last = lastPerformance(exId, todayKey()); if (!last) return null;
   const top = Math.max(...last.sets.map(q => num(q.w) || 0)); if (!(top > 0)) return null;
@@ -1047,7 +1047,7 @@ function suggestKg(exId, reps){
   const all = hi && last.sets.filter(q => (num(q.w) || 0) >= top).every(q => num(q.r) >= hi);
   return all ? Math.round((top + (comp ? 2.5 : 1.25)) * 4) / 4 : top;
 }
-const autoTemplate = t => t && !t.coach && !/reha/i.test(t.name || "");
+const autoTemplate = t => t && !t.coach;
 function autoPlanSync(){
   if (!loaded || mode !== "db" || !EXDB) return 0;
   const on = autoOn(); let n = 0;
@@ -1428,7 +1428,7 @@ function viewCalendar(){
 }
 function viewTemplates(){
   const tpls = templatesSorted();
-  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast. Reha-Pläne bleiben unverändert.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
+  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
     <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
     <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${fmtKg(it.kg)} kg</b>` : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
