@@ -296,7 +296,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 10:52";
+const APP_VERSION = "05.10.2026 10:59";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1947,7 +1947,12 @@ function openSleepDetail(k){
   const bedMin = valid.map(x => hm2min(x.bed)).filter(v => v != null).map(v => v < 12 * 60 ? v + 24 * 60 : v);
   const bAvg = bedMin.length ? bedMin.reduce((a, b) => a + b, 0) / bedMin.length : null;
   const bSd = bedMin.length >= 4 ? Math.sqrt(bedMin.reduce((a, b) => a + (b - bAvg) ** 2, 0) / bedMin.length) : null;
-  const stages = num(sl.deep) + num(sl.light) + num(sl.rem) > 0 ? [["Tief", num(sl.deep), "#4F46E5", [13, 23]], ["REM", num(sl.rem), "#8B5CF6", [20, 25]], ["Leicht", num(sl.light), "#60A5FA", [45, 60]], ["Wach", num(sl.awake), "#CBD5E1", null]] : null;
+  const stages = num(sl.deep) + num(sl.light) + num(sl.rem) > 0 ? [["Tief", num(sl.deep), "#4F46E5", "ab 13 %"], ["REM", num(sl.rem), "#8B5CF6", "ab 20 %"], ["Leicht", num(sl.light), "#60A5FA", "45–60 %"], ["Wach", num(sl.awake), "#CBD5E1", "bis 5 %"]] : null;
+  // Bewertung je Phase: grün = im gesunden Bereich, orange = knapp daneben, rot = deutlich daneben
+  const stageRate = (name, p) => name === "Tief" ? (p >= 13 ? "good" : p >= 10 ? "warn" : "bad")
+    : name === "REM" ? (p >= 20 ? "good" : p >= 15 ? "warn" : "bad")
+    : name === "Leicht" ? (p >= 45 && p <= 60 ? "good" : p >= 40 && p <= 65 ? "warn" : "bad")
+    : (p <= 5 ? "good" : p <= 10 ? "warn" : "bad");
   const tot = stages ? stages.reduce((a, s) => a + s[1], 0) : 0;
   const stageAvg = name => { const xs = valid.filter(x => num(x.deep) + num(x.light) + num(x.rem) > 0).map(x => num(x[name]) / (num(x.deep) + num(x.light) + num(x.rem) + num(x.awake)) * 100); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
   const notes = [];
@@ -1955,6 +1960,7 @@ function openSleepDetail(k){
   if (stages) { const dp = num(sl.deep) / tot * 100, rp = num(sl.rem) / tot * 100;
     notes.push(dp >= 13 ? `Tiefschlaf ${Math.round(dp)} %: gut. Im Tiefschlaf erholen sich Muskeln und Körper am stärksten.` : `Tiefschlaf nur ${Math.round(dp)} %. Hilft: kein Alkohol, kein schweres Essen spät, kühles Zimmer (ca. 18 °C).`);
     notes.push(rp >= 20 ? `REM-Schlaf ${Math.round(rp)} %: gut für Kopf, Lernen und Stimmung.` : `REM-Schlaf ${Math.round(rp)} %, etwas wenig. REM kommt vor allem am Ende der Nacht, also nicht zu früh aufstehen und regelmäßig schlafen.`); }
+  if (stages) notes.push("Farben bei den Schlafphasen: Grün heißt im gesunden Bereich, Orange knapp daneben, Rot deutlich daneben. Mehr Tief- und REM-Schlaf als der Bereich ist kein Problem.");
   if (bSd != null) notes.push(bSd <= 30 ? `Dein Rhythmus ist stabil: Du gehst meist um ${min2hm(bAvg % (24 * 60))} ins Bett (± ${Math.round(bSd)} Min.). Laut deiner Quelle verbessert ein fester Rhythmus HRV und Schlafwert.` : `Deine Einschlafzeit schwankt um ± ${Math.round(bSd)} Minuten (meist um ${min2hm(bAvg % (24 * 60))}). Ein festerer Rhythmus verbessert laut deiner Quelle HRV und Schlafwert.`);
   if (debt >= 1) notes.push(`Schlafschuld der letzten 7 Tage: ${fmt(debt, 1)} h unter deinem Ziel von ${fmt(c.sleepGoal, 1)} h. Am besten über ein paar Tage je 30 Minuten früher schlafen.`);
   if (num(sl.stress) > 25) notes.push(`Dein Stress im Schlaf war mit ${fmt(num(sl.stress))} eher hoch. Abends runterfahren hilft: Licht dimmen, Atemübung 4-7-8, kein Handy im Bett.`);
@@ -1966,8 +1972,8 @@ function openSleepDetail(k){
       <div><span class="eyebrow">Ø 14 Nächte</span><div class="v">${avgH ? fmt(avgH, 1) : "–"}<span class="unit">h</span></div></div></div>
     ${stages ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schlafphasen letzte Nacht</div>
       <div style="display:flex;height:16px;border-radius:99px;overflow:hidden;gap:2px">${stages.filter(s => s[1] > 0).map(s => `<i title="${s[0]}: ${s[1]} Min." style="flex:${s[1]};background:${s[2]}"></i>`).join("")}</div>
-      <div class="stack" style="gap:6px;margin-top:10px">${stages.map(s => { const p = tot ? s[1] / tot * 100 : 0, a = stageAvg(s[0] === "Tief" ? "deep" : s[0] === "REM" ? "rem" : s[0] === "Leicht" ? "light" : "awake");
-        return `<div class="spread small"><span><span class="dot" style="background:${s[2]}"></span> ${s[0]}</span><span class="num"><b>${fmtHours(s[1] / 60)}</b> · ${Math.round(p)} %${s[3] ? ` <span class="muted">(gut: ${s[3][0]}–${s[3][1]} %)</span>` : ""}${a != null ? ` <span class="muted">· Ø ${Math.round(a)} %</span>` : ""}</span></div>`; }).join("")}</div>
+      <div class="stack" style="gap:8px;margin-top:10px">${stages.map(s => { const p = tot ? s[1] / tot * 100 : 0, a = stageAvg(s[0] === "Tief" ? "deep" : s[0] === "REM" ? "rem" : s[0] === "Leicht" ? "light" : "awake"), rt = stageRate(s[0], p);
+        return `<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:baseline" class="small"><span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-weight:600"><span class="dot" style="background:${s[2]}"></span>${s[0]}</span><span class="num" style="text-align:right"><b style="color:var(--${rt})">${fmtHours(s[1] / 60)} · ${Math.round(p)} %</b><span class="muted" style="display:block;font-size:12px">gut: ${s[3]}${a != null ? " · dein Ø " + Math.round(a) + " %" : ""}</span></span></div>`; }).join("")}</div>
       ${sl.resp || sl.stress != null ? `<p class="small muted" style="margin:8px 0 0">${sl.resp ? "Atmung Ø " + fmt(num(sl.resp), 1) + " Atemzüge/Min." : ""}${sl.resp && sl.stress != null ? " · " : ""}${sl.stress != null ? "Stress im Schlaf " + fmt(num(sl.stress)) : ""}${sl.wakes != null ? " · " + sl.wakes + "× wach" : ""}</p>` : ""}</section>` : ""}
     ${notes.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was das bedeutet</div><div class="stack" style="gap:8px">${notes.map(n => `<div class="small ink2">• ${esc(n)}</div>`).join("")}</div></section>` : ""}
     <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Schlafdauer · 14 Nächte</div>
