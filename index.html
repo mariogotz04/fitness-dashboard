@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "04.10.2026 17:06";
+const APP_VERSION = "05.10.2026 09:07";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -426,23 +426,61 @@ const ytLink = name => "https://www.youtube.com/results?search_query=" + encodeU
 /* Empfehlung für Sätze/Wiederholungen nach den Quellen (nur Info, ändert keinen Plan):
    10–20 harte Sätze pro Muskelgruppe und Woche, Sätze 1–3 Wdh. vor dem Versagen (RIR 1–3), Wiederholungsbereich frei (ca. 4–30),
    schwere Sätze (3–5 Wdh.) mit 3–5 min Pause; Hessmann: Muskelaufbau mit ca. 60–70 % der Maximalkraft. */
+function trainingXp(){
+  const c = cfgRaw(), n = workoutsSorted().filter(w => w.status === "done" && w.kind !== "activity").length;
+  return c.experience && c.experience !== "auto" ? c.experience : n >= 40 ? "advanced" : n >= 12 ? "intermediate" : "beginner";
+}
+/* Wochenziel an Sätzen für eine Muskelgruppe: Erfahrung, Ziel, Kalorien-Tempo, Erholung und Fußball */
+function groupTarget(g){
+  const c = cfgRaw(), gt = goalType(), xp = trainingXp(), today = todayKey(), notes = [];
+  const small = g === "Waden" || g === "Bauch", arm = g === "Bizeps" || g === "Trizeps";
+  const base = xp === "beginner" ? 10 : xp === "intermediate" ? 12 : 14;
+  let v = small ? 6 : arm ? base - 4 : base + (gt === "bulk" ? 2 : gt === "cut" ? 0 : -1);
+  const pace = c.calc && c.calc.on ? num(c.calc.pace) : 0;
+  if (gt === "cut" && pace <= -750) { v -= 2; notes.push("großes Kaloriendefizit, daher etwas weniger Sätze"); }
+  const recs = [0, 1, 2, 3, 4, 5, 6].map(i => recoveryOf(addDays(today, -i))).filter(Boolean).map(r => r.score);
+  const recAvg = recs.length >= 3 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
+  if (recAvg != null && recAvg < 50) { v -= 2; notes.push("Erholung zuletzt niedrig (Ø " + Math.round(recAvg) + " %)"); }
+  const football = workoutsSorted().filter(w => w.status === "done" && w.kind === "activity" && w.date >= addDays(today, -28) && /fu(ss|ß)ball|soccer/i.test(w.title || "")).length;
+  if (g === "Beine" && football >= 3) { v -= 2; notes.push("Fußball belastet die Beine schon"); }
+  v = small ? clamp(v, 4, 12) : arm ? clamp(v, 6, 14) : clamp(v, 8, 20);
+  if (recAvg != null && recAvg < 38) { v = Math.round(v * 0.6); notes.push("Entlastung: Erholung sehr niedrig"); }
+  return {v, notes, recAvg};
+}
+/* Was deine eigenen Pläne pro Woche für eine Muskelgruppe vorsehen */
+function plannedSets(g){
+  let sets = 0, n = 0;
+  templatesSorted().filter(t => !t.coach).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (e && (e.group || "") === g) { sets += num(it.sets) || 0; n++; } }));
+  return {sets, n};
+}
+/* Empfehlung für eine Übung in deinem Plan (nur Info) */
+function dynRec(x, ownId){
+  const gt = goalType(), xp = trainingXp(), sc = coachScheme(x, gt, xp), g = x.g;
+  const tg = groupTarget(g), pl = plannedSets(g), small = g === "Bauch" || g === "Waden";
+  const sets = clamp(Math.round(tg.v / Math.max(pl.n, 1)), 2, small ? 3 : 4);
+  const c = cfgRaw(), pace = c.calc && c.calc.on ? num(c.calc.pace) : 0;
+  const diet = gt === "cut" ? `Im Defizit (${pace ? pace + " kcal" : "Abnehmen"}): Gewichte halten ist wichtiger als mehr Sätze, schwer genug bleiben.`
+    : gt === "bulk" ? `Im Überschuss (${pace ? "+" + pace + " kcal" : "Aufbau"}): gute Phase, um Gewicht und Wiederholungen zu steigern.`
+    : "Kalorien im Gleichgewicht: Gewichte langsam steigern.";
+  return {sets, reps: sc.reps, rir: sc.rir, rest: sc.rest, target: tg.v, planned: pl.sets, notes: tg.notes, diet, g};
+}
 function recBox(x, ownId){
-  if (!x) return "";
-  const g = x.g, comp = x.mc === "c", gt = goalType(), freq = Math.max(1, Math.min(3, Math.round((cfg().strengthPerWeek || 3) / 1.5)));
-  let reps, sets, rest, note = "";
-  if (g === "Bauch") { reps = /plank|bridge/i.test(x.id) ? "30–60 Sek. halten" : "10–20 Wdh."; sets = "2–3"; rest = "1 Min."; note = "Bauch wie jeden anderen Muskel trainieren: lieber mit Zusatzgewicht steigern als endlos viele Wiederholungen."; }
-  else if (g === "Waden") { reps = "10–20 Wdh."; sets = "3–4"; rest = "1–2 Min."; note = "Unten kurz in der Dehnung halten, das bringt bei Waden viel."; }
-  else if (comp && x.bw) { reps = "6–12 Wdh."; sets = "3"; rest = "2–3 Min."; note = "Schaffst du mehr als 12 saubere Wiederholungen, nimm Zusatzgewicht."; }
-  else if (comp) { reps = gt === "cut" ? "6–10 Wdh." : "6–12 Wdh."; sets = "3–4"; rest = "2–3 Min. (bei 3–5 Wdh. 3–5 Min.)"; note = gt === "cut" ? "Im Defizit schwer genug bleiben, damit die Kraft und damit die Muskeln erhalten bleiben." : "Etwa 60–70 % deiner Maximalkraft, also ein Gewicht für knapp 10–15 Wiederholungen, die du nach 6–12 beendest."; }
-  else { reps = "10–15 Wdh."; sets = "2–4"; rest = "1–2 Min."; note = "Bei Isolationsübungen darf der letzte Satz bis kurz vors Muskelversagen gehen."; }
-  const wk = weekSummary(todayKey()), done = wk.groups[g] || 0;
-  const plan = ownId ? templatesSorted().flatMap(t => (t.items || []).filter(it => it.exId === ownId).map(it => ({t: t.short || t.name, it}))) : [];
-  return `<div class="hint" style="margin-top:12px"><b>Empfehlung für dich</b> (${esc(GOALS[gt])}, nur Info)
-    <div class="num" style="margin-top:4px">${sets} Sätze × ${reps} · ${/halten/.test(reps) ? "kurz bevor die Spannung nachlässt beenden" : "1–3 Wdh. vor dem Muskelversagen (RIR 1–3)"} · Pause ${rest}</div>
-    <div class="small ink2" style="margin-top:4px">${esc(note)}</div>
-    ${g !== "Sonstiges" && g !== "Bauch" ? `<div class="small ink2" style="margin-top:4px">${esc(g)}: 10–20 harte Sätze pro Woche, verteilt auf ${freq} Einheit${freq > 1 ? "en" : ""}. Diese Woche bisher ${done}.</div>` : ""}
+  if (!x || !autoOn()) return "";
+  const r = dynRec(x, ownId), wk = weekSummary(todayKey()), done = wk.groups[r.g] || 0;
+  const plan = ownId ? templatesSorted().filter(t => !t.coach).flatMap(t => (t.items || []).filter(it => it.exId === ownId).map(it => ({t: t.short || t.name, it}))) : [];
+  return `<div class="hint" style="margin-top:12px"><b>Empfehlung für dich</b> (${esc(GOALS[goalType()])}, nur Info)
+    <div class="num" style="margin-top:4px">${r.sets} Sätze × ${esc(r.reps)} Wdh.${r.rir !== "–" ? " · RIR " + esc(r.rir) : ""} · Pause ${esc(r.rest)}</div>
+    <div class="small ink2" style="margin-top:4px">${esc(r.diet)}</div>
+    ${r.g !== "Sonstiges" ? `<div class="small ink2" style="margin-top:4px">${esc(r.g)}: Ziel ${r.target} harte Sätze pro Woche${r.notes.length ? " (" + esc(r.notes.join(", ")) + ")" : ""}. Deine Pläne: ${r.planned}, diese Woche gemacht: ${done}.</div>` : ""}
     ${plan.length ? `<div class="small muted" style="margin-top:4px">Dein Plan: ${plan.map(p => esc(p.t) + " " + esc(p.it.sets || "?") + " × " + esc(p.it.reps || "?")).join(" · ")}</div>` : ""}
   </div>`;
+}
+/* Kurze Zeile unter jeder Übung in deinen Plänen */
+function planRecLine(it){
+  if (!autoOn()) return "";
+  const e = S.exercises[it.exId], x = e && e.ref ? EXDBI[e.ref] : null; if (!x) return "";
+  const r = dynRec(x, it.exId), diff = (num(it.sets) || 0) - r.sets;
+  return `<div class="small" style="color:var(--accent);margin-top:2px">Empfehlung: ${r.sets} × ${esc(r.reps)}${r.rir !== "–" ? " · RIR " + esc(r.rir) : ""}${diff >= 2 ? " · eher weniger Sätze" : diff <= -2 ? " · eher mehr Sätze" : ""}</div>`;
 }
 function exGuide(x, ownId){
   if (!x) return "";
@@ -700,7 +738,6 @@ function render(){
   const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
   v.innerHTML = html;
   drawCharts();
-  if (!coachChecked && EXDB) { coachChecked = true; setTimeout(coachWeekly, 800); }
   setTimeout(maybeShowReview, 600);
 }
 function renderTop(){
@@ -1224,7 +1261,7 @@ function viewEssen(){
     return `<div class="section-title spread"><span>${label}${items.length ? ` <span class="small num" style="font-weight:500;text-transform:none;letter-spacing:0;color:${pm >= 30 ? "var(--good)" : "var(--ink-2)"}">${pm >= 30 ? "✓ " : ""}${fmt(pm)} g Eiweiß</span>` : ""}</span><span class="num">${fmt(sum)} kcal</span></div>
     <section class="card" style="padding-block:8px">
       <div class="list">${items.map((it, i) => `<div class="li"><div class="grow"><div class="title">${esc(it.name)}</div>
-        <div class="sub num">${it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
+        <div class="sub num">${it.qty ? fmt(it.qty, it.qty % 1 ? 1 : 0) + " " + esc(it.qty <= 1 ? it.qu1 || it.qu : it.qu) + " (" + fmt(it.g) + " " + unitOfItem(it) + ") · " : it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
         <button class="x" data-act="item-del" data-meal="${m}" data-i="${i}" aria-label="${esc(it.name)} entfernen">×</button></div>`).join("") || '<div class="empty" style="padding:10px">Noch nichts eingetragen.</div>'}</div>
       <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="add-food" data-meal="${m}">+ Hinzufügen</button>${hasY && !items.length ? `<button class="btn ghost" data-act="copy-meal" data-meal="${m}">Wie gestern</button>` : ""}</div>
     </section>`;
@@ -1287,9 +1324,9 @@ function viewCalendar(){
 }
 function viewTemplates(){
   const tpls = templatesSorted();
-  return coachCard() + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
-    <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip ${t.coach ? "acc" : ""}">${t.coach ? "🤖 Coach · " : ""}${(t.items || []).length} Übungen</span></div>
-    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir || "–") : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div></div></div>`).join("")}</div>
+  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">Automatik ist an: Unter jeder Übung steht eine Empfehlung für Sätze und Wiederholungen, passend zu Ziel, Ernährung und Erholung. Dein Plan bleibt, wie du ihn angelegt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
+    <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
+    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir || "–") : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div>${planRecLine(it)}</div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
@@ -1308,45 +1345,10 @@ function viewExercises(){
   `<div style="height:12px"></div><button class="btn block" data-act="edit-ex" data-id="">+ Übung hinzufügen</button>`;
 }
 
-/* ---------- Coach: automatischer Trainingsplan ----------
-   Regelbasiert und kostenlos (keine KI-Dienste). Quellen: 10–20 harte Sätze pro Muskelgruppe und Woche, RIR 1–3,
-   freie Wiederholungsbereiche, 3–5 min Pause bei schweren Sätzen, 24 h Pause für gleiche Muskeln (Hessmann),
-   Muskelaufbau mit ca. 60–70 % der Maximalkraft. Passt sich wöchentlich an Ziel, Fortschritt, Erholung, Fußball und
-   tatsächlich trainierte Sätze an. Eigene Pläne bleiben unverändert. */
-const COACH_SLOTS = {
-  brustSchraeg: ["Brust", ["Smith_Machine_Incline_Bench_Press", "Incline_Dumbbell_Press", "Barbell_Incline_Bench_Press_-_Medium_Grip", "Leverage_Incline_Chest_Press", "Push-Ups_With_Feet_Elevated"]],
-  brustFlach: ["Brust", ["Smith_Machine_Bench_Press", "Dumbbell_Bench_Press", "Barbell_Bench_Press_-_Medium_Grip", "Leverage_Chest_Press", "Pushups"]],
-  brustIso: ["Brust", ["Dips_-_Chest_Version", "Butterfly", "Cable_Crossover", "Low_Cable_Crossover", "Dumbbell_Flyes", "Push-Up_Wide"]],
-  latzug: ["Rücken", ["Wide-Grip_Lat_Pulldown", "Pullups", "Close-Grip_Front_Lat_Pulldown", "Band_Assisted_Pull-Up", "Inverted_Row"]],
-  latzugEng: ["Rücken", ["Close-Grip_Front_Lat_Pulldown", "One_Arm_Lat_Pulldown", "Underhand_Cable_Pulldowns", "Chin-Up", "Inverted_Row"]],
-  rudern: ["Rücken", ["Leverage_Iso_Row", "Seated_Cable_Rows", "T-Bar_Row_with_Handle", "One-Arm_Dumbbell_Row", "Bent_Over_Barbell_Row", "Inverted_Row"]],
-  schulterDruck: ["Schultern", ["Machine_Shoulder_Military_Press", "Seated_Dumbbell_Press", "Standing_Military_Press", "Standing_Dumbbell_Press"]],
-  seitheben: ["Schultern", ["Standing_Low-Pulley_Deltoid_Raise", "Cable_Seated_Lateral_Raise", "Side_Lateral_Raise", "Seated_Side_Lateral_Raise"]],
-  hintereSchulter: ["Schultern", ["Reverse_Machine_Flyes", "Face_Pull", "Cable_Rear_Delt_Fly", "Reverse_Flyes", "Band_Pull_Apart"]],
-  bizeps: ["Bizeps", ["Standing_Biceps_Cable_Curl", "Machine_Preacher_Curls", "Incline_Dumbbell_Curl", "Dumbbell_Bicep_Curl", "Barbell_Curl"]],
-  bizepsHammer: ["Bizeps", ["Hammer_Curls", "Cable_Hammer_Curls_-_Rope_Attachment", "Concentration_Curls", "Dumbbell_Alternate_Bicep_Curl"]],
-  trizeps: ["Trizeps", ["Dips_-_Triceps_Version", "Triceps_Pushdown", "Triceps_Pushdown_-_V-Bar_Attachment", "Triceps_Pushdown_-_Rope_Attachment", "Bench_Dips", "Tricep_Dumbbell_Kickback"]],
-  trizepsUeber: ["Trizeps", ["Cable_Rope_Overhead_Triceps_Extension", "Standing_Dumbbell_Triceps_Extension", "EZ-Bar_Skullcrusher", "Lying_Dumbbell_Tricep_Extension"]],
-  kniebeuge: ["Beine", ["Hack_Squat", "Smith_Machine_Squat", "Barbell_Squat", "Front_Squat_Clean_Grip", "Leg_Press", "Goblet_Squat", "Bodyweight_Squat"]],
-  beinpresse: ["Beine", ["Leg_Press", "Hack_Squat", "Split_Squat_with_Dumbbells", "Goblet_Squat", "Bodyweight_Walking_Lunge"]],
-  huefte: ["Beine", ["Romanian_Deadlift", "Barbell_Deadlift", "Smith_Machine_Stiff-Legged_Deadlift", "Stiff-Legged_Dumbbell_Deadlift", "Single_Leg_Glute_Bridge"]],
-  po: ["Beine", ["Barbell_Hip_Thrust", "Pull_Through", "Single_Leg_Glute_Bridge", "Thigh_Abductor"]],
-  beinbeuger: ["Beine", ["Seated_Leg_Curl", "Lying_Leg_Curls", "Standing_Leg_Curl", "Glute_Ham_Raise", "Single_Leg_Glute_Bridge"]],
-  beinstrecker: ["Beine", ["Leg_Extensions", "Single-Leg_Leg_Extension", "Dumbbell_Step_Ups", "Bodyweight_Squat"]],
-  ausfall: ["Beine", ["Split_Squat_with_Dumbbells", "Dumbbell_Lunges", "Dumbbell_Rear_Lunge", "Bodyweight_Walking_Lunge"]],
-  waden: ["Waden", ["Calf_Press_On_The_Leg_Press_Machine", "Standing_Calf_Raises", "Seated_Calf_Raise", "Standing_Dumbbell_Calf_Raise"]],
-  bauch: ["Bauch", ["Ab_Crunch_Machine", "Cable_Crunch", "Knee_Hip_Raise_On_Parallel_Bars", "Reverse_Crunch", "Plank"]]
-};
-const COACH_DAYS = {
-  UA: ["Oberkörper A", "OK A", ["brustSchraeg", "latzug", "rudern", "seitheben", "brustIso", "trizeps", "bizeps"]],
-  UB: ["Oberkörper B", "OK B", ["brustFlach", "rudern", "latzugEng", "schulterDruck", "hintereSchulter", "bizepsHammer", "trizepsUeber"]],
-  LA: ["Unterkörper A", "UK A", ["kniebeuge", "huefte", "beinbeuger", "beinstrecker", "waden", "bauch"]],
-  LB: ["Unterkörper B", "UK B", ["beinpresse", "po", "beinbeuger", "ausfall", "waden", "bauch"]],
-  FA: ["Ganzkörper A", "GK A", ["kniebeuge", "brustFlach", "latzug", "huefte", "seitheben", "bizeps", "bauch"]],
-  FB: ["Ganzkörper B", "GK B", ["beinpresse", "brustSchraeg", "rudern", "beinbeuger", "schulterDruck", "trizeps", "waden"]],
-  FC: ["Ganzkörper C", "GK C", ["ausfall", "brustIso", "latzugEng", "po", "hintereSchulter", "bizepsHammer", "bauch"]]
-};
-const COACH_EQUIP = {gym: null, kh: ["Kurzhanteln", "Körpergewicht", "Sonstiges", "Widerstandsband"], home: ["Körpergewicht", "Widerstandsband", "Sonstiges"]};
+/* ---------- Trainings-Empfehlungen (Teil der Automatik „Ernährung & Training“) ----------
+   Regelbasiert und kostenlos. Quellen: 10–20 harte Sätze pro Muskelgruppe und Woche, RIR 1–3, freie Wiederholungsbereiche,
+   3–5 min Pause bei schweren Sätzen; Hessmann: Muskelaufbau mit ca. 60–70 % der Maximalkraft, 24 h Pause für gleiche Muskeln.
+   Ändert nie einen Plan, zeigt nur Empfehlungen zu deinen eigenen Übungen. */
 const EXPERIENCE = [["auto", "Automatisch aus meinen Trainings"], ["beginner", "Einsteiger"], ["intermediate", "Fortgeschritten"], ["advanced", "Erfahren"]];
 /* Schwierigkeit einer Übung: geführte Maschinen/Kabel leicht, Kurzhanteln mittel, Langhantel-Grundübungen und Klimmzüge/Dips anspruchsvoll */
 function exDifficulty(x){
@@ -1357,9 +1359,8 @@ function exDifficulty(x){
   if (x.l === "Fortgeschritten") d += 0.3; if (x.l === "Profi") d += 0.8;
   return d;
 }
-const COACH_DEF = {on: false, days: null, minutes: 60, equip: "gym", focus: ""};
-const coachCfg = () => Object.assign({}, COACH_DEF, cfgRaw().coach || {});
-/* Wiederholungen, RIR und Pause je Übung (gleiche Regeln wie die Empfehlung bei den Übungen) */
+const autoOn = () => { const c = cfgRaw(); return !!(c.calc && c.calc.on); };
+/* Wiederholungen, RIR und Pause je Übung nach Ziel und Erfahrung */
 function coachScheme(x, gt, xp){
   if (xp === "beginner" && x.g !== "Bauch" && x.g !== "Waden") return x.mc === "c" ? {reps: "8–12", rir: "2–3", rest: "2 min"} : {reps: "12–15", rir: "1–2", rest: "1,5 min"};
   if (xp === "advanced" && x.mc === "c" && exDifficulty(x) >= 2.8 && !x.bw) return {reps: "5–8", rir: "1–2", rest: "3 min"};
@@ -1368,152 +1369,6 @@ function coachScheme(x, gt, xp){
   if (x.mc === "c" && x.bw) return {reps: "6–12", rir: "1–3", rest: "2–3 min"};
   if (x.mc === "c") return gt === "cut" ? {reps: "6–10", rir: "1–2", rest: "2–3 min"} : {reps: "6–12", rir: "1–2", rest: "2–3 min"};
   return {reps: "10–15", rir: "0–2", rest: "1,5 min"};
-}
-/* e1RM-Trend einer Muskelgruppe: letzte 3 Einheiten gegen die 3 davor */
-function groupTrend(g){
-  const since = addDays(todayKey(), -70);
-  const rs = Object.keys(S.exercises).filter(id => (S.exercises[id].group || "") === g).map(id => exHistory(id).filter(h => h.k >= since && h.kind === "kg")).filter(h => h.length >= 4);
-  if (!rs.length) return null;
-  const ratios = rs.map(h => { const a = h.slice(-3), b = h.slice(-6, -3); const m = xs => xs.reduce((s, x) => s + x.v, 0) / xs.length; return b.length ? m(a) / m(b) : null; }).filter(Boolean);
-  return ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : null;
-}
-function coachPlan(cc){
-  cc = cc || coachCfg();
-  const c = cfgRaw(), gt = goalType(), today = todayKey();
-  const ws = workoutsSorted().filter(w => w.status === "done");
-  const strength = ws.filter(w => w.kind !== "activity");
-  const xp = c.experience && c.experience !== "auto" ? c.experience : strength.length >= 40 ? "advanced" : strength.length >= 12 ? "intermediate" : "beginner";
-  const level = {beginner: "Einsteiger", intermediate: "Fortgeschritten", advanced: "Erfahren"}[xp];
-  const days = clamp(num(cc.days) || num(c.strengthPerWeek) || 3, 1, 5);
-  const football = ws.filter(w => w.kind === "activity" && w.date >= addDays(today, -28) && /fu(ss|ß)ball|soccer/i.test(w.title || "")).length;
-  const reasons = [];
-  let split;
-  if (days === 1) split = ["FA"]; else if (days === 2) split = ["FA", "FB"];
-  else if (days === 3) split = football >= 3 ? ["UA", "LA", "UB"] : ["FA", "FB", "FC"];
-  else if (days === 4) split = ["UA", "LA", "UB", "LB"]; else split = ["UA", "LA", "UB", "LB", "FA"];
-  reasons.push(days === 3 && football >= 3 ? `3 Krafttage: Oberkörper/Unterkörper/Oberkörper, weil du in den letzten 4 Wochen ${football}× Fußball gespielt hast und die Beine dort schon viel arbeiten.` : `${days} Krafttag${days > 1 ? "e" : ""} pro Woche: ${split.map(k => COACH_DAYS[k][0]).join(", ")}.`);
-  // Erholung der letzten 7 Tage
-  const recs = [0, 1, 2, 3, 4, 5, 6].map(i => recoveryOf(addDays(today, -i))).filter(Boolean).map(r => r.score);
-  const recAvg = recs.length >= 3 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
-  const deload = recAvg != null && recAvg < 38;
-  // Wochenvolumen pro Muskelgruppe
-  const base = xp === "beginner" ? 10 : xp === "intermediate" ? 12 : 14;
-  const goalAdj = gt === "bulk" ? 2 : gt === "cut" ? 0 : -1;
-  const weeks4 = [1, 2, 3, 4].map(i => weekSummary(addDays(today, -7 * i)));
-  const vol = {}, why = {};
-  ["Brust", "Rücken", "Schultern", "Bizeps", "Trizeps", "Beine", "Waden", "Bauch"].forEach(g => {
-    const small = g === "Waden" || g === "Bauch", arm = g === "Bizeps" || g === "Trizeps";
-    let v = small ? 6 : arm ? base - 4 : base + goalAdj;
-    const notes = [];
-    if (g === "Beine" && football >= 3) { v -= 2; notes.push("Fußball belastet die Beine schon"); }
-    if (cc.focus && (cc.focus === g || (cc.focus === "Arme" && arm))) { v += 4; notes.push("dein Schwerpunkt"); }
-    const tr = groupTrend(g);
-    if (tr != null && tr < 1.01 && (recAvg == null || recAvg >= 55) && !small) { v += 2; notes.push("Kraft stagniert, daher etwas mehr Volumen"); }
-    else if (tr != null && tr >= 1.03) notes.push("du wirst stärker, Volumen passt");
-    if (recAvg != null && recAvg < 50) { v -= 2; notes.push("Erholung zuletzt niedrig"); }
-    const done = weeks4.reduce((a, w) => a + (w.groups[g] || 0), 0) / 4;
-    if (done > 0 && v > done + 6 && !small) { v = Math.round(done + 6); for (let i = notes.length - 1; i >= 0; i--) if (/mehr Volumen|Volumen passt/.test(notes[i])) notes.splice(i, 1); notes.push("langsam steigern, bisher Ø " + Math.round(done) + " Sätze pro Woche"); }
-    v = small ? clamp(v, 4, 12) : arm ? clamp(v, 6, 14) : clamp(v, 8, 20);
-    if (deload) v = Math.round(v * 0.6);
-    vol[g] = v; why[g] = notes;
-  });
-  if (deload) reasons.push(`Entlastungswoche: Deine Erholung lag die letzten Tage bei Ø ${Math.round(recAvg)} %. Etwa 40 % weniger Sätze und 3 Wdh. vor dem Versagen aufhören, dann geht es wieder hoch.`);
-  else if (recAvg != null) reasons.push(`Erholung Ø 7 Tage: ${Math.round(recAvg)} %${recAvg < 50 ? ", daher etwas weniger Sätze." : ", normales Volumen."}`);
-  reasons.push(`Ziel ${GOALS[gt]}: ${gt === "cut" ? "schwere Grundübungen mit 6–10 Wdh. erhalten Kraft und Muskeln im Defizit." : gt === "bulk" ? "etwas mehr Volumen, um den Kalorienüberschuss in Muskeln umzusetzen." : "solides Volumen, Gewichte langsam steigern."}`);
-  reasons.push(`Erfahrung: ${level}${c.experience && c.experience !== "auto" ? " (eingestellt)" : ` (aus ${strength.length} gespeicherten Krafttrainings)`}. ${xp === "beginner" ? "Daher vor allem gut geführte Übungen an Maschinen und Kabel, die leicht zu lernen sind." : xp === "advanced" ? "Daher mehr freie Grundübungen mit Lang- und Kurzhantel, die mehr Technik verlangen." : "Daher eine Mischung, bevorzugt Übungen, die du schon kennst."}`);
-  // Übungen wählen: bevorzugt deine bekannten Übungen, passend zur Ausstattung, ohne Doppelungen
-  const allowed = COACH_EQUIP[cc.equip] || null;
-  const ownByRef = {};
-  Object.entries(S.exercises).forEach(([id, e]) => { if (e.ref) { const n = exHistory(id).length; if (!ownByRef[e.ref] || n > ownByRef[e.ref].n) ownByRef[e.ref] = {id, n}; } });
-  const used = new Set();
-  const pickEx = slot => {
-    const [g, cands] = COACH_SLOTS[slot];
-    let list = cands.map(id => EXDBI[id]).filter(x => x && (!allowed || allowed.includes(x.e)));
-    if (!list.length) list = (EXDB || []).filter(x => x.g === g && (!allowed || allowed.includes(x.e)));
-    const fresh = list.filter(x => !used.has(x.id));
-    const pool = fresh.length ? fresh : list;
-    const kn = x => ownByRef[x.id] ? Math.min(ownByRef[x.id].n, 20) / 20 : 0;
-    const score = x => xp === "beginner" ? (exDifficulty(x) >= 2.8 ? -9 : 0) - exDifficulty(x) * 2 + kn(x)
-      : xp === "advanced" ? exDifficulty(x) * 2 + kn(x)
-      : kn(x) * 6 - Math.abs(exDifficulty(x) - 1.8);
-    const x = pool.slice().sort((a, b) => score(b) - score(a))[0];
-    if (x) { used.add(x.id); if (/^Dips_/.test(x.id)) { used.add("Dips_-_Chest_Version"); used.add("Dips_-_Triceps_Version"); } }
-    return x;
-  };
-  const dayPlans = split.map(k => ({key: k, name: COACH_DAYS[k][0], short: COACH_DAYS[k][1], slots: COACH_DAYS[k][2].map(s => ({slot: s, x: pickEx(s)})).filter(s => s.x)}));
-  // Sätze verteilen: Wochenziel der Gruppe / Anzahl Übungen dieser Gruppe in der Woche
-  const count = {};
-  dayPlans.forEach(d => d.slots.forEach(s => count[s.x.g] = (count[s.x.g] || 0) + 1));
-  const maxSets = Math.round((num(cc.minutes) || 60) / 3.2);
-  dayPlans.forEach(d => {
-    d.items = d.slots.map(s => {
-      const g = s.x.g, sc = coachScheme(s.x, gt, xp);
-      const sets = clamp(Math.round((vol[g] || 8) / (count[g] || 1)), deload ? 1 : 2, g === "Bauch" || g === "Waden" ? 3 : 4);
-      const own = ownByRef[s.x.id];
-      return {ref: s.x.id, exId: own ? own.id : null, name: own ? exName(own.id) : s.x.n, g, sets, reps: sc.reps, rir: deload ? "3–4" : sc.rir, rest: sc.rest, comp: s.x.mc === "c"};
-    });
-    let total = () => d.items.reduce((a, it) => a + it.sets, 0);
-    for (let guard = 0; total() > maxSets && guard < 30; guard++) {
-      const iso = d.items.filter(it => !it.comp && it.sets > 2).sort((a, b) => b.sets - a.sets)[0] || d.items.filter(it => it.sets > 2).sort((a, b) => b.sets - a.sets)[0];
-      if (iso) iso.sets--; else if (d.items.length > 4) d.items.pop(); else break;
-    }
-    d.total = total();
-  });
-  const weekSets = {};
-  dayPlans.forEach(d => d.items.forEach(it => weekSets[it.g] = (weekSets[it.g] || 0) + it.sets));
-  return {week: mondayOf(today), days: dayPlans, vol, why, weekSets, reasons, level, deload, recAvg, football, maxSets};
-}
-/* Plan als Vorlagen speichern (coach-1 …); eigene Pläne bleiben, fehlende Übungen kommen ins Register */
-function coachAdopt(plan, silent){
-  const keep = new Set();
-  plan.days.forEach((d, i) => {
-    const items = d.items.map(it => {
-      let id = it.exId;
-      if (!id) { const x = EXDBI[it.ref]; id = "x-" + it.ref.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 50); if (!S.exercises[id]) put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); }
-      return {exId: id, sets: it.sets, reps: it.reps, rir: it.rir, rest: it.rest};
-    });
-    const tid = "coach-" + (i + 1); keep.add(tid);
-    put("templates", tid, {name: "Coach: " + d.name, short: "C " + d.short, order: i - 50, items, coach: true, week: plan.week});
-  });
-  Object.keys(S.templates).filter(id => id.startsWith("coach-") && !keep.has(id)).forEach(id => del("templates", id));
-  saveCfg({coach: Object.assign({}, coachCfg(), {on: true, week: plan.week, at: new Date().toISOString()})});
-  if (!silent) toast("Coach-Plan übernommen. Du findest ihn unter Pläne.");
-}
-/* Einmal pro Woche (ab Montag) neu berechnen, wenn der Coach aktiv ist */
-let coachChecked = false;
-function coachWeekly(){
-  const cc = coachCfg();
-  if (!cc.on || !EXDB) return;
-  if (cc.week === mondayOf(todayKey())) return;
-  coachAdopt(coachPlan(cc), true);
-  toast("🤖 Dein Coach-Plan für diese Woche ist aktualisiert.");
-}
-function coachCard(){
-  const cc = coachCfg();
-  if (!EXDB) { loadExdb(); return `<section class="card" style="margin-bottom:12px"><div class="empty">Coach wird geladen …</div></section>`; }
-  const p = coachPlan(cc);
-  return `<section class="card" style="margin-bottom:12px">
-    <div class="card-h"><h2>🤖 Dein Coach-Plan</h2>${cc.on ? `<span class="chip good">aktiv</span>` : ""}</div>
-    <p class="small ink2" style="margin:0 0 8px">${cc.on ? `Wird jeden Montag automatisch an deine Daten angepasst. Zuletzt: ${fmtShort(cc.week || p.week)}.` : "Ich stelle dir aus deinen Daten einen Plan zusammen: Ziel, Erfahrung, Fortschritt, Erholung, Fußball und deine Lieblingsübungen. Er passt sich danach jede Woche an."}</p>
-    <ul class="small" style="margin:0 0 10px;padding-left:18px;display:flex;flex-direction:column;gap:4px">${p.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
-    ${p.days.map(d => `<div class="ex" style="margin-top:8px"><div class="spread"><b>${esc(d.name)}</b><span class="chip">${d.total} Sätze</span></div>
-      <div class="list">${d.items.map(it => `<div class="li" style="padding:7px 0">${EXDBI[it.ref] ? exAnim(EXDBI[it.ref], "38px") : ""}<div class="grow"><div class="title small" style="font-weight:600">${esc(it.name)}${it.exId ? "" : ' <span class="chip acc" style="padding:1px 7px;font-size:11px">neu</span>'}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${showRIR() ? " · RIR " + esc(it.rir) : ""} · Pause ${esc(it.rest)}</div></div></div>`).join("")}</div></div>`).join("")}
-    <details class="small" style="margin-top:10px"><summary class="ink2" style="cursor:pointer">Sätze pro Muskelgruppe und Woche</summary>
-      <div class="stack" style="gap:4px;margin-top:6px">${Object.entries(p.weekSets).map(([g, n]) => `<div><b>${esc(g)}: ${n}</b>${p.why[g] && p.why[g].length ? ` <span class="muted">· ${esc(p.why[g].join(", "))}</span>` : ""}</div>`).join("")}</div></details>
-    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="coach-adopt">${cc.on ? "Jetzt neu berechnen" : "Plan übernehmen"}</button><button class="btn" data-act="coach-settings">Einstellungen</button>${cc.on ? `<button class="btn ghost danger" data-act="coach-off">Coach aus</button>` : ""}</div>
-    <p class="small muted" style="margin:8px 0 0">Deine eigenen Pläne bleiben unverändert. Der Coach legt eigene Pläne mit „Coach:“ an.</p>
-  </section>`;
-}
-function openCoachSettings(){
-  const cc = coachCfg(), c = cfgRaw();
-  openSheet("Coach-Einstellungen", `<form class="stack" data-form="coach">
-    <div class="fields"><div class="field"><label for="cod">Krafttage pro Woche</label><select class="inp" id="cod">${[1, 2, 3, 4, 5].map(n => `<option ${(num(cc.days) || num(c.strengthPerWeek) || 3) === n ? "selected" : ""}>${n}</option>`).join("")}</select></div>
-    <div class="field"><label for="com">Zeit pro Training</label><select class="inp" id="com">${[[45, "45 min"], [60, "60 min"], [75, "75 min"], [90, "90 min"]].map(([v, l]) => `<option value="${v}" ${(num(cc.minutes) || 60) === v ? "selected" : ""}>${l}</option>`).join("")}</select></div></div>
-    <div class="field"><label for="coe">Ausstattung</label><select class="inp" id="coe">${[["gym", "Fitnessstudio (alles)"], ["kh", "Kurzhanteln und Bank"], ["home", "Zu Hause ohne Geräte"]].map(([v, l]) => `<option value="${v}" ${cc.equip === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="field"><label for="cox">Trainingserfahrung</label><select class="inp" id="cox">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="field"><label for="cof">Schwerpunkt</label><select class="inp" id="cof">${[["", "Kein Schwerpunkt"], ["Brust", "Brust"], ["Rücken", "Rücken"], ["Schultern", "Schultern"], ["Arme", "Arme"], ["Beine", "Beine und Po"]].map(([v, l]) => `<option value="${v}" ${cc.focus === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <p class="small muted" style="margin:0">Dein Ziel (${esc(GOALS[goalType()])}) stellst du im Zahnrad ein, der Coach richtet sich danach.</p>
-    <button class="btn primary" type="submit">Speichern</button></form>`);
 }
 /* Gewichtsvorschlag nach doppelter Progression: alle Sätze am oberen Ende → mehr Gewicht, sonst gleiches Gewicht, mehr Wdh. */
 function weightSuggestion(exId, target, date, wid){
@@ -1527,7 +1382,7 @@ function weightSuggestion(exId, target, date, wid){
 }
 /* Tagesform: aus der heutigen Erholung */
 function dayFormHint(w){
-  if (!w || w.date !== todayKey() || w.status === "done") return "";
+  if (!autoOn() || !w || w.date !== todayKey() || w.status === "done") return "";
   const r = recoveryOf(w.date); if (!r) return "";
   const z = zoneOf(r.score);
   if (z === "bad") return `<div class="hint" style="margin-bottom:12px;border:1.5px solid var(--warn)"><b>Tagesform niedrig (Erholung ${r.score} %):</b> Mach heute pro Übung einen Satz weniger und hör 3 Wdh. vor dem Versagen auf.</div>`;
@@ -1660,46 +1515,102 @@ function maybeShowReview(){
   if (!$("#scrim").hidden) return;
   reviewShown = true; openReview(mon);
 }
-function openReview(mon){
-  const c = cfg(), sun = addDays(mon, 6), days = Array.from({length: 7}, (_, i) => addDays(mon, i));
-  const wk = weekSummary(mon);
-  const sets = wk.strength.reduce((a, w) => a + (w.exercises || []).reduce((b, e) => b + (e.sets || []).filter(x => x.type !== "warmup" && num(x.r) > 0).length, 0), 0);
-  const vol = wk.strength.reduce((a, w) => a + (w.exercises || []).reduce((b, e) => b + (e.sets || []).filter(x => x.type !== "warmup").reduce((q, x) => q + (num(x.w) || 0) * (num(x.r) || 0), 0), 0), 0);
+/* Kleine Diagramme für den Wochenrückblick (eine Reihe pro Diagramm, Zielwert als gestrichelte Linie) */
+const WDS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+function weekBars(vals, o){
+  const W = 320, H = 132, top = 18, bot = 20, n = vals.length, gap = 10, bw = (W - gap * (n + 1)) / n;
+  const goals = vals.map((_, i) => typeof o.goal === "function" ? o.goal(i) : o.goal).map(g => g || 0);
+  const max = Math.max(1, ...vals.map(v => v || 0), ...goals) * 1.08;
+  const y = v => top + (H - top - bot) * (1 - v / max);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
+  vals.forEach((v, i) => {
+    const x = gap + i * (bw + gap), col = v ? (o.color ? o.color(v, i) : "var(--accent)") : "var(--surface-2)";
+    const h = v ? Math.max(3, y(0) - y(v)) : 3;
+    svg += `<g><title>${WDS[i]}: ${v ? o.fmt(v) : "keine Daten"}${goals[i] ? " · Ziel " + o.fmt(goals[i]) : ""}</title><rect x="${x}" y="${y(0) - h}" width="${bw}" height="${h}" rx="4" fill="${col}"/>
+      ${v && o.labels !== false ? `<text x="${x + bw / 2}" y="${y(0) - h - 5}" text-anchor="middle" font-size="9.5" fill="var(--ink-2)">${o.short ? o.short(v) : o.fmt(v)}</text>` : ""}
+      <text x="${x + bw / 2}" y="${H - 5}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${WDS[i]}</text></g>`;
+    if (goals[i]) svg += `<line x1="${x - 3}" x2="${x + bw + 3}" y1="${y(goals[i])}" y2="${y(goals[i])}" stroke="var(--ink-2)" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+  });
+  return svg + `</svg>`;
+}
+function weekLine(pts, o){
+  const W = 320, H = 120, l = 34, r = 10, top = 12, bot = 20;
+  const vs = pts.filter(p => p.v != null).map(p => p.v); if (vs.length < 2) return "";
+  const lo = Math.min(...vs) - 0.3, hi = Math.max(...vs) + 0.3, X = i => l + (W - l - r) * i / 6, Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo));
+  let d = "", svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
+  [lo + 0.3, hi - 0.3].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${fmt(v, 1)}</text>`);
+  pts.forEach((p, i) => { if (p.v != null) d += (d ? "L" : "M") + X(i).toFixed(1) + " " + Y(p.v).toFixed(1); });
+  svg += `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  pts.forEach((p, i) => { svg += `<text x="${X(i)}" y="${H - 5}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${WDS[i]}</text>`;
+    if (p.v != null) svg += `<g><title>${WDS[i]}: ${fmt(p.v, 1)} kg</title><circle cx="${X(i)}" cy="${Y(p.v)}" r="4.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></g>`; });
+  return svg + `</svg>`;
+}
+function delta(cur, prev, unit, digits, goodUp){
+  if (cur == null || prev == null || !prev) return "";
+  const d = cur - prev; if (Math.abs(d) < (digits ? 0.05 : 1)) return `<span class="small muted">= Vorwoche</span>`;
+  const good = goodUp == null ? null : (d > 0) === goodUp;
+  return `<span class="small" style="color:${good == null ? "var(--ink-2)" : good ? "var(--good)" : "var(--warn)"}">${d > 0 ? "▲" : "▼"} ${fmt(Math.abs(d), digits)}${unit} zur Vorwoche</span>`;
+}
+function weekStats(mon){
+  const days = Array.from({length: 7}, (_, i) => addDays(mon, i)), sun = days[6];
   const avgOf = f => { const xs = days.map(f).filter(x => x != null && !isNaN(x) && x > 0); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
-  const steps = avgOf(k => (S.days[k] || {}).steps), sleepH = avgOf(k => ((S.days[k] || {}).sleep || {}).h), sleepS = avgOf(k => num(((S.days[k] || {}).sleep || {}).score));
-  const rec = avgOf(k => { const r = recoveryOf(k); return r ? r.score : null; });
-  const ser = weightSeries(); const wEnd = avgAt(ser, sun), wStart = avgAt(ser, addDays(mon, -1));
   const tracked = days.filter(k => dayTotals(S.days[k]).kcal > 0);
-  const kcal = tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).kcal, 0) / tracked.length : null;
-  const prot = tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).p, 0) / tracked.length : null;
+  const ser = weightSeries();
+  return {days, sun,
+    kcal: tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).kcal, 0) / tracked.length : null,
+    prot: tracked.length ? tracked.reduce((a, k) => a + dayTotals(S.days[k]).p, 0) / tracked.length : null, tracked: tracked.length,
+    steps: avgOf(k => (S.days[k] || {}).steps), sleepH: avgOf(k => ((S.days[k] || {}).sleep || {}).h), sleepS: avgOf(k => num(((S.days[k] || {}).sleep || {}).score)),
+    rec: avgOf(k => { const r = recoveryOf(k); return r ? r.score : null; }), water: avgOf(k => num((S.days[k] || {}).water) / 1000),
+    wEnd: avgAt(ser, sun), wStart: avgAt(ser, addDays(mon, -1))};
+}
+function openReview(mon){
+  const c = cfg(), gt = goalType(), st = weekStats(mon), pv = weekStats(addDays(mon, -7)), days = st.days, sun = st.sun;
+  const wk = weekSummary(mon), wkPrev = weekSummary(addDays(mon, -7));
+  const setsOf = w => w.strength.reduce((a, x) => a + (x.exercises || []).reduce((b, e) => b + (e.sets || []).filter(q => q.type !== "warmup" && num(q.r) > 0).length, 0), 0);
+  const volOf = w => w.strength.reduce((a, x) => a + (x.exercises || []).reduce((b, e) => b + (e.sets || []).filter(q => q.type !== "warmup").reduce((q2, z) => q2 + (num(z.w) || 0) * (num(z.r) || 0), 0), 0), 0);
+  const sets = setsOf(wk), vol = volOf(wk);
   const supps = suppsSorted(); const suppPct = supps.length ? Math.round(days.reduce((a, k) => a + supps.filter(x => ((S.days[k] || {}).supps || {})[x.id]).length, 0) / (supps.length * 7) * 100) : null;
   const prs = [];
   Object.keys(S.exercises).forEach(id => { const h = exHistory(id).filter(x => x.kind === "kg"); const inW = h.filter(x => x.k >= mon && x.k <= sun), before = h.filter(x => x.k < mon);
     if (inW.length && before.length) { const best = Math.max(...inW.map(x => x.v)), prev = Math.max(...before.map(x => x.v)); if (best > prev) prs.push([exName(id), best, best - prev]); } });
   prs.sort((a, b) => b[2] - a[2]);
-  const gt = goalType(); const dW = wEnd != null && wStart != null ? wEnd - wStart : null;
-  const verdict = dW == null ? "" : gt === "cut" ? (dW <= -0.3 ? "Starke Woche für deinen Cut." : dW < 0 ? "Es geht in die richtige Richtung, bleib dran." : "Diese Woche ging das Gewicht nicht runter. Schau auf Kalorien und Schritte.")
+  const dW = st.wEnd != null && st.wStart != null ? st.wEnd - st.wStart : null;
+  const verdict = dW == null ? "Trag regelmäßig dein Gewicht ein, dann bekommst du hier eine Einschätzung." : gt === "cut" ? (dW <= -0.3 ? "Starke Woche für deinen Cut." : dW < 0 ? "Es geht in die richtige Richtung, bleib dran." : "Diese Woche ging das Gewicht nicht runter. Schau auf Kalorien und Schritte.")
     : gt === "bulk" ? (dW >= 0.1 && dW <= 0.4 ? "Sauberer Aufbau, genau im Plan." : dW > 0.4 ? "Etwas schnell zugenommen. Eventuell 150 kcal weniger." : "Kaum Zunahme. Für Muskelaufbau etwas mehr essen.")
     : (Math.abs(dW) <= 0.3 ? "Gewicht stabil, so soll es sein." : "Dein Gewicht hat sich etwas bewegt. Behalte es im Blick.");
-  const tile = (label, val, unit, sub) => `<div><span class="eyebrow">${label}</span><div class="v">${val}${unit ? `<span class="unit">${unit}</span>` : ""}</div>${sub ? `<div class="small muted">${sub}</div>` : ""}</div>`;
-  const body = `<p class="ink2" style="margin:0 0 14px">${fmtShort(mon)} – ${fmtShort(sun)} · ${esc(GOALS[gt])}${verdict ? " · " + esc(verdict) : ""}</p>
-    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Training</div><div class="kv">
-      ${tile("Krafteinheiten", wk.strength.length + " / " + c.strengthPerWeek, "", wk.strength.map(w => w.title).join(", "))}
-      ${tile("Sätze", fmt(sets), "")}
-      ${tile("Bewegt", fmt(vol), "kg")}
-      ${wk.acts.length ? tile("Sport", wk.acts.length + "×", "", [...new Set(wk.acts.map(a => a.title))].join(", ")) : ""}
-    </div>${prs.length ? `<div class="hint good" style="margin-top:12px"><b>Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}</section>
-    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Körper & Erholung</div><div class="kv">
-      ${tile("Gewicht Ø", wEnd ? fmt(wEnd, 1) : "–", "kg", dW != null ? (dW > 0 ? "+" : "") + fmt(dW, 1) + " kg zur Vorwoche" : "")}
-      ${tile("Erholung Ø", rec ? Math.round(rec) : "–", rec ? "%" : "")}
-      ${tile("Schlaf Ø", sleepH ? fmt(sleepH, 1) : "–", "h", sleepS ? "Schlafwert " + Math.round(sleepS) : "")}
-      ${tile("Schritte Ø", steps ? fmt(steps) : "–", "")}
-    </div></section>
-    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Ernährung & Supplements</div><div class="kv">
-      ${tile("Kalorien Ø", kcal ? fmt(kcal) : "–", "kcal", tracked.length ? tracked.length + " von 7 Tagen eingetragen · Ziel " + fmt(c.kcal) : "nichts eingetragen")}
-      ${tile("Protein Ø", prot ? fmt(prot) : "–", "g", "Ziel " + c.p + " g")}
-      ${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}
-    </div></section>`;
+  const hero = (label, val, unit, sub) => `<div style="min-width:0"><div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">${label}</div><div style="font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1">${val}<span style="font-size:13px;font-weight:600;opacity:.85;margin-left:3px">${unit}</span></div>${sub ? `<div style="font-size:12px;opacity:.85">${sub}</div>` : ""}</div>`;
+  const tile = (label, val, unit, sub) => `<div><span class="eyebrow">${label}</span><div class="v">${val}${unit ? `<span class="unit">${unit}</span>` : ""}</div>${sub ? `<div>${sub}</div>` : ""}</div>`;
+  const card = (title, inner) => `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:10px">${title}</div>${inner}</section>`;
+  const kcalVals = days.map(k => dayTotals(S.days[k]).kcal || 0), protVals = days.map(k => dayTotals(S.days[k]).p || 0);
+  const recVals = days.map(k => { const r = recoveryOf(k); return r ? r.score : 0; });
+  const sleepVals = days.map(k => num(((S.days[k] || {}).sleep || {}).h) || 0), stepVals = days.map(k => num((S.days[k] || {}).steps) || 0);
+  const wPts = days.map(k => ({v: typeof (S.days[k] || {}).weight === "number" ? S.days[k].weight : null}));
+  const strip = days.map((k, i) => { const ws = wk.strength.filter(w => w.date === k), as = wk.acts.filter(w => w.date === k);
+    return `<div style="text-align:center;min-width:0"><div class="small muted">${WDS[i]}</div><div style="margin:4px auto 0;width:34px;height:34px;border-radius:12px;display:grid;place-items:center;font-size:16px;background:${ws.length ? "var(--grad)" : as.length ? "color-mix(in srgb,var(--c) 30%,var(--surface))" : "var(--surface-2)"};color:${ws.length ? "#fff" : "var(--ink)"}" title="${esc([...ws, ...as].map(w => w.title).join(", ") || "Ruhetag")}">${ws.length ? "🏋️" : as.length ? "⚽" : ""}</div></div>`; }).join("");
+  const groups = Object.entries(wk.groups).filter(([g]) => g !== "Sonstiges").sort((a, b) => b[1] - a[1]);
+  const body = `<div style="background:var(--grad);color:#fff;border-radius:20px;padding:18px;margin-bottom:12px">
+      <div style="font-size:13px;opacity:.9">${fmtShort(mon)} – ${fmtShort(sun)} · ${esc(GOALS[gt])}</div>
+      <div style="font-size:19px;font-weight:700;line-height:1.25;margin:4px 0 14px">${esc(verdict)}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px">
+        ${hero("Gewicht", st.wEnd ? fmt(st.wEnd, 1) : "–", "kg", dW != null ? (dW > 0 ? "+" : "") + fmt(dW, 1) + " kg" : "")}
+        ${hero("Training", wk.strength.length + "/" + c.strengthPerWeek, "", wk.acts.length ? "+ " + wk.acts.length + "× Sport" : "")}
+        ${hero("Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", "Ø der Woche")}
+      </div></div>
+    ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>
+      <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
+      ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
+      ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar"><i style="width:${Math.min(100, n / 20 * 100)}%"></i></div><span class="num small" style="text-align:right"><b>${n}</b></span></div>`).join("")}</div>` : ""}`)}
+    ${card("Kalorien pro Tag", `${weekBars(kcalVals, {label: "Kalorien pro Tag", goal: i => kcalGoal(days[i]), fmt: v => fmt(v) + " kcal", short: v => fmt(v / 1000, 1) + "k", color: (v, i) => v > kcalGoal(days[i]) * 1.05 ? "var(--warn)" : "var(--accent)"})}
+      <div class="kv" style="margin-top:8px">${tile("Ø gegessen", st.kcal ? fmt(st.kcal) : "–", "kcal", delta(st.kcal, pv.kcal, " kcal", 0, null))}${tile("Eingetragen", st.tracked, "von 7", "")}</div>
+      <p class="small muted" style="margin:6px 0 0">Gestrichelt: dein Tagesziel inkl. Sport. Orange: mehr als 5 % drüber.</p>`)}
+    ${card("Protein pro Tag", `${weekBars(protVals, {label: "Protein pro Tag", goal: c.p, fmt: v => fmt(v) + " g", color: v => v >= c.p * 0.9 ? "var(--good)" : "var(--p)"})}
+      <div class="kv" style="margin-top:8px">${tile("Ø Protein", st.prot ? fmt(st.prot) : "–", "g", delta(st.prot, pv.prot, " g", 0, true))}${st.water ? tile("Ø Trinken", fmt(st.water, 1), "l", "") : ""}</div>`)}
+    ${weekLine(wPts, {label: "Gewicht"}) ? card("Gewicht", weekLine(wPts, {label: "Gewicht"}) + `<div class="kv" style="margin-top:8px">${tile("Ø 7 Tage", st.wEnd ? fmt(st.wEnd, 1) : "–", "kg", delta(st.wEnd, pv.wEnd, " kg", 1, gt === "bulk" ? true : gt === "cut" ? false : null))}</div>`) : ""}
+    ${card("Erholung", `${weekBars(recVals, {label: "Erholung pro Tag", fmt: v => v + " %", color: v => v >= 67 ? "var(--good)" : v >= 34 ? "var(--warn)" : "var(--bad)"})}
+      <div class="kv" style="margin-top:8px">${tile("Ø Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", delta(st.rec, pv.rec, " %", 0, true))}${tile("Ø Schlaf", st.sleepH ? fmt(st.sleepH, 1) : "–", "h", delta(st.sleepH, pv.sleepH, " h", 1, true))}</div>`)}
+    ${card("Schlaf pro Nacht", weekBars(sleepVals, {label: "Schlaf pro Nacht", goal: c.sleepGoal, fmt: v => fmt(v, 1) + " h", color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 55%,var(--surface))"}))}
+    ${card("Schritte", `${weekBars(stepVals, {label: "Schritte pro Tag", goal: 10000, fmt: v => fmt(v) + " Schritte", short: v => fmt(v / 1000, 1) + "k", color: v => v >= 10000 ? "var(--good)" : "var(--accent)"})}
+      <div class="kv" style="margin-top:8px">${tile("Ø Schritte", st.steps ? fmt(st.steps) : "–", "", delta(st.steps, pv.steps, "", 0, true))}${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}</div>`)}`;
   openSheet("Dein Wochenrückblick", body, `<button class="btn primary block" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
 }
 
@@ -1925,7 +1836,7 @@ function viewKoerper(){
   const recent = ser.slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
   const lastWaist = waist.length ? waist[waist.length - 1] : null;
-  return `<section class="card">
+  return `<button class="btn block" data-act="review-open" style="margin-bottom:12px">📊 Wochenrückblick ansehen</button><section class="card">
     <div class="card-h"><h2>Gewichtsverlauf</h2>
       <div class="seg" role="group" aria-label="Zeitraum">${[[30,"30 T"],[90,"90 T"],[0,"Alles"]].map(([r, l]) => `<button data-act="w-range" data-r="${r}" aria-pressed="${weightRange === r}">${l}</button>`).join("")}</div></div>
     <div class="chart" data-chart="weight" style="height:240px"></div>
@@ -2186,10 +2097,14 @@ function renderAddFood(){
     </form>`;
   } else if (af.mode === "suchen") {
     if (af.pick) {
-      const f = S.foods[af.pick]; const g = num(af.g) || f.portion || 100; const k = g / 100, u = unitOfFood(f);
+      const f = S.foods[af.pick], u = unitOfFood(f), uc = afUnitCalc(f), g = uc.g, k = g / 100;
       b += `<div class="card"><div class="title" style="font-weight:600;font-size:17px">${esc(f.name)}</div><div class="small muted num">pro 100 ${u}: ${fmt(f.kcal)} kcal · P ${fmt(f.p, 1)} · K ${fmt(f.c, 1)} · F ${fmt(f.f, 1)}</div>
-        <div class="fields" style="margin-top:12px"><div class="field"><label for="afg">Menge (${u})</label><input class="inp num" id="afg" inputmode="decimal" value="${esc(af.g || f.portion || 100)}"></div></div>
-        <div class="row" style="margin-top:8px">${[f.portion, 50, 100, 150, 200, 250].filter((v, i, a) => v && a.indexOf(v) === i).map(v => `<button class="chip" data-act="af-g" data-g="${v}">${v} ${u}${v === f.portion ? " (Portion)" : ""}</button>`).join("")}<button class="chip" data-act="af-unit" style="margin-left:auto">${u === "ml" ? "In Gramm anzeigen" : "In ml anzeigen"}</button></div>
+        ${uc.us.length ? `<div class="filt" style="margin-top:12px">${[[-1, u === "ml" ? "ml" : "Gramm"], ...uc.us.map((x, i) => [i, `${x.one} (${fmt(x.g)} ${u})`])].map(([i, l]) => `<button data-act="af-u" data-i="${i}" aria-pressed="${uc.ui === i}">${esc(l)}</button>`).join("")}</div>` : ""}
+        ${uc.ui < 0 ? `<div class="fields" style="margin-top:12px"><div class="field"><label for="afg">Menge (${u})</label><input class="inp num" id="afg" inputmode="decimal" value="${esc(af.g || f.portion || 100)}"></div></div>
+        <div class="row" style="margin-top:8px">${[f.portion, 50, 100, 150, 200, 250].filter((v, i, a) => v && a.indexOf(v) === i).map(v => `<button class="chip" data-act="af-g" data-g="${v}">${v} ${u}${v === f.portion ? " (Portion)" : ""}</button>`).join("")}<button class="chip" data-act="af-unit" style="margin-left:auto">${u === "ml" ? "In Gramm anzeigen" : "In ml anzeigen"}</button></div>`
+        : `<div class="fields" style="margin-top:12px"><div class="field"><label for="afn">Anzahl ${esc(uc.u.many)}</label><input class="inp num" id="afn" inputmode="decimal" value="${esc(af.n || 1)}"></div></div>
+        <div class="row" style="margin-top:8px">${[0.5, 1, 2, 3, 4].map(n => `<button class="chip" data-act="af-n" data-n="${n}">${fmt(n, n % 1 ? 1 : 0)} ${esc(unitWord(uc.u, n))}</button>`).join("")}</div>
+        <p class="small muted" id="afgram" style="margin:8px 0 0">= ${fmt(g)} ${u}</p>`}
         <p class="num" id="afcalc" style="margin:12px 0 0"><b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}</p>
         <div class="row" style="margin-top:12px"><button class="btn primary" data-act="af-add-pick">Hinzufügen</button><button class="btn ghost" data-act="af-unpick">Zurück</button><button class="btn ghost danger" data-act="food-del" data-id="${af.pick}">Aus Liste löschen</button></div></div>`;
     } else {
@@ -2296,6 +2211,60 @@ const LIQ_NO = /(schokolade|reis|pulver|broetchen|brot|quark|joghurt|kaese|\beis
 const isLiquidName = n => { const t = normT(n || ""); return LIQ_YES.test(t) && !LIQ_NO.test(t); };
 const unitOfFood = f => (f && f.unit) || (isLiquidName(f && f.name) ? "ml" : "g");
 const unitOfItem = it => it.unit || (it.foodId && S.foods[it.foodId] ? unitOfFood(S.foods[it.foodId]) : isLiquidName(it.name) ? "ml" : "g");
+/* Portionseinheiten je Lebensmittel (Name-Regeln, Richtgewichte): [Einzahl, Mehrzahl, Gramm] */
+const UNIT_RULES = [
+  [/milchreis|griessbrei|porridge/, [["Schüssel", "Schüsseln", 250]]],
+  [/frischkaese|huettenkaese|koerniger|quark|skyr|joghurt|pudding/, [["Becher", "Becher", 0], ["EL", "EL", 15]]],
+  [/mozzarella/, [["Kugel", "Kugeln", 125], ["Scheibe", "Scheiben", 20]]],
+  [/parmesan|gerieben|reibekaese/, [["EL", "EL", 6]]],
+  [/feta|hirtenkaese/, [["Packung", "Packungen", 200], ["Würfel", "Würfel", 10]]],
+  [/kaese|gouda|emmentaler|edamer|tilsiter|cheddar|leerdammer|bergkaese|butterkaese/, [["Scheibe", "Scheiben", 25]]],
+  [/salami|chorizo|pepperoni/, [["Scheibe", "Scheiben", 10]]],
+  [/schinken|wurst|aufschnitt|mortadella|putenbrust|lyoner|leberkaese/, [["Scheibe", "Scheiben", 15]]],
+  [/toast/, [["Scheibe", "Scheiben", 25]]],
+  [/broetchen|semmel|weckle|schrippe|croissant/, [["Stück", "Stück", 60]]],
+  [/brezel|breze/, [["Stück", "Stück", 80]]],
+  [/knaeckebrot/, [["Scheibe", "Scheiben", 10]]],
+  [/brot\b|brot |vollkornbrot|sauerteig|roggen|dinkelbrot|mischbrot/, [["Scheibe", "Scheiben", 50]]],
+  [/riegel|\bbar\b|protein bar|snickers|twix|kitkat/, [["Riegel", "Riegel", 0]]],
+  [/\bei\b|\beier\b|^ei |eier /, [["Ei", "Eier", 60]]],
+  [/apfel(?!saft|mus|schorle)/, [["Apfel", "Äpfel", 180]]],
+  [/banane/, [["Banane", "Bananen", 120]]],
+  [/birne/, [["Birne", "Birnen", 170]]],
+  [/orange(?!nsaft)/, [["Orange", "Orangen", 180]]],
+  [/mandarine|clementine/, [["Stück", "Stück", 70]]],
+  [/kiwi/, [["Kiwi", "Kiwis", 75]]],
+  [/pfirsich|nektarine/, [["Stück", "Stück", 150]]],
+  [/avocado/, [["Avocado", "Avocados", 150], ["halbe Avocado", "halbe Avocados", 75]]],
+  [/tomate(?!nsauce|nmark|nsuppe)/, [["Tomate", "Tomaten", 80]]],
+  [/karotte|moehre/, [["Karotte", "Karotten", 70]]],
+  [/paprika/, [["Paprika", "Paprika", 150]]],
+  [/kartoffel(?!puree|salat)/, [["Kartoffel", "Kartoffeln", 100]]],
+  [/zwiebel/, [["Zwiebel", "Zwiebeln", 80]]],
+  [/oel\b|olivenoel|rapsoel|leinoel|butter\b|margarine|erdnussbutter|nussmus|mandelmus|honig|marmelade|konfituere|nutella|mayonnaise|mayo|ketchup|senf|sirup/, [["EL", "EL", 10], ["TL", "TL", 5]]],
+  [/haferflocken|muesli|granola|cornflakes|chia|leinsamen/, [["EL", "EL", 10], ["Portion", "Portionen", 50]]],
+  [/nuss|nuesse|mandeln|cashew|walnuss|erdnuesse|pistazie|haselnuss/, [["Handvoll", "Handvoll", 25]]],
+  [/keks|cookie|praline/, [["Stück", "Stück", 10]]],
+  [/schokolade/, [["Stück", "Stück", 6], ["Reihe", "Reihen", 25]]],
+  [/reis\b|reis |nudeln|pasta|spaghetti|penne|couscous|quinoa|bulgur/, [["Portion (roh)", "Portionen (roh)", 75]]],
+  [/whey|proteinpulver|protein pulver|eiweisspulver|casein/, [["Messlöffel", "Messlöffel", 30]]],
+  [/kaffee|espresso|tee\b|cappuccino|latte/, [["Tasse", "Tassen", 150]]],
+  [/wasser|cola|limo|schorle|saft|bier|eistee|energy/, [["Glas", "Gläser", 200], ["Flasche (0,5 l)", "Flaschen (0,5 l)", 500]]],
+  [/milch|drink|kefir|shake|smoothie/, [["Glas", "Gläser", 200]]]
+];
+function unitsFor(f){
+  if (!f) return [];
+  const t = normT(f.name), out = [];
+  for (const [re, us] of UNIT_RULES) if (re.test(t)) { us.forEach(u => out.push({one: u[0], many: u[1], g: u[2] || f.portion || (u[0] === "Riegel" ? 45 : u[0] === "Becher" ? 150 : 100)})); break; }
+  if (f.portion && !out.some(u => u.g === f.portion)) out.push({one: "Portion", many: "Portionen", g: f.portion});
+  return out;
+}
+const unitWord = (u, n) => n <= 1 ? u.one : u.many;
+function afUnitCalc(f){
+  const us = unitsFor(f), ui = af.u != null && us[af.u] ? af.u : -1;
+  if (ui < 0) return {us, ui, g: num(af.g) || f.portion || 100, n: null};
+  const n = num(af.n) || 1; return {us, ui, g: n * us[ui].g, n, u: us[ui]};
+}
 function addItems(meal, items){
   items.forEach(it => { if (!it.unit && unitOfItem(it) === "ml") it.unit = "ml"; });
   const d = getDay(curDate); d.meals = d.meals || {}; d.meals[meal] = (d.meals[meal] || []).concat(items);
@@ -2336,7 +2305,7 @@ function renderWs(){
     const rx = exRef(e.exId), open = wsInfo[ei];
     return `<div class="ex"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done ? "" : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done || !autoOn() ? "" : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
       ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
@@ -2416,9 +2385,8 @@ function openSettings(){
   openSheet("Einstellungen", `<form class="stack" data-form="settings">
     <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps, Hinweise und den Kalorienrechner an.</span></div>
     <div class="eyebrow" style="margin-top:6px">Automatik</div>
-    <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung automatisch</b><br><span class="muted">Kalorien und Makros passt der Kalorienrechner täglich an Gewicht, Sport und deinen Fortschritt an.</span></span></label>
-    <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaT" ${coachCfg().on ? "checked" : ""} style="margin-top:3px"><span><b>Training automatisch</b><br><span class="muted">Der Coach erstellt deinen Trainingsplan und passt ihn jeden Montag an. Deine eigenen Pläne bleiben.</span></span></label>
-    <div class="field"><label for="gxp">Trainingserfahrung</label><select class="inp" id="gxp">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Bestimmt, welche Übungen der Coach auswählt: einfache, gut geführte Übungen für Einsteiger, anspruchsvollere freie Übungen für Erfahrene.</span></div>
+    <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung & Training automatisch</b><br><span class="muted">Kalorien und Makros passen sich täglich an Gewicht, Sport und Fortschritt an. In deinen eigenen Trainingsplänen stehen Empfehlungen für Sätze, Wiederholungen und Gewicht, passend zu Ziel, Ernährung und Erholung. Deine Pläne selbst ändern sich nie.</span></span></label>
+    <div class="field"><label for="gxp">Trainingserfahrung</label><select class="inp" id="gxp">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Bestimmt die Empfehlungen: Einsteiger mehr Wiederholungen mit Puffer, Erfahrene bei schweren Grundübungen auch 5–8 Wiederholungen.</span></div>
     <div class="eyebrow">Tagesziele Ernährung</div>
     ${c.calc && c.calc.on ? `<div class="hint">Werden automatisch vom Kalorienrechner berechnet. <button class="btn ghost" type="button" data-act="calc-open" style="min-height:32px">Rechner öffnen</button></div>` : `<button class="btn" type="button" data-act="calc-open">🧮 Mit dem Kalorienrechner berechnen</button>`}
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}" ${c.calc && c.calc.on ? "readonly" : ""}></div></div>
@@ -2533,7 +2501,9 @@ document.addEventListener("click", async e => {
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
     case "add-food": openAddFood(D.meal); break;
     case "af-mode": if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
-    case "af-pick": af.pick = D.id; af.g = ""; renderAddFood(); break;
+    case "af-pick": { af.pick = D.id; af.g = ""; af.n = ""; const f = S.foods[D.id], us = unitsFor(f); af.u = f && f.lastU != null && us[f.lastU] ? f.lastU : null; renderAddFood(); break; }
+    case "af-u": af.u = +D.i < 0 ? null : +D.i; af.n = af.n || 1; renderAddFood(); break;
+    case "af-n": af.n = D.n; renderAddFood(); break;
     case "af-base": { const b = BASE_FOODS.find(x => x[0] === D.name); if (!b) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === b[0]); const id = ex ? ex[0] : uid("f");
       if (!ex) put("foods", id, {name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], portion: b[6] || undefined, uses: 0, src: "richtwert"});
       af.pick = id; af.g = ""; renderAddFood(); break; }
@@ -2544,9 +2514,10 @@ document.addEventListener("click", async e => {
     case "af-g": af.g = D.g; renderAddFood(); break;
     case "af-unit": { const f = S.foods[af.pick]; if (!f) break; put("foods", af.pick, Object.assign(clone(f), {unit: unitOfFood(f) === "ml" ? "g" : "ml"})); setTimeout(renderAddFood, 0); break; }
     case "af-add-pick": {
-      const f = S.foods[af.pick]; const g = num(($("#afg") || {}).value) || f.portion || 100; const k = g / 100;
-      addItems(af.meal, [{name: f.name, unit: unitOfFood(f) === "ml" ? "ml" : undefined, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), foodId: af.pick}]);
-      put("foods", af.pick, Object.assign(clone(f), {uses: (f.uses || 0) + 1, lastG: Math.round(g)}));
+      const f = S.foods[af.pick]; if ($("#afg")) af.g = $("#afg").value; if ($("#afn")) af.n = $("#afn").value;
+      const uc = afUnitCalc(f), g = uc.g, k = g / 100;
+      addItems(af.meal, [{name: f.name, unit: unitOfFood(f) === "ml" ? "ml" : undefined, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), foodId: af.pick, qty: uc.u ? uc.n : undefined, qu1: uc.u ? uc.u.one : undefined, qu: uc.u ? uc.u.many : undefined}]);
+      put("foods", af.pick, Object.assign(clone(f), {uses: (f.uses || 0) + 1, lastG: Math.round(g), lastU: uc.ui >= 0 ? uc.ui : null}));
       toast(f.name + " hinzugefügt."); closeSheet(); break;
     }
     case "food-del": del("foods", D.id); af.pick = null; renderAddFood(); break;
@@ -2623,9 +2594,7 @@ document.addEventListener("click", async e => {
     case "exdb-back": openExdb(); break;
     case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
     case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && d.water >= g.total && d.water - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
-    case "coach-adopt": { if (!EXDB) await loadExdb(); coachAdopt(coachPlan()); trainSub = "plaene"; render(); break; }
-    case "coach-settings": openCoachSettings(); break;
-    case "coach-off": saveCfg({coach: Object.assign({}, coachCfg(), {on: false})}); toast("Coach aus. Die Coach-Pläne bleiben, du kannst sie löschen oder weiter nutzen."); break;
+    case "review-open": openReview(reviewWeek() || mondayOf(addDays(todayKey(), -7))); break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -2650,6 +2619,7 @@ document.addEventListener("input", e => {
   if (t.closest && t.closest('form[data-form="calc"]')) { const r = calcRead(); if (t.id === "cg") { const p = Object.assign({}, cfgRaw().calc || {}, r.p, {pace: null, pkg: null}); $("#sheet-b").innerHTML = calcForm(p, r.goal); return; } $("#calcres").innerHTML = calcExplain(calcTargets(r.p, r.goal), r.goal); return; }
   if (t.id === "exdbq") { exdbQ = t.value; $("#exdbres").innerHTML = exdbList(); return; }
   if (t.id === "afq" && af) { af.q = t.value; offSearch(af.q); $("#afres").innerHTML = foodResults(foodsSorted(af.q)); return; }
+  if (t.id === "afn" && af && af.pick) { const f = S.foods[af.pick]; af.n = t.value; const uc = afUnitCalc(f), k = uc.g / 100; $("#afcalc").innerHTML = `<b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}`; if ($("#afgram")) $("#afgram").textContent = "= " + fmt(uc.g) + " " + unitOfFood(f); return; }
   if (t.id === "afg" && af && af.pick) { const f = S.foods[af.pick]; const k = (num(t.value) || 0) / 100; af.g = t.value; $("#afcalc").innerHTML = `<b>${fmt(f.kcal * k)} kcal</b> · P ${fmt(f.p * k, 1)} · K ${fmt(f.c * k, 1)} · F ${fmt(f.f * k, 1)}`; return; }
   if (t.dataset.ws && ws) {
     if (t.dataset.ws === "note") ws.note = t.value;
@@ -2716,7 +2686,6 @@ document.addEventListener("submit", async e => {
       const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
       if (r.goal === "cut") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
       saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
-    case "coach": { const was = coachCfg().on; saveCfg({coach: Object.assign({}, coachCfg(), {days: num(v("cod")) || 3, minutes: num(v("com")) || 60, equip: v("coe") || "gym", focus: v("cof") || ""}), experience: v("cox") || "auto"}); if (was) coachAdopt(coachPlan(), true); closeSheet(); toast(was ? "Gespeichert, Coach-Plan neu berechnet." : "Gespeichert."); break; }
     case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; FR.editProfile = false; toast("Gespeichert."); loadFriends(true); break; }
     case "addfriend": {
       const em = v("fe").trim(); const {data: r, error} = await sb.rpc("add_friend", {p_email: em});
@@ -2727,13 +2696,11 @@ document.addEventListener("submit", async e => {
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto"});
-      const wantN = !!(f.querySelector("#gaN") || {}).checked, wantT = !!(f.querySelector("#gaT") || {}).checked, rc = cfgRaw();
+      const wantN = !!(f.querySelector("#gaN") || {}).checked, rc = cfgRaw();
       let openCalcNext = false;
       if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birth && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
       if (!wantN && rc.calc && rc.calc.on) { const t = autoTargets(); saveCfg(Object.assign({calc: Object.assign({}, rc.calc, {on: false})}, t ? {kcal: t.kcal, p: t.p, c: t.c, f: t.f} : {})); }
-      if (wantT && !coachCfg().on) { if (!EXDB) await loadExdb(); coachAdopt(coachPlan(), true); }
-      else if (wantT && coachCfg().on) coachAdopt(coachPlan(), true);
-      if (!wantT && coachCfg().on) saveCfg({coach: Object.assign({}, coachCfg(), {on: false})});
+      if (rc.coach && rc.coach.on) saveCfg({coach: Object.assign({}, rc.coach, {on: false})});
       closeSheet();
       if (openCalcNext) { openCalc(); toast("Trag noch Geburtsjahr und Größe ein, dann läuft die Ernährung automatisch."); } else toast("Gespeichert.");
       break; }
