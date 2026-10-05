@@ -99,6 +99,13 @@ def day(api, d):
         "speed": round(a["averageSpeed"] * 3.6, 1) if a.get("averageSpeed") else None,
         "imMod": a.get("moderateIntensityMinutes"), "imVig": a.get("vigorousIntensityMinutes"),
     } for a in acts]
+    try:  # VO2max-Schätzung der Uhr (nur an Tagen mit passender Lauf-/Geh-Einheit vorhanden)
+        mm = api.get_max_metrics(d) or []
+        g = (mm[0] or {}).get("generic") if mm else None
+        if g and g.get("vo2MaxPreciseValue"):
+            out["vo2"] = round(float(g["vo2MaxPreciseValue"]), 1)
+    except Exception:
+        pass
     weights = safe(api.get_body_composition, d).get("dateWeightList") or []
     if weights and weights[-1].get("weight"):
         out["weight"] = round(weights[-1]["weight"] / 1000, 1)
