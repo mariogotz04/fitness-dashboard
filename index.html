@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:37";
+const APP_VERSION = "05.10.2026 09:50";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -817,6 +817,7 @@ function viewHeute(){
 
   return `${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
   ${recoverySection(curDate)}
+  ${footballCard(curDate)}
   <section class="card">
     <div class="card-h"><h2>Kalorien</h2><button class="btn ghost" data-act="tab" data-tab="essen">Essen eintragen</button></div>
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}
@@ -1314,7 +1315,7 @@ function viewExercises(){
   exs.forEach(e => (byG[e.group || "Sonstiges"] = byG[e.group || "Sonstiges"] || []).push(e));
   const order = GROUPS.filter(g => byG[g]).concat(Object.keys(byG).filter(g => !GROUPS.includes(g)));
   return `<button class="btn primary block" data-act="exdb" style="margin-bottom:8px">🔎 Übungsdatenbank durchsuchen${EXDB ? " (" + EXDB.length + " Übungen)" : ""}</button>
-  <p class="small muted" style="margin:0 0 10px">Dein Übungsregister. Tippe auf eine Übung für Anleitung, Video und deinen Fortschritt.</p>` +
+  ${plateauCard()}<p class="small muted" style="margin:0 0 10px">Dein Übungsregister. Tippe auf eine Übung für Anleitung, Video und deinen Fortschritt.</p>` +
   (order.map(g => `<div class="section-title">${esc(g)}</div><section class="card" style="padding-block:6px">${byG[g].sort((a, b) => a.name.localeCompare(b.name, "de")).map(e => {
       const h = exHistory(e.id); const last = h[h.length - 1];
       return `<button class="pick" data-act="open-ex" data-id="${e.id}">${e.ref && EXDBI[e.ref] ? exAnim(EXDBI[e.ref], "44px") : ""}<span style="flex:1;min-width:0"><span class="title" style="display:block;font-weight:500">${esc(e.name)}</span><span class="sub small muted">${esc(e.equipment || "")}${last ? (e.equipment ? " · " : "") + "zuletzt " + setsStr(last.sets.slice(0, 3)) : ""}</span></span>${h.length ? `<span class="chip">${h.length}×</span>` : ""}</button>`;
@@ -1465,6 +1466,235 @@ function openEval(id){
   const w = S.workouts[id]; if (!w) return;
   const x = Object.assign({id}, w);
   openSheet("Auswertung: " + (w.title || "Training"), x.kind === "activity" ? evalActivity(x) : evalStrength(x));
+}
+
+/* ---------- Fitness-Werte: VO2max und Ruhepuls (Garmin) ----------
+   Quelle: VO2max ist der stärkste Einzelwert für ein langes Leben. Einstufung wie bei Garmin (Cooper Institute). */
+const VO2_NORMS = {m: [[20, [41.7, 45.4, 51.1, 55.2]], [30, [40.5, 44.0, 48.3, 52.5]], [40, [38.5, 42.4, 46.4, 50.4]], [50, [35.6, 39.2, 43.4, 48.2]]],
+                   w: [[20, [36.1, 39.5, 43.9, 49.6]], [30, [34.4, 37.8, 42.4, 47.4]], [40, [32.0, 35.9, 39.6, 45.3]], [50, [28.7, 32.0, 35.7, 41.1]]]};
+function vo2Class(v){
+  const c = cfgRaw(), p = c.calc || {}, sex = p.sex === "w" ? "w" : "m", age = p.birth ? new Date().getFullYear() - num(p.birth) : 25;
+  const row = VO2_NORMS[sex].filter(r => age >= r[0]).pop() || VO2_NORMS[sex][0], t = row[1];
+  const i = v < t[0] ? 0 : v < t[1] ? 1 : v < t[2] ? 2 : v < t[3] ? 3 : 4;
+  return {label: ["Schwach", "Mittel", "Gut", "Sehr gut", "Hervorragend"][i], next: i < 4 ? t[i] : null, col: ["var(--bad)", "var(--warn)", "var(--accent-2)", "var(--good)", "var(--good)"][i]};
+}
+function trendSvg(pts, o){
+  if (pts.length < 2) return "";
+  const W = 320, H = 130, l = 34, r = 10, top = 10, bot = 20;
+  const t0 = dateOf(pts[0].k).getTime(), t1 = dateOf(pts[pts.length - 1].k).getTime() || t0 + 1;
+  const vs = pts.map(p => p.v), lo = Math.min(...vs) - (o.pad || 1), hi = Math.max(...vs) + (o.pad || 1);
+  const X = k => l + (W - l - r) * ((dateOf(k).getTime() - t0) / Math.max(1, t1 - t0)), Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
+  [lo + (o.pad || 1), hi - (o.pad || 1)].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${fmt(v, o.dec || 0)}</text>`);
+  const line = o.smooth ? pts.map((p, i) => ({k: p.k, v: pts.slice(Math.max(0, i - 6), i + 1).reduce((a, x) => a + x.v, 0) / Math.min(i + 1, 7)})) : pts;
+  svg += `<path d="${line.map((p, i) => (i ? "L" : "M") + X(p.k).toFixed(1) + " " + Y(p.v).toFixed(1)).join("")}" fill="none" stroke="${o.color || "var(--accent)"}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  if (!o.smooth || pts.length < 40) pts.forEach(p => svg += `<g><title>${fmtShort(p.k)}: ${fmt(p.v, o.dec || 0)} ${o.unit || ""}</title><circle cx="${X(p.k)}" cy="${Y(p.v)}" r="${o.smooth ? 2.5 : 4}" fill="${o.color || "var(--accent)"}" stroke="var(--surface)" stroke-width="1.5"/></g>`);
+  svg += `<text x="${l}" y="${H - 5}" font-size="10" fill="var(--muted)">${fmtShort(pts[0].k)}</text><text x="${W - r}" y="${H - 5}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtShort(pts[pts.length - 1].k)}</text>`;
+  return svg + `</svg>`;
+}
+function fitnessCard(){
+  const keys = Object.keys(S.days).sort();
+  const vo2 = keys.filter(k => num(S.days[k].vo2) > 0).map(k => ({k, v: num(S.days[k].vo2)}));
+  const since = addDays(todayKey(), -90);
+  const rhr = keys.filter(k => k >= since && num(((S.days[k] || {}).sleep || {}).rhr) > 0).map(k => ({k, v: num(S.days[k].sleep.rhr)}));
+  if (!vo2.length && rhr.length < 5) return "";
+  const vNow = vo2.length ? vo2[vo2.length - 1] : null, vOld = vo2.find(p => p.k >= addDays(todayKey(), -180)) || vo2[0];
+  const cls = vNow ? vo2Class(vNow.v) : null;
+  const avg = arr => arr.length ? arr.reduce((a, p) => a + p.v, 0) / arr.length : null;
+  const rNow = avg(rhr.slice(-7)), rOld = avg(rhr.filter(p => p.k < addDays(todayKey(), -60)).slice(-14));
+  return `<div class="section-title">Fitness-Werte</div>
+  ${vNow ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>VO2max</h2><span class="chip" style="color:${cls.col}">${cls.label}</span></div>
+    <div class="kv"><div><span class="eyebrow">Aktuell</span><div class="v">${fmt(vNow.v, 1)}<span class="unit">ml/kg/min</span></div><div class="small muted">${fmtShort(vNow.k)}</div></div>
+    ${vOld && vOld.k !== vNow.k ? `<div><span class="eyebrow">Seit ${fmtShort(vOld.k)}</span><div class="v">${vNow.v - vOld.v >= 0 ? "+" : ""}${fmt(vNow.v - vOld.v, 1)}</div></div>` : ""}</div>
+    <div style="margin-top:10px">${trendSvg(vo2.filter(p => p.k >= addDays(todayKey(), -365)), {label: "VO2max-Verlauf", dec: 0, unit: "ml/kg/min"})}</div>
+    <p class="small ink2" style="margin:8px 0 0">Die VO2max zeigt, wie viel Sauerstoff dein Körper maximal verwerten kann. Laut deiner Quelle ist sie der stärkste Einzelwert für ein langes Leben. ${cls.next ? `Bis zur nächsten Stufe fehlen dir ${fmt(cls.next - vNow.v, 1)} Punkte.` : ""} Sie steigt vor allem durch Zone-2-Einheiten plus einmal pro Woche etwas sehr Intensives wie Sprints oder Fußball. Die Uhr misst sie nur bei Läufen oder zügigen Gehrunden mit GPS.</p></section>` : ""}
+  ${rhr.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>Ruhepuls</h2><span class="chip">${fmt(rNow)} bpm Ø 7 Tage</span></div>
+    ${trendSvg(rhr, {label: "Ruhepuls-Verlauf", dec: 0, unit: "bpm", smooth: true, color: "var(--p)", pad: 2})}
+    <p class="small ink2" style="margin:8px 0 0">${rOld ? (rNow < rOld - 0.9 ? `Dein Ruhepuls ist um ${fmt(rOld - rNow)} Schläge gesunken. Ein sinkender Ruhepuls zeigt, dass deine Ausdauer besser wird.` : rNow > rOld + 1.5 ? `Dein Ruhepuls liegt ${fmt(rNow - rOld)} Schläge höher als vor zwei Monaten. Das kann an Stress, wenig Schlaf, Krankheit oder viel Belastung liegen.` : "Dein Ruhepuls ist stabil.") : "Ein sinkender Ruhepuls zeigt, dass deine Ausdauer besser wird."} Die Linie zeigt den Schnitt über 7 Tage.</p></section>` : ""}`;
+}
+
+/* ---------- Plateau-Erkennung ----------
+   Eine Übung stagniert, wenn das geschätzte Maximalgewicht der letzten 3 Wochen nicht über dem der 5 Wochen davor liegt. */
+function plateaus(){
+  const today = todayKey(), out = [];
+  Object.keys(S.exercises).forEach(id => {
+    const h = exHistory(id).filter(x => x.kind === "kg" && x.k >= addDays(today, -63));
+    if (h.length < 4) return;
+    const recent = h.filter(x => x.k >= addDays(today, -21)), older = h.filter(x => x.k < addDays(today, -21));
+    if (!recent.length || older.length < 2) return;
+    const rb = Math.max(...recent.map(x => x.v)), ob = Math.max(...older.map(x => x.v));
+    if (rb > ob * 1.01) return;
+    const best = h.reduce((a, x) => x.v > a.v ? x : a, h[0]), weeks = Math.max(3, Math.round(diffDays(best.k, today) / 7));
+    const reps = recent[recent.length - 1].sets.map(s => num(s.r)).filter(Boolean), avgR = reps.length ? reps.reduce((a, b) => a + b, 0) / reps.length : 10;
+    out.push({id, name: exName(id), weeks, avgR, best: rb, group: (S.exercises[id] || {}).group || ""});
+  });
+  return out.sort((a, b) => b.weeks - a.weeks);
+}
+function plateauTips(p){
+  const tips = [], gt = goalType(), c = cfg();
+  tips.push(p.avgR <= 10 ? "3 Wochen lang einen höheren Wiederholungsbereich (10–15) mit etwas weniger Gewicht, danach zurück zu schwer." : "3 Wochen lang schwerer trainieren (6–8 Wiederholungen), danach zurück zum alten Bereich.");
+  const e = S.exercises[p.id], x = e && e.ref ? EXDBI[e.ref] : null;
+  if (x && EXDB) { const alt = EXDB.find(y => y.g === x.g && y.mc === x.mc && y.id !== x.id && !/Band|Bodyweight/.test(y.id) && Object.values(S.exercises).every(o => o.ref !== y.id)); if (alt) tips.push(`Variante tauschen, z. B. ${alt.n}, für 4–6 Wochen. Ein neuer Reiz bringt oft wieder Fortschritt.`); }
+  const wk = weekSummary(todayKey()); if ((wk.groups[p.group] || 0) > 20) tips.push(`${p.group} bekommt über 20 Sätze pro Woche. Weniger kann hier mehr sein, oder eine Entlastungswoche.`);
+  const recs = [1, 2, 3, 4, 5, 6, 7].map(i => recoveryOf(addDays(todayKey(), -i))).filter(Boolean); const ra = recs.length ? recs.reduce((a, r) => a + r.score, 0) / recs.length : null;
+  if (ra != null && ra < 55) tips.push(`Deine Erholung lag zuletzt bei Ø ${Math.round(ra)} %. Mehr Schlaf bringt hier vermutlich mehr als mehr Training.`);
+  const days = [1, 2, 3, 4, 5, 6, 7].map(i => dayTotals(S.days[addDays(todayKey(), -i)])).filter(t => t.kcal > 800); const pa = days.length ? days.reduce((a, t) => a + t.p, 0) / days.length : null;
+  if (pa != null && pa < c.p * 0.85) tips.push(`Eiweiß lag zuletzt bei Ø ${fmt(pa)} g, Ziel ${c.p} g. Ohne genug Eiweiß wächst wenig.`);
+  if (gt === "cut") tips.push("Im Kaloriendefizit ist es schon ein Erfolg, die Kraft zu halten. Echte Steigerungen kommen oft erst wieder im Aufbau.");
+  return tips.slice(0, 4);
+}
+function plateauCard(){
+  const ps = plateaus(); if (!ps.length) return "";
+  return `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>📉 Plateaus</h2><span class="chip warn">${ps.length}</span></div>
+    <p class="small ink2" style="margin:0 0 8px">Bei diesen Übungen geht es seit ein paar Wochen nicht mehr voran. Tipp auf eine Übung für Vorschläge.</p>
+    <div class="list">${ps.slice(0, 5).map(p => `<button class="pick" data-act="open-ex" data-id="${p.id}"><span style="flex:1;min-width:0"><span style="display:block;font-weight:500">${esc(p.name)}</span><span class="small muted">seit ca. ${p.weeks} Wochen kein neuer Bestwert · ${fmt(p.best, 1)} kg geschätztes 1RM</span></span></button>`).join("")}</div></section>`;
+}
+function plateauBox(id){
+  const p = plateaus().find(x => x.id === id); if (!p) return "";
+  return `<div class="hint" style="margin:0 0 12px;border:1.5px solid var(--warn)"><b>📉 Plateau seit ca. ${p.weeks} Wochen.</b> So kommst du weiter:<ul style="margin:6px 0 0;padding-left:18px">${plateauTips(p).map(t => `<li class="small">${esc(t)}</li>`).join("")}</ul></div>`;
+}
+
+/* ---------- Persönliche Muster aus deinen Daten ----------
+   Vergleicht Gruppen von Tagen (z. B. mit/ohne Abendsport) und zeigt nur deutliche Unterschiede mit genug Daten. */
+function insights(){
+  const keys = Object.keys(S.days).sort().filter(k => k >= addDays(todayKey(), -120) && k < todayKey());
+  const ws = workoutsSorted().filter(w => w.status === "done");
+  const avg = xs => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const out = [];
+  const nextSleep = k => { const sl = (S.days[addDays(k, 1)] || {}).sleep || {}; return num(sl.h) >= 3 ? sl : {}; };  // unplausible Nächte (< 3 h) ignorieren
+  // 1) Abendsport und Schlaf
+  const evening = new Set(ws.filter(w => w.start && new Date(w.start).getHours() >= 18).map(w => w.date));
+  const a1 = keys.filter(k => evening.has(k)).map(k => nextSleep(k).h).filter(Boolean), b1 = keys.filter(k => !evening.has(k)).map(k => nextSleep(k).h).filter(Boolean);
+  if (a1.length >= 4 && b1.length >= 4) { const d = (avg(a1) - avg(b1)) * 60; if (Math.abs(d) >= 15) out.push(["🌙", "Abendsport und Schlaf", `Nach Training am Abend (ab 18 Uhr) schläfst du im Schnitt ${fmt(Math.abs(d))} Minuten ${d < 0 ? "kürzer" : "länger"} als sonst.${d < 0 ? " Hilfreich: danach runterfahren, kühles Zimmer, kein Handy im Bett." : ""}`, `${a1.length} vs. ${b1.length} Nächte`, Math.abs(d) / 15]); }
+  // 2) Harte Tage und HRV am Folgetag
+  const hrvNext = k => num(((S.days[addDays(k, 1)] || {}).sleep || {}).hrv);
+  const hardK = keys.filter(k => strainOf(k) >= 14), easyK = keys.filter(k => strainOf(k) < 8);
+  const a2 = hardK.map(hrvNext).filter(v => v > 0), b2 = easyK.map(hrvNext).filter(v => v > 0);
+  if (a2.length >= 4 && b2.length >= 4) { const d = avg(a2) - avg(b2); if (Math.abs(d) >= 3) out.push(["💓", "Belastung und HRV", `Nach harten Tagen liegt deine HRV am nächsten Morgen im Schnitt ${fmt(Math.abs(d))} ms ${d < 0 ? "niedriger" : "höher"} als nach lockeren Tagen.${d < 0 ? " Plan nach harten Tagen lieber etwas Lockeres ein." : ""}`, `${a2.length} vs. ${b2.length} Tage`, Math.abs(d) / 3]); }
+  // 3) Schritte und Schlafwert
+  const a3 = keys.filter(k => num((S.days[k] || {}).steps) >= 10000).map(k => num(nextSleep(k).score)).filter(v => v > 0), b3 = keys.filter(k => num((S.days[k] || {}).steps) > 0 && num(S.days[k].steps) < 6000).map(k => num(nextSleep(k).score)).filter(v => v > 0);
+  if (a3.length >= 4 && b3.length >= 4) { const d = avg(a3) - avg(b3); if (Math.abs(d) >= 3) out.push(["👟", "Schritte und Schlaf", `An Tagen mit über 10.000 Schritten ist dein Schlafwert im Schnitt ${fmt(Math.abs(d))} Punkte ${d > 0 ? "besser" : "schlechter"} als an Tagen unter 6.000.`, `${a3.length} vs. ${b3.length} Nächte`, Math.abs(d) / 3]); }
+  // 4) Wochenende und Kalorien
+  const tracked = keys.filter(k => dayTotals(S.days[k]).kcal >= 1000), wkend = k => [0, 6].includes(dateOf(k).getDay());
+  const a4 = tracked.filter(wkend).map(k => dayTotals(S.days[k]).kcal), b4 = tracked.filter(k => !wkend(k)).map(k => dayTotals(S.days[k]).kcal);
+  if (a4.length >= 3 && b4.length >= 5) { const d = avg(a4) - avg(b4); if (Math.abs(d) >= 200) out.push(["🍕", "Wochenende und Essen", `Am Wochenende isst du im Schnitt ${fmt(Math.abs(d))} kcal ${d > 0 ? "mehr" : "weniger"} als unter der Woche.${d > 0 && goalType() === "cut" ? " Das bremst deinen Cut, plan dafür bewusst Spielraum ein." : ""}`, `${a4.length} vs. ${b4.length} Tage`, Math.abs(d) / 200]); }
+  // 5) Kurzer Schlaf und Essen am Folgetag
+  const shortN = tracked.filter(k => num(((S.days[k] || {}).sleep || {}).h) >= 3 && S.days[k].sleep.h < 6.5).map(k => dayTotals(S.days[k]).kcal), okN = tracked.filter(k => num(((S.days[k] || {}).sleep || {}).h) >= 7.5).map(k => dayTotals(S.days[k]).kcal);
+  if (shortN.length >= 3 && okN.length >= 3) { const d = avg(shortN) - avg(okN); if (Math.abs(d) >= 200) out.push(["😴", "Wenig Schlaf und Hunger", `Nach Nächten unter 6,5 h isst du im Schnitt ${fmt(Math.abs(d))} kcal ${d > 0 ? "mehr" : "weniger"} als nach 7,5 h oder mehr.`, `${shortN.length} vs. ${okN.length} Tage`, Math.abs(d) / 200]); }
+  // 6) Fußball und Erholung am Folgetag
+  const fb = new Set(ws.filter(w => w.kind === "activity" && /fu(ss|ß)ball/i.test(w.title || "")).map(w => w.date));
+  const recNext = k => { const r = recoveryOf(addDays(k, 1)); return r ? r.score : null; };
+  const a6 = keys.filter(k => fb.has(k)).map(recNext).filter(v => v != null), b6 = keys.filter(k => !fb.has(k)).map(recNext).filter(v => v != null);
+  if (a6.length >= 4 && b6.length >= 4) { const d = avg(a6) - avg(b6); if (Math.abs(d) >= 5) out.push(["⚽", "Fußball und Erholung", `Am Tag nach Fußball liegt deine Erholung im Schnitt bei ${Math.round(avg(a6))} %, sonst bei ${Math.round(avg(b6))} %.${d < 0 ? " Plan am Tag danach kein hartes Beintraining." : ""}`, `${a6.length} vs. ${b6.length} Tage`, Math.abs(d) / 5]); }
+  return out.sort((a, b) => b[4] - a[4]);
+}
+function insightsCard(){
+  const ins = insights();
+  return `<div class="section-title">Deine Muster</div><section class="card" style="margin-bottom:12px">
+    ${ins.length ? `<div class="stack" style="gap:12px">${ins.slice(0, 5).map(([ic, t, x, n]) => `<div style="display:flex;gap:10px;align-items:flex-start"><span style="font-size:22px;line-height:1">${ic}</span><div><b>${esc(t)}</b><div class="small ink2" style="margin-top:2px">${esc(x)}</div><div class="small muted">Grundlage: ${esc(n)}</div></div></div>`).join("")}</div>`
+      : `<p class="small muted" style="margin:0">Noch zu wenig Daten für sichere Muster. Je mehr Tage mit Schlaf, Essen und Training zusammenkommen, desto mehr Zusammenhänge findet die App.</p>`}
+    <p class="small muted" style="margin:10px 0 0">Das sind Zusammenhänge aus deinen letzten 4 Monaten, keine Beweise für Ursachen. Sie werden mit mehr Daten genauer.</p></section>`;
+}
+
+/* ---------- Spieltags-Modus Fußball ----------
+   Erkennt Trainings- und Spieltage aus deinen Garmin-Einheiten (oder deiner Einstellung) und gibt passende Tipps.
+   Quellen: Spieltagsvorbereitung (Ronaldo/Lewandowski) und Hessmann. */
+const WDN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+function footballSchedule(){
+  const st = cfgRaw().football || {};
+  if (st.mode === "off") return {train: [], match: null, auto: false, off: true};
+  if (st.mode === "manual") return {train: st.train || [], match: st.match == null ? null : st.match, auto: false};
+  const since = addDays(todayKey(), -56), fb = workoutsSorted().filter(w => w.kind === "activity" && w.date >= since && /fu(ss|ß)ball|soccer/i.test(w.title || ""));
+  const cnt = [0, 0, 0, 0, 0, 0, 0]; fb.forEach(w => cnt[dateOf(w.date).getDay()]++);
+  const train = [1, 2, 3, 4, 5].filter(d => cnt[d] >= 3);
+  const we = [6, 0].filter(d => cnt[d] >= 2).sort((a, b) => cnt[b] - cnt[a]);
+  return {train, match: we.length ? we[0] : null, auto: true};
+}
+function footballDay(k){
+  const sch = footballSchedule(); if (sch.off) return null;
+  const planned = workoutsSorted().filter(w => w.kind === "activity" && w.status === "planned" && /fu(ss|ß)ball|spiel/i.test(w.title || ""));
+  const isMatch = d => planned.some(w => w.date === d && /spiel/i.test(w.title || "")) || (sch.match != null && dateOf(d).getDay() === sch.match);
+  const isTrain = d => planned.some(w => w.date === d && !/spiel/i.test(w.title || "")) || sch.train.includes(dateOf(d).getDay());
+  const y = addDays(k, -1), yWas = workoutsSorted().some(w => w.date === y && w.kind === "activity" && /fu(ss|ß)ball/i.test(w.title || "") && actLoad(w) === "hoch");
+  if (isMatch(k)) return "match";
+  if (isMatch(addDays(k, 1))) return "pre";
+  if (isMatch(y) || yWas) return "post";
+  if (isTrain(k)) return "training";
+  return null;
+}
+function footballCard(k){
+  const t = footballDay(k); if (!t) return "";
+  const legsToday = workoutsSorted().some(w => w.date === k && w.kind !== "activity" && w.status !== "done" && (w.exercises || []).some(e => ["Beine", "Waden"].includes((S.exercises[e.exId] || {}).group)));
+  const L = {
+    pre: ["⚽ Morgen ist Spieltag", [
+      legsToday ? ["Kein hartes Beintraining heute", "Auf dem Plan steht Beintraining. Verschieb es lieber, damit die Beine morgen frisch sind."] : ["Heute nur locker", "Leichte Bewegung, etwas Technik oder ein Spaziergang. Nichts, was die Beine müde macht."],
+      ["Mittag: Kohlenhydrate, leicht verdaulich", "Z. B. Vollkornnudeln oder Reis mit Hähnchen oder Fisch und Gemüse."],
+      ["Abend: leichtes Fischgericht mit Nudeln", "Etwas mehr Eiweiß, Gemüse und gesunde Fette wie Olivenöl oder Avocado. Nicht zu fettig, nicht zu spät."],
+      ["Früh schlafen", `Ab 22 Uhr Bildschirme weg, dunkles ruhiges Zimmer, Ziel ${fmt(Math.max(8, sleepNeed(k)), 1)} h Schlaf.`]]],
+    match: ["⚽ Heute ist Spieltag", [
+      ["Frühstück", "Eier, Vollkornbrot oder Haferflocken, Avocado und Obst wie Banane oder Beeren, dazu viel Wasser."],
+      ["Etwa 3 h vorher essen", "Kohlenhydratreich, fettarm und leicht verdaulich, z. B. Reis mit Hähnchen und Gemüse. 30 Minuten vorher etwas Schnelles wie eine Banane."],
+      ["Vorbereitung", "20–30 Minuten Powernap am Mittag, gut getrunken starten, vor dem Spiel dynamisch aufwärmen mit kurzen Sprints und Rumpfübungen. Kurz das Spiel im Kopf durchgehen."],
+      ["Nach dem Spiel", "Zuerst trinken, dann eine Mahlzeit mit Eiweiß und Kohlenhydraten. Kaltes Bad oder Faszienrolle für die Beine."]]],
+    post: ["⚽ Tag nach dem Spiel", [
+      ["Lockere Bewegung", "20–30 Minuten Radfahren oder Spaziergang bringen die Durchblutung in Gang. Kein hartes Beintraining."],
+      ["Faszienrolle und Dehnen", "Waden, Oberschenkel und Gesäß je 1–2 Minuten rollen, danach statisch dehnen."],
+      ["Eiweiß und Schlaf", "Eiweiß über den Tag verteilen und früh ins Bett, die Muskeln reparieren sich jetzt."]]],
+    training: ["⚽ Heute Fußballtraining", [
+      ["Davor gut essen", "2–3 Stunden vorher Kohlenhydrate wie Nudeln, Reis oder Brot, 30 Minuten vorher etwas Schnelles wie eine Banane."],
+      ["Trinken", "Gut getrunken ins Training, währenddessen regelmäßig ein paar Schlucke, danach zuerst trinken."],
+      [legsToday ? "Beintraining und Fußball" : "Danach", legsToday ? "Heute stehen Beine und Fußball an. Mach die Beine lieber an einem anderen Tag, sonst leidet beides." : "Etwa eine Stunde danach Kohlenhydrate mit Eiweiß, z. B. Skyr mit Haferflocken oder Reis mit Hähnchen."]]]
+  }[t];
+  return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>${L[0]}</h2><button class="btn ghost" data-act="settings" style="min-height:30px">Fußball-Tage</button></div>
+    <div class="stack" style="gap:10px">${L[1].map(([a, b]) => `<div><b>${esc(a)}</b><div class="small ink2" style="margin-top:2px">${esc(b)}</div></div>`).join("")}</div></section>`;
+}
+
+/* ---------- Barcode-Scanner (Open Food Facts) ---------- */
+let scan = null;
+function loadZXing(){
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  return new Promise((ok, fail) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"; s.onload = () => ok(window.ZXing); s.onerror = fail; document.head.appendChild(s); });
+}
+function scanView(){
+  return `<div class="stack">
+    <div style="position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3"><video id="scanvid" playsinline muted style="width:100%;height:100%;object-fit:cover"></video>
+      <div style="position:absolute;left:12%;right:12%;top:38%;height:24%;border:2px solid rgba(255,255,255,.85);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.25)"></div></div>
+    <div class="small ink2" id="scanmsg">${scan && scan.msg ? esc(scan.msg) : "Halte den Strichcode in den Rahmen."}</div>
+    <form class="row" data-form="ean" style="flex-wrap:nowrap"><input class="inp num" id="eanin" inputmode="numeric" placeholder="Oder Nummer eintippen" style="flex:1"><button class="btn" type="submit">Suchen</button></form>
+  </div>`;
+}
+async function startScan(){
+  stopScan();
+  scan = {active: true, msg: ""};
+  const msg = t => { scan && (scan.msg = t); const el = $("#scanmsg"); if (el) el.textContent = t; };
+  try {
+    const Z = await loadZXing();
+    if (!scan || !scan.active) return;
+    const hints = new Map(); hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, [Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E]);
+    const reader = new Z.BrowserMultiFormatReader(hints); scan.reader = reader;
+    await reader.decodeFromConstraints({video: {facingMode: "environment"}}, "scanvid", (res) => { if (res && scan && scan.active) { const code = res.getText(); stopScan(); lookupBarcode(code); } });
+  } catch(e) { msg(/Permission|NotAllowed/i.test(String(e && (e.name || e))) ? "Kein Zugriff auf die Kamera. Erlaube ihn in den iPhone-Einstellungen oder tippe die Nummer unten ein." : "Die Kamera konnte nicht gestartet werden. Tippe die Nummer unten ein."); }
+}
+function stopScan(){
+  if (scan && scan.reader) { try { scan.reader.reset(); } catch(e) {} }
+  const v = $("#scanvid"); if (v && v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
+  if (scan) scan.active = false;
+}
+async function lookupBarcode(code){
+  code = String(code || "").replace(/\D/g, ""); if (code.length < 8) { toast("Bitte eine gültige Nummer eingeben."); return; }
+  const known = Object.entries(S.foods).find(([, f]) => f.ean === code);
+  if (known) { af.mode = "suchen"; af.pick = known[0]; af.g = ""; af.n = ""; af.u = null; renderAddFood(); return; }
+  const el = $("#scanmsg"); if (el) el.textContent = "Suche Produkt " + code + " …";
+  try {
+    const r = await fetch("https://world.openfoodfacts.org/api/v2/product/" + code + ".json?fields=product_name,product_name_de,brands,nutriments,serving_quantity,nova_group,quantity", {headers: {Accept: "application/json"}});
+    const j = await r.json(); const p = j && j.product; const n = p && p.nutriments;
+    if (!p || !n || n["energy-kcal_100g"] == null) { if ($("#scanmsg")) $("#scanmsg").textContent = "Produkt " + code + " ist nicht in Open Food Facts oder hat keine Nährwerte. Leg es unter „Neues Lebensmittel“ an."; af.newEan = code; return; }
+    const name = ((p.product_name_de || p.product_name || "Produkt").trim() + (p.brands ? " (" + String(p.brands).split(",")[0].trim() + ")" : "")).slice(0, 80);
+    const liquid = /\d\s*(ml|cl|l)\b/i.test(p.quantity || "") || isLiquidName(name);
+    const id = uid("f");
+    put("foods", id, {name, kcal: Math.round(num(n["energy-kcal_100g"])), p: +num(n.proteins_100g).toFixed(1), c: +num(n.carbohydrates_100g).toFixed(1), f: +num(n.fat_100g).toFixed(1), portion: num(p.serving_quantity) > 0 ? Math.round(num(p.serving_quantity)) : undefined, nova: p.nova_group || undefined, unit: liquid ? "ml" : undefined, ean: code, uses: 0, src: "openfoodfacts"});
+    af.mode = "suchen"; af.pick = id; af.g = ""; af.n = ""; af.u = null; renderAddFood(); toast("Gefunden: " + name);
+  } catch(e) { if ($("#scanmsg")) $("#scanmsg").textContent = "Keine Verbindung zu Open Food Facts. Versuch es gleich noch einmal."; }
 }
 
 /* ----- Freunde ----- */
@@ -1931,6 +2161,8 @@ function viewKoerper(){
     </div>
     ${status ? `<div style="margin-top:12px">${c.calc && c.calc.on ? status.replace(/ (Reduziere|Erhöhe|Für Muskelaufbau erhöhe)[^.]*\./, " Der Kalorienrechner passt dein Ziel dafür automatisch an.") : status}</div>` : ""}
   </section>
+  ${fitnessCard()}
+  ${insightsCard()}
   <div class="section-title">Eintragen</div>
   <section class="card">
     <form class="stack" data-form="body">
@@ -2156,13 +2388,17 @@ function foodsSorted(q){
 function openAddFood(meal){
   af = {meal, mode: "ki", q: "", pick: null, g: "", est: null, busy: false, ctl: null, aiText: "", aiBusy: false, aiErr: "", listening: false};
   const label = MEALS.find(m => m[0] === meal)[1];
-  openSheet(label + " hinzufügen", "", null, () => { if (af && af.ctl) af.ctl.abort(); af = null; });
+  openSheet(label + " hinzufügen", "", null, () => { stopScan(); if (af && af.ctl) af.ctl.abort(); af = null; });
   renderAddFood();
 }
 function renderAddFood(){
   if (!af) return;
-  const tabs = [["ki","Schnelleingabe"],["suchen","Suchen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Manuell"],["neu","Neues Lebensmittel"]]);
+  const tabs = [["ki","Schnelleingabe"],["suchen","Suchen"],["scan","📷 Scannen"]].concat(sampleFn ? [["schaetzen","Claude schätzt"]] : []).concat([["schnell","Manuell"],["neu","Neues Lebensmittel"]]);
   let b = `<div class="seg" role="group" aria-label="Art">${tabs.map(([k, l]) => `<button data-act="af-mode" data-m="${k}" aria-pressed="${af.mode === k}">${l}</button>`).join("")}</div><div style="height:14px"></div>`;
+  if (af.mode === "scan") {
+    b += scanView();
+    $("#sheet-b").innerHTML = b; setTimeout(startScan, 50); return;
+  }
   if (af.mode === "ki") {
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     const canTalk = !isIOS && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -2407,7 +2643,7 @@ function openExercise(id){
   const kind = h.length ? h[0].kind : "kg";
   const best = h.filter(x => x.kind === kind).reduce((m, x) => Math.max(m, x.v), 0);
   openSheet(e.name, `<div class="row" style="margin-bottom:10px"><span class="chip">${esc(e.group || "Sonstiges")}</span>${e.equipment ? `<span class="chip">${esc(e.equipment)}</span>` : ""}</div>
-    ${e.notes ? `<p class="ink2" style="margin:0 0 12px;white-space:pre-wrap">${esc(e.notes)}</p>` : ""}
+    ${plateauBox(id)}${e.notes ? `<p class="ink2" style="margin:0 0 12px;white-space:pre-wrap">${esc(e.notes)}</p>` : ""}
     ${exRef(id) ? exGuide(exRef(id), id) + '<div class="section-title">Dein Fortschritt</div>' : `<p class="small muted" style="margin:0 0 12px">Noch keine Anleitung verknüpft. Unter „Bearbeiten“ kannst du eine Übung aus der Datenbank zuordnen.</p>`}
     <div class="kv" style="margin-bottom:10px"><div><span class="eyebrow">Einheiten</span><div class="v">${h.length}</div></div><div><span class="eyebrow">${kind === "kg" ? "Bestes 1RM (geschätzt)" : "Beste Serie"}</span><div class="v">${best ? fmt(best, kind === "kg" ? 1 : 0) : "–"}<span class="unit">${kind === "kg" ? "kg" : kind === "sec" ? "s" : "Wdh."}</span></div></div></div>
     <div class="chart" data-chart="ex" data-id="${id}" style="height:200px"></div>
@@ -2473,6 +2709,12 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
     <div class="fields"><div class="field"><label for="gs">Krafteinheiten pro Woche</label><input class="inp num" id="gs" inputmode="numeric" value="${c.strengthPerWeek}"></div><div class="field"><label for="gsl">Schlafziel (h)</label><input class="inp num" id="gsl" inputmode="decimal" value="${fmt(c.sleepGoal, 1)}"></div></div>
+    <div class="eyebrow" style="margin-top:6px">Fußball</div>
+    ${(() => { const fs = cfgRaw().football || {}, sch = footballSchedule(), mode = fs.mode || "auto", tr = mode === "manual" ? (fs.train || []) : sch.train, mt = mode === "manual" ? fs.match : sch.match;
+      return `<div class="field"><label for="gfm">Spieltags-Modus</label><select class="inp" id="gfm">${[["auto", "Automatisch aus meinen Garmin-Einheiten"], ["manual", "Selbst festlegen"], ["off", "Aus"]].map(([k2, l]) => `<option value="${k2}" ${mode === k2 ? "selected" : ""}>${l}</option>`).join("")}</select>
+        <span class="small muted">${mode === "auto" ? `Erkannt: Training ${tr.length ? tr.map(d => WDN[d]).join(", ") : "keins"}, Spieltag ${mt != null ? WDN[mt] : "keiner"}.` : "Für „Selbst festlegen“ unten die Tage wählen."}</span></div>
+      <div class="row small" style="gap:6px 12px">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label class="row" style="gap:4px"><input type="checkbox" class="gftr" value="${d}" ${tr.includes(d) ? "checked" : ""}>${WDN[d].slice(0, 2)}</label>`).join("")}<span class="muted">Training</span></div>
+      <div class="field"><label for="gfmt">Spieltag</label><select class="inp" id="gfmt"><option value="">keiner</option>${[6, 0, 5].map(d => `<option value="${d}" ${mt === d ? "selected" : ""}>${WDN[d]}</option>`).join("")}</select></div>`; })()}
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
     <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
@@ -2576,7 +2818,7 @@ document.addEventListener("click", async e => {
     case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); break; }
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
     case "add-food": openAddFood(D.meal); break;
-    case "af-mode": if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
+    case "af-mode": stopScan(); if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
     case "af-pick": { af.pick = D.id; af.g = ""; af.n = ""; const f = S.foods[D.id], us = unitsFor(f); af.u = f && f.lastU != null && us[f.lastU] ? f.lastU : null; renderAddFood(); break; }
     case "af-u": af.u = +D.i < 0 ? null : +D.i; af.n = af.n || 1; renderAddFood(); break;
     case "af-n": af.n = D.n; renderAddFood(); break;
@@ -2734,7 +2976,8 @@ document.addEventListener("submit", async e => {
     }
     case "ai-food": runQuickFood(v("aiq")); break;
     case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
-    case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
+    case "ean": lookupBarcode(v("eanin")); break;
+    case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; if (af.newEan) { food.ean = af.newEan; af.newEan = null; } const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
     case "ex-edit": { const id = f.dataset.id || uid("x"); const prev = S.exercises[id] || {}; put("exercises", id, Object.assign(clone(prev), {name: v("exn").trim(), group: v("exg"), equipment: v("exq").trim(), notes: v("exo").trim(), ref: v("exr") || undefined})); closeSheet(); toast("Übung gespeichert."); break; }
     case "auth": {
@@ -2772,7 +3015,7 @@ document.addEventListener("submit", async e => {
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto"});
+    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto", football: {mode: v("gfm") || "auto", train: [...f.querySelectorAll(".gftr:checked")].map(x => +x.value), match: v("gfmt") === "" || v("gfmt") == null ? null : +v("gfmt")}});
       const wantN = !!(f.querySelector("#gaN") || {}).checked, rc = cfgRaw();
       let openCalcNext = false;
       if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birth && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
