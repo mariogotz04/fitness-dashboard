@@ -87,6 +87,17 @@ def day(api, d):
         "type": (a.get("activityType") or {}).get("typeKey") or "",
         "minutes": round((a.get("duration") or 0) / 60), "kcal": int(a.get("calories") or 0),
         "start": (a.get("startTimeLocal") or "").replace(" ", "T"),
+        # Details für die Auswertung pro Einheit (Puls, Zonen, Trainingseffekt)
+        "km": round((a.get("distance") or 0) / 1000, 2) or None,
+        "avgHR": int(a["averageHR"]) if a.get("averageHR") else None,
+        "maxHR": int(a["maxHR"]) if a.get("maxHR") else None,
+        "zones": [round((a.get("hrTimeInZone_%d" % z) or 0) / 60, 1) for z in range(1, 6)],
+        "teAer": round(a["aerobicTrainingEffect"], 1) if a.get("aerobicTrainingEffect") is not None else None,
+        "teAna": round(a["anaerobicTrainingEffect"], 1) if a.get("anaerobicTrainingEffect") is not None else None,
+        "load": round(a["activityTrainingLoad"]) if a.get("activityTrainingLoad") else None,
+        "elev": round(a["elevationGain"]) if a.get("elevationGain") else None,
+        "speed": round(a["averageSpeed"] * 3.6, 1) if a.get("averageSpeed") else None,
+        "imMod": a.get("moderateIntensityMinutes"), "imVig": a.get("vigorousIntensityMinutes"),
     } for a in acts]
     weights = safe(api.get_body_composition, d).get("dateWeightList") or []
     if weights and weights[-1].get("weight"):
