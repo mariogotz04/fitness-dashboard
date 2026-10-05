@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:12";
+const APP_VERSION = "05.10.2026 09:28";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1015,8 +1015,10 @@ function workoutLine(w){
   const nEx = (w.exercises || []).length;
   const nSets = (w.exercises || []).reduce((a, e) => a + (e.sets || []).filter(s => num(s.r) > 0 && s.type !== "warmup").length, 0);
   const status = w.status === "done" ? '<span class="chip good">Erledigt</span>' : w.status === "active" ? '<span class="chip warn">Läuft</span>' : '<span class="chip acc">Geplant</span>';
-  const sub = isAct ? (w.minutes ? w.minutes + " min" : "Aktivität") : w.status === "done" ? `${nEx} Übungen · ${nSets} Sätze` : `${nEx} Übungen`;
-  return `<div class="li"><div class="grow"><div class="title">${esc(w.title)}</div><div class="sub">${sub}</div></div>${status}
+  const sub = isAct ? [w.minutes ? w.minutes + " min" : "Aktivität", w.km ? fmt(num(w.km), 1) + " km" : "", w.avgHR ? "Ø " + w.avgHR + " bpm" : ""].filter(Boolean).join(" · ") : w.status === "done" ? `${nEx} Übungen · ${nSets} Sätze` : `${nEx} Übungen`;
+  const canEval = w.status === "done" && (isAct || nSets > 0);
+  return `<div class="li"><div class="grow"><div class="title">${esc(w.title)}</div><div class="sub">${sub}</div></div>${canEval ? "" : status}
+    ${canEval ? `<button class="btn${isAct ? " primary" : ""}" data-act="eval" data-id="${w.id}">📈 Auswertung</button>` : ""}
     ${isAct ? "" : `<button class="btn" data-act="open-workout" data-id="${w.id}">${w.status === "done" ? "Ansehen" : w.status === "active" ? "Weiter" : "Starten"}</button>`}</div>`;
 }
 
@@ -1388,6 +1390,106 @@ function dayFormHint(w){
   if (z === "bad") return `<div class="hint" style="margin-bottom:12px;border:1.5px solid var(--warn)"><b>Tagesform niedrig (Erholung ${r.score} %):</b> Mach heute pro Übung einen Satz weniger und hör 3 Wdh. vor dem Versagen auf.</div>`;
   if (z === "good") return `<div class="hint good" style="margin-bottom:12px"><b>Gut erholt (${r.score} %):</b> Guter Tag, um bei den Übungen mit „Gewicht rauf“ zu steigern.</div>`;
   return `<div class="hint" style="margin-bottom:12px"><b>Erholung ${r.score} %:</b> Normal trainieren, Gewichte halten oder leicht steigern.</div>`;
+}
+
+/* ---------- Auswertung pro Einheit ----------
+   Was hat die Einheit gebracht, wofür war sie gut, wie regenerieren. Grundlage: Garmin-Pulszonen und Trainingseffekt,
+   Quellen: Zone 2 stärkt die Grundlagenausdauer, intensive Reize verbessern die VO2max (wichtigster Langlebigkeitswert),
+   Fettverlust hängt an der Kalorienbilanz, nicht am Nüchtern- oder Fettstoffwechsel-Training; Hessmann: nach dem Sport zuerst
+   trinken (Verlust × 1,5), nach ca. 1 h Kohlenhydrate + Eiweiß, 24 h Pause für gleiche Muskeln; statisch dehnen 30–60 s nach dem Sport. */
+const ZONES = [["Z1", "Erholung"], ["Z2", "Grundlage"], ["Z3", "Aerob"], ["Z4", "Schwelle"], ["Z5", "Maximal"]];
+const ZONE_COL = ["#9AD8F5", "#38BDF8", "#4F7CF5", "#7563F2", "#C2367A"];
+const teWord = v => v == null ? "–" : v < 1 ? "kein Effekt" : v < 2 ? "gering" : v < 3 ? "erhaltend" : v < 4 ? "verbessernd" : v < 5 ? "stark verbessernd" : "Überlastung";
+function actKind(w){
+  const t = normT((w.title || "") + " " + (w.garminType || ""));
+  return /fussball|soccer/.test(t) ? "fussball" : /lauf|run|jogg/.test(t) ? "lauf" : /rad|bike|cycl/.test(t) ? "rad" : /wander|hik/.test(t) ? "wandern" : /spazier|walk/.test(t) ? "gehen" : /schwimm|swim/.test(t) ? "schwimmen" : /tennis|padel|squash/.test(t) ? "tennis" : "sport";
+}
+function actLoad(w){
+  const z = w.zones || [], hard = (z[3] || 0) + (z[4] || 0), m = num(w.minutes) || 0;
+  const te = num(w.teAer) || 0, ta = num(w.teAna) || 0;
+  if (te >= 3.5 || ta >= 3 || hard >= 20 || (m >= 100 && te >= 2.5)) return "hoch";
+  if (te >= 2 || ta >= 1.5 || hard >= 5 || m >= 60) return "mittel";
+  return "niedrig";
+}
+function evalActivity(w){
+  const z = (w.zones || []).map(v => num(v) || 0), m = num(w.minutes) || 0, inZ = z.reduce((a, b) => a + b, 0);
+  const hasZ = Array.isArray(w.zones) && inZ > 0, below = hasZ ? Math.max(0, m - inZ) : 0, share = i => m ? z[i] / m : 0, hard = (z[3] || 0) + (z[4] || 0);
+  const kind = actKind(w), load = actLoad(w), gt = goalType();
+  const good = [];
+  if (kind === "fussball") good.push(["⚽ Spielsport", "Sprints, Richtungswechsel und Zweikämpfe trainieren Schnelligkeit, Koordination und Ausdauer im Wechsel. Belastet Beine und Gelenke spürbar."]);
+  if (hasZ && m && (below + (z[0] || 0)) / m >= 0.6) good.push(["🌿 Aktive Erholung", "Sehr lockerer Puls: fördert die Durchblutung, lockert die Muskeln und hilft beim Regenerieren, ohne neue Belastung zu setzen."]);
+  if (share(1) >= 0.3 && z[1] >= 15) good.push(["❤️ Grundlagenausdauer (Zone 2)", `${fmt(z[1])} Minuten in Zone 2 stärken Herz und Mitochondrien und verbessern den Fettstoffwechsel. Laut deiner Quelle die Basis für Ausdauer, schnellere Erholung zwischen Sprints und ein langes Leben.`]);
+  if (share(2) >= 0.25 && z[2] >= 10) good.push(["🏃 Aerobe Leistung (Zone 3)", `${fmt(z[2])} Minuten in Zone 3 heben dein Ausdauer-Tempo. Das ist schon spürbar anstrengend.`]);
+  if (hard >= 5 || num(w.teAna) >= 2) good.push(["⚡ Intensive Reize (Zone 4–5)", `${fmt(hard)} Minuten im harten Bereich verbessern VO2max, Sprintfähigkeit und das Durchhalten bei hohem Tempo. Laut Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben.`]);
+  if (["gehen", "wandern", "rad"].includes(kind) && load !== "hoch") good.push(["🔥 Kalorien und Alltag", `Etwa ${fmt(num(w.kcal))} kcal verbrannt, gelenkschonend und ohne die Regeneration zu stören.${gt === "cut" ? " Im Cut besonders wertvoll, weil der Körper im Defizit sonst unbewusst weniger Bewegung macht." : ""}`]);
+  if (w.teAer != null && num(w.teAer) < 1 && ["rad", "lauf", "schwimmen"].includes(kind)) good.push(["💡 Tipp für mehr Effekt", `Für einen echten Ausdauerreiz war es zu locker. Fahr oder lauf etwas länger (ab ca. 30–45 Min.) und so zügig, dass du dich gerade noch unterhalten kannst, also Zone 2${w.maxHR ? "" : ""}.`]);
+  if (!good.length) good.push(["💪 Bewegung", `Etwa ${fmt(num(w.kcal))} kcal verbrannt und Herz-Kreislauf aktiviert.`]);
+  const fatNote = (hasZ && m && (below + (z[0] || 0) + (z[1] || 0)) / m >= 0.6) ? "Bei lockerem Puls stammt ein großer Teil der Energie aus Fett. Für den Fettverlust zählt aber vor allem die Kalorienbilanz der Woche, nicht der Fettanteil während der Einheit." : "";
+  // Was hat es gebracht
+  const wkStart = mondayOf(w.date);
+  const imWeek = workoutsSorted().filter(x => x.kind === "activity" && x.date >= wkStart && x.date <= addDays(wkStart, 6)).reduce((a, x) => a + (num(x.imMod) || 0) + 2 * (num(x.imVig) || 0), 0);
+  const zoneBar = hasZ && m ? `<div style="display:flex;height:14px;border-radius:99px;overflow:hidden;gap:2px;background:var(--surface)">${below > 0.5 ? `<i title="Unter Zone 1: ${fmt(below)} min" style="flex:${below};background:var(--surface-2)"></i>` : ""}${z.map((v, i) => v > 0.2 ? `<i title="${ZONES[i][0]} ${ZONES[i][1]}: ${fmt(v, v < 10 ? 1 : 0)} min" style="flex:${v};background:${ZONE_COL[i]}"></i>` : "").join("")}</div>
+    <div class="row small" style="gap:4px 12px;margin-top:8px">${below > 0.5 ? `<span><span class="dot" style="background:var(--surface-2);border:1px solid var(--line)"></span> sehr locker ${fmt(below)} min</span>` : ""}${z.map((v, i) => v > 0.2 ? `<span><span class="dot" style="background:${ZONE_COL[i]}"></span> ${ZONES[i][0]} ${ZONES[i][1]} ${fmt(v, v < 10 ? 1 : 0)} min</span>` : "").join("")}</div>` : "";
+  const teRow = (label, v) => v == null ? "" : `<div class="macro m2"><span class="lbl">${label}</span><span class="num small"><b>${fmt(v, 1)}</b><span class="muted"> / 5 · ${teWord(v)}</span></span><div class="bar"><i style="width:${Math.min(100, v / 5 * 100)}%"></i></div></div>`;
+  // Regeneration
+  const drink = Math.round(m / 60 * (kind === "gehen" ? 300 : kind === "wandern" ? 450 : 650) / 50) * 50;
+  const rec = [];
+  if (load === "niedrig") {
+    rec.push(["Keine extra Erholung nötig", "Die Einheit war locker. Morgen kannst du normal oder auch hart trainieren."]);
+    if (drink >= 200) rec.push(["Trinken", `Etwa ${fmtL(drink)} zusätzlich über den Tag verteilt.`]);
+  } else {
+    rec.push(["Zuerst trinken", `Etwa ${fmtL(Math.max(300, drink))} in den nächsten Stunden${m >= 60 ? ", gern als Saftschorle mit einer Prise Salz für die Elektrolyte" : ""}. Wiegst du dich vorher und nachher, trink den Verlust × 1,5.`]);
+    rec.push(["Essen nach ca. 1 Stunde", "Kohlenhydrate mit Eiweiß füllen die Speicher und helfen den Muskeln, z. B. Reis oder Kartoffeln mit Hähnchen oder Skyr mit Haferflocken und Banane."]);
+    rec.push(["Dehnen", "5–10 Minuten statisch dehnen (je 30–60 Sekunden), vor allem Waden, Oberschenkel und Hüfte. Nach dem Sport, nicht davor."]);
+  }
+  if (load === "hoch") {
+    rec.push(["Beine schonen", "Gib den Beinen mindestens 24 Stunden bis zur nächsten harten Belastung. Morgen eher Oberkörper, lockeres Radfahren oder ein Spaziergang."]);
+    rec.push(["Schlaf", `Heute etwa ${fmt(sleepNeed(addDays(w.date, 1)), 1)} h Schlaf einplanen, das ist die wichtigste Regeneration.`]);
+    rec.push(["Kälte oder Faszienrolle", "Nach Ausdauer und Fußball darf es ein kaltes Bad (10–15 °C, 10 Min.) oder die Faszienrolle sein. Nach Krafttraining Kälte erst mit 6 Stunden Abstand."]);
+  } else if (load === "mittel") {
+    rec.push(["Morgen", "Normales Training ist okay. Eine sehr harte Beineinheit lieber mit 24 Stunden Abstand."]);
+  }
+  const loadChip = `<span class="chip ${load === "hoch" ? "warn" : load === "mittel" ? "acc" : "good"}">Belastung: ${load}</span>`;
+  const kv = [["Dauer", fmt(m), "min"], w.km ? ["Distanz", fmt(num(w.km), 1), "km"] : null, w.avgHR ? ["Ø Puls", fmt(num(w.avgHR)), "bpm" + (w.maxHR ? " · max " + w.maxHR : "")] : null, w.kcal ? ["Kalorien", fmt(num(w.kcal)), "kcal"] : null, w.speed && ["rad", "lauf", "wandern", "gehen"].includes(kind) ? ["Ø Tempo", fmt(num(w.speed), 1), "km/h"] : null, w.elev ? ["Höhenmeter", fmt(num(w.elev)), "m"] : null].filter(Boolean);
+  return `<div class="row" style="margin-bottom:10px">${loadChip}<span class="chip">${fmtLong(w.date)}</span></div>
+    <div class="kv" style="margin-bottom:12px">${kv.map(([l, v, u]) => `<div><span class="eyebrow">${l}</span><div class="v">${v}<span class="unit">${u}</span></div></div>`).join("")}</div>
+    ${zoneBar ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Pulszonen</div>${zoneBar}</section>` : ""}
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Wofür die Einheit gut war</div>
+      <div class="stack" style="gap:10px">${good.map(([t, x]) => `<div><b>${t}</b><div class="small ink2" style="margin-top:2px">${esc(x)}</div></div>`).join("")}</div>
+      ${fatNote ? `<p class="small muted" style="margin:10px 0 0">${esc(fatNote)}</p>` : ""}</section>
+    ${w.teAer != null || w.teAna != null ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was es gebracht hat (Garmin-Trainingseffekt)</div><div class="stack" style="gap:8px">${teRow("Ausdauer (aerob)", w.teAer)}${teRow("Sprint/Power (anaerob)", w.teAna)}</div>
+      ${imWeek ? `<p class="small ink2" style="margin:10px 0 0">Intensitätsminuten diese Woche: <b>${fmt(imWeek)}</b> von 150 empfohlenen.</p>` : ""}</section>` : ""}
+    <section class="card"><div class="eyebrow" style="margin-bottom:8px">Regeneration</div>
+      <div class="stack" style="gap:10px">${rec.map(([t, x]) => `<div><b>${esc(t)}</b><div class="small ink2" style="margin-top:2px">${esc(x)}</div></div>`).join("")}</div></section>
+    ${!hasZ ? `<p class="small muted" style="margin-top:10px">Für Pulszonen und Trainingseffekt einmal „Garmin jetzt abrufen“ tippen.</p>` : ""}`;
+}
+function evalStrength(w){
+  const groups = {}; let sets = 0, vol = 0;
+  (w.exercises || []).forEach(e => { const g = (S.exercises[e.exId] || {}).group || "Sonstiges"; const ss = (e.sets || []).filter(s => s.type !== "warmup" && num(s.r) > 0);
+    groups[g] = (groups[g] || 0) + ss.length; sets += ss.length; vol += ss.reduce((a, s) => a + (num(s.w) || 0) * num(s.r), 0); });
+  const prs = [];
+  (w.exercises || []).forEach(e => { const h = exHistory(e.exId).filter(x => x.kind === "kg"); const cur = h.filter(x => x.wid === w.id), before = h.filter(x => x.k < w.date || (x.k === w.date && x.wid !== w.id));
+    if (cur.length && before.length) { const b = Math.max(...cur.map(x => x.v)), p = Math.max(...before.map(x => x.v)); if (b > p * 1.005) prs.push(exName(e.exId) + " (+" + fmt(b - p, 1) + " kg 1RM)"); } });
+  const wk = weekSummary(w.date);
+  const gl = Object.entries(groups).filter(([g]) => g !== "Sonstiges").sort((a, b) => b[1] - a[1]);
+  const dur = w.start && w.end ? Math.round((new Date(w.end) - new Date(w.start)) / 60000) : null;
+  return `<div class="kv" style="margin-bottom:12px"><div><span class="eyebrow">Sätze</span><div class="v">${sets}</div></div><div><span class="eyebrow">Bewegt</span><div class="v">${fmt(vol)}<span class="unit">kg</span></div></div>${dur && dur < 300 ? `<div><span class="eyebrow">Dauer</span><div class="v">${dur}<span class="unit">min</span></div></div>` : ""}</div>
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Wofür das Training gut war</div>
+      <p class="small ink2" style="margin:0 0 10px">Muskelaufbau und Kraft${goalType() === "cut" ? ", und im Defizit vor allem der Erhalt deiner Muskeln" : ""}. Trainiert wurden:</p>
+      <div class="stack" style="gap:6px">${gl.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 70px"><span class="lbl">${esc(g)}</span><div class="bar"><i style="width:${Math.min(100, (wk.groups[g] || n) / 20 * 100)}%"></i></div><span class="num small" style="text-align:right"><b>${n}</b> <span class="muted">· ${wk.groups[g] || n}/Wo</span></span></div>`).join("")}</div>
+      <p class="small muted" style="margin:8px 0 0">Balken: Sätze dieser Woche, Ziel 10–20 pro Muskelgruppe.</p>
+      ${prs.length ? `<div class="hint good" style="margin-top:10px"><b>🏆 Stärker geworden:</b> ${esc(prs.slice(0, 4).join(", "))}</div>` : ""}</section>
+    <section class="card"><div class="eyebrow" style="margin-bottom:8px">Regeneration</div><div class="stack" style="gap:10px">
+      <div><b>Eiweiß und Kohlenhydrate</b><div class="small ink2" style="margin-top:2px">In den nächsten 1–2 Stunden eine Mahlzeit mit mindestens 30 g Eiweiß und Kohlenhydraten, z. B. Skyr mit Haferflocken oder Reis mit Hähnchen.</div></div>
+      <div><b>Gleiche Muskeln: 24–48 h Pause</b><div class="small ink2" style="margin-top:2px">${esc(gl.slice(0, 3).map(x => x[0]).join(", ") || "Die trainierten Muskeln")} brauchen mindestens 24 Stunden, bevor du sie wieder hart trainierst.</div></div>
+      <div><b>Kälte erst später</b><div class="small ink2" style="margin-top:2px">Eisbad oder kalte Dusche nicht in den 6 Stunden nach dem Krafttraining, das kann den Muskelaufbau bremsen. Sauna oder warmes Bad sind okay.</div></div>
+      <div><b>Schlaf</b><div class="small ink2" style="margin-top:2px">Heute etwa ${fmt(sleepNeed(addDays(w.date, 1)), 1)} h Schlaf einplanen, dort wachsen die Muskeln.</div></div>
+    </div></section>`;
+}
+function openEval(id){
+  const w = S.workouts[id]; if (!w) return;
+  const x = Object.assign({id}, w);
+  openSheet("Auswertung: " + (w.title || "Training"), x.kind === "activity" ? evalActivity(x) : evalStrength(x));
 }
 
 /* ----- Freunde ----- */
@@ -2583,7 +2685,8 @@ document.addEventListener("click", async e => {
     case "ws-set-del": ws.exercises[+D.ei].sets.pop(); saveWs(); renderWs(); break;
     case "ws-ex-del": ws.exercises.splice(+D.ei, 1); saveWs(); renderWs(); break;
     case "ws-ex-add": { const v = $("#wsadd").value; if (!v) break; ws.exercises.push({exId: v, name: exName(v), sets: [{w: "", r: "", done: false}, {w: "", r: "", done: false}, {w: "", r: "", done: false}]}); saveWs(); renderWs(); break; }
-    case "ws-finish": stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); break;
+    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => openEval(fid), 300); break; }
+    case "eval": openEval(D.id); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
     case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "open-ex": closeSheet(); openExercise(D.id); break;
