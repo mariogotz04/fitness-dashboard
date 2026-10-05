@@ -230,6 +230,8 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .checkin .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .tips .li{padding:9px 0}
 .restbar{position:sticky;bottom:0;display:flex;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:3px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+.dialbtn{background:none;border:0;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;min-width:0;border-radius:16px}
+.dialbtn:active{transform:scale(.97)}
 .av{width:36px;height:36px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
 .av.sm{width:22px;height:22px;font-size:12px}
 .av{overflow:hidden}.av img{width:100%;height:100%;object-fit:cover;display:block}
@@ -294,7 +296,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 10:43";
+const APP_VERSION = "05.10.2026 10:52";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -877,7 +879,7 @@ function viewHeute(){
   </section>
 
   <section class="card">
-    <div class="card-h"><h2>Schlaf</h2><button class="btn ghost" data-act="tab" data-tab="routine">Eintragen</button></div>
+    <div class="card-h"><h2>Schlaf</h2><span class="row" style="gap:2px"><button class="btn ghost" data-act="sleep-detail" style="min-height:30px">Details ›</button><button class="btn ghost" data-act="tab" data-tab="routine" style="min-height:30px">Eintragen</button></span></div>
     ${sl && sl.h ? `<div class="kv"><div><span class="eyebrow">Letzte Nacht</span><div class="v">${fmtHours(sl.h)}</div></div><div><span class="eyebrow">Zeiten</span><div class="v" style="font-size:20px">${esc(sl.bed || "–")} – ${esc(sl.wake || "–")}</div></div>${sl.q ? `<div><span class="eyebrow">Qualität</span><div class="v">${sl.q}<span class="unit">/ 5</span></div></div>` : ""}</div>` : `<p class="muted small" style="margin:0">Für diese Nacht ist noch kein Schlaf eingetragen. Ziel sind ${fmt(c.sleepGoal, 1)} Stunden.</p>`}
   </section>
   </div>`;
@@ -952,9 +954,9 @@ function recoverySection(k){
   return `<section class="card span2 rec">
     <figure class="quote"><blockquote>${esc(qt[0])}</blockquote><figcaption>${esc(qt[1])}</figcaption></figure>
     <div class="dials">
-      ${dial(r ? r.score / 100 : 0, zc, r ? r.score : "–", r ? "%" : "", "Erholung", `<span style="color:${zc}">${zoneTxt}</span>`)}
-      ${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}
-      ${dial(sl && sl.h ? sl.h / need : 0, "var(--accent-2)", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}
+      <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Erholung im Detail">${dial(r ? r.score / 100 : 0, zc, r ? r.score : "–", r ? "%" : "", "Erholung", `<span style="color:${zc}">${zoneTxt}</span>`)}</button>
+      <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
+      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--accent-2)", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}</button>
     </div>
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
@@ -1886,6 +1888,97 @@ function mealPlanCard(k){
       return `<div style="display:grid;grid-template-columns:48px 26px 1fr;gap:6px;align-items:start;padding:6px 0;${past ? "opacity:.45" : ""}"><span class="num small" style="font-weight:700;padding-top:1px">${min2hm(x.t)}</span><span style="font-size:17px;line-height:1.2">${x.icon}</span><div><b class="small">${esc(x.title)}</b><div class="small ink2">${esc(x.text)}</div></div></div>`; }).join("")}</div>${extra}</section>`;
 }
 
+/* ---------- Detail-Analysen: Erholung & Belastung, Schlaf ----------
+   Grundlage: Garmin (HRV, Ruhepuls, Body Battery, Schlafphasen) und deine Quellen
+   (Schlaf 7,5–9 h, fester Rhythmus verbessert HRV und Schlafwert; HRV unter Schnitt = lieber locker; 24 h Pause für gleiche Muskeln). */
+function seriesOf(days, f){ return days.map(k => ({k, v: f(k)})).filter(p => p.v != null && !isNaN(p.v) && p.v > 0); }
+const avgOfP = ps => ps.length ? ps.reduce((a, p) => a + p.v, 0) / ps.length : null;
+function openRecoveryDetail(k){
+  k = k || todayKey();
+  const days30 = Array.from({length: 30}, (_, i) => addDays(k, i - 29)), days14 = days30.slice(-14);
+  const r = recoveryOf(k), sl = (S.days[k] || {}).sleep || {};
+  const recVals = days14.map(d => { const x = recoveryOf(d); return x ? x.score : 0; }), strVals = days14.map(d => strainOf(d));
+  const hrv = seriesOf(days30, d => num(((S.days[d] || {}).sleep || {}).hrv)), rhr = seriesOf(days30, d => num(((S.days[d] || {}).sleep || {}).rhr)), bb = seriesOf(days30, d => num(((S.days[d] || {}).sleep || {}).bb));
+  const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
+  // Belastungsverhältnis: Ø Belastung der letzten 7 Tage zu den letzten 28 Tagen
+  const acute = avgOfP(Array.from({length: 7}, (_, i) => ({v: strainOf(addDays(k, -i))}))), chronic = avgOfP(Array.from({length: 28}, (_, i) => ({v: strainOf(addDays(k, -i))})));
+  const acwr = chronic > 0.5 ? acute / chronic : null;
+  const acwrTxt = acwr == null ? "" : acwr > 1.5 ? ["Deutlich mehr als sonst", "var(--bad)", "Die letzte Woche war viel härter als deine letzten 4 Wochen. Das erhöht das Risiko für Überlastung. Plan ein paar lockere Tage ein."]
+    : acwr > 1.3 ? ["Etwas mehr als sonst", "var(--warn)", "Du steigerst gerade die Belastung. Das ist okay, aber achte auf Schlaf und Erholung."]
+    : acwr >= 0.8 ? ["Im grünen Bereich", "var(--good)", "Deine Belastung passt zu dem, was dein Körper gewohnt ist. So entsteht Fortschritt ohne Überlastung."]
+    : ["Weniger als sonst", "var(--accent-2)", "Die letzte Woche war ruhiger als üblich. Gut zur Erholung, auf Dauer aber weniger Trainingsreiz."];
+  const parts = r ? r.parts : [];
+  const zc = s => s >= 67 ? "var(--good)" : s >= 34 ? "var(--warn)" : "var(--bad)";
+  const best = days30.map(d => ({d, r: recoveryOf(d)})).filter(x => x.r);
+  const notes = [];
+  if (hrvB && num(sl.hrv)) notes.push(num(sl.hrv) >= hrvB ? `Deine HRV liegt heute mit ${fmt(num(sl.hrv))} ms über deinem 14-Tage-Schnitt (${fmt(hrvB)} ms). Dein Nervensystem ist gut erholt.` : `Deine HRV liegt heute mit ${fmt(num(sl.hrv))} ms unter deinem Schnitt (${fmt(hrvB)} ms). Lieber eine lockere Einheit oder Ruhe.`);
+  if (rhrB && num(sl.rhr)) notes.push(num(sl.rhr) <= rhrB ? `Dein Ruhepuls (${fmt(num(sl.rhr))}) liegt im oder unter dem Schnitt (${fmt(rhrB)}), ein gutes Zeichen.` : `Dein Ruhepuls (${fmt(num(sl.rhr))}) liegt über dem Schnitt (${fmt(rhrB)}). Das kann an Belastung, Stress, wenig Schlaf oder einem beginnenden Infekt liegen.`);
+  const ins = insights().filter(x => /HRV|Erholung/.test(x[1]));
+  ins.forEach(x => notes.push(x[2]));
+  const body = `<div class="kv" style="margin-bottom:12px">
+      <div><span class="eyebrow">Erholung</span><div class="v" style="color:${r ? zc(r.score) : "inherit"}">${r ? r.score : "–"}<span class="unit">%</span></div></div>
+      <div><span class="eyebrow">Belastung gestern</span><div class="v">${fmt(strainOf(addDays(k, -1)), 1)}<span class="unit">/ 21</span></div></div>
+      ${hrvB ? `<div><span class="eyebrow">HRV</span><div class="v">${sl.hrv ? fmt(num(sl.hrv)) : "–"}<span class="unit">ms · Ø ${fmt(hrvB)}</span></div></div>` : ""}
+      ${rhrB ? `<div><span class="eyebrow">Ruhepuls</span><div class="v">${sl.rhr ? fmt(num(sl.rhr)) : "–"}<span class="unit">bpm · Ø ${fmt(rhrB)}</span></div></div>` : ""}</div>
+    ${parts.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">So setzt sich deine Erholung zusammen</div><div class="stack" style="gap:8px">${parts.map(p => `<div class="macro m2"><span class="lbl">${esc(p.label)} <span class="small muted" style="font-weight:400">· ${Math.round(p.w / parts.reduce((a, q) => a + q.w, 0) * 100)} %</span></span><span class="num small">${esc(String(p.disp))}</span><div class="bar"><i style="width:${Math.round(p.score)}%;background:${zc(p.score)}"></i></div></div>`).join("")}</div>
+      <p class="small muted" style="margin:8px 0 0">Balken: wie gut der Wert heute ist (0–100). Die Prozentzahl zeigt, wie stark er in die Erholung einfließt.</p></section>` : ""}
+    ${notes.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was das bedeutet</div><div class="stack" style="gap:8px">${notes.map(n => `<div class="small ink2">• ${esc(n)}</div>`).join("")}</div></section>` : ""}
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Erholung · 14 Tage</div>
+      ${weekBars(recVals, {h: 110, label: "Erholung 14 Tage", fmt: v => v + " %", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => zc(v)})}
+      <div class="eyebrow" style="margin:12px 0 4px">Belastung · 14 Tage (0–21)</div>
+      ${weekBars(strVals, {h: 90, label: "Belastung 14 Tage", fmt: v => fmt(v, 1), labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= 14 ? "var(--p)" : "color-mix(in srgb,var(--p) 50%,var(--surface))"})}</section>
+    ${acwr != null ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2 style="font-size:17px">Belastungsverhältnis</h2><span class="chip" style="color:${acwrTxt[1]}">${acwrTxt[0]}</span></div>
+      <div class="bar" style="height:12px;position:relative;background:linear-gradient(90deg,var(--accent-2) 0 26%,var(--good) 26% 60%,var(--warn) 60% 73%,var(--bad) 73%)"><i style="position:absolute;left:calc(${Math.min(100, acwr / 2.2 * 100)}% - 3px);top:-3px;width:6px;height:18px;border-radius:3px;background:var(--ink)"></i></div>
+      <p class="small ink2" style="margin:8px 0 0">Letzte 7 Tage zu den letzten 4 Wochen: <b>${fmt(acwr, 2)}</b>. ${acwrTxt[2]} Ideal ist etwa 0,8–1,3.</p></section>` : ""}
+    ${hrv.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">HRV · 30 Tage</div>${trendSvg(hrv, {label: "HRV 30 Tage", unit: "ms", smooth: true, pad: 3})}<p class="small muted" style="margin:6px 0 0">Höher ist besser. Die Linie zeigt den Schnitt über 7 Tage, die Punkte die einzelnen Nächte.</p></section>` : ""}
+    ${rhr.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Ruhepuls · 30 Tage</div>${trendSvg(rhr, {label: "Ruhepuls 30 Tage", unit: "bpm", smooth: true, color: "var(--p)", pad: 2})}<p class="small muted" style="margin:6px 0 0">Niedriger ist besser. Steigt er mehrere Tage, braucht dein Körper mehr Erholung.</p></section>` : ""}
+    ${bb.length >= 5 ? `<section class="card"><div class="eyebrow" style="margin-bottom:4px">Body Battery am Morgen · 30 Tage</div>${trendSvg(bb, {label: "Body Battery", unit: "", color: "var(--accent-2)", pad: 5})}</section>` : ""}`;
+  openSheet("Erholung & Belastung", body);
+}
+function openSleepDetail(k){
+  k = k || todayKey();
+  const c = cfg(), sl = (S.days[k] || {}).sleep || {}, need = sleepNeed(k);
+  const days14 = Array.from({length: 14}, (_, i) => addDays(k, i - 13));
+  const hVals = days14.map(d => num(((S.days[d] || {}).sleep || {}).h) || 0), sVals = days14.map(d => num(((S.days[d] || {}).sleep || {}).score) || 0);
+  const valid = days14.map(d => (S.days[d] || {}).sleep || {}).filter(x => num(x.h) >= 3);
+  const avgH = valid.length ? valid.reduce((a, x) => a + num(x.h), 0) / valid.length : null;
+  const debt = days14.slice(-7).reduce((a, d) => { const x = num(((S.days[d] || {}).sleep || {}).h); return a + (x >= 3 ? Math.max(0, c.sleepGoal - x) : 0); }, 0);
+  // Rhythmus: Streuung der Einschlafzeit (Minuten um Mitternacht herum)
+  const bedMin = valid.map(x => hm2min(x.bed)).filter(v => v != null).map(v => v < 12 * 60 ? v + 24 * 60 : v);
+  const bAvg = bedMin.length ? bedMin.reduce((a, b) => a + b, 0) / bedMin.length : null;
+  const bSd = bedMin.length >= 4 ? Math.sqrt(bedMin.reduce((a, b) => a + (b - bAvg) ** 2, 0) / bedMin.length) : null;
+  const stages = num(sl.deep) + num(sl.light) + num(sl.rem) > 0 ? [["Tief", num(sl.deep), "#4F46E5", [13, 23]], ["REM", num(sl.rem), "#8B5CF6", [20, 25]], ["Leicht", num(sl.light), "#60A5FA", [45, 60]], ["Wach", num(sl.awake), "#CBD5E1", null]] : null;
+  const tot = stages ? stages.reduce((a, s) => a + s[1], 0) : 0;
+  const stageAvg = name => { const xs = valid.filter(x => num(x.deep) + num(x.light) + num(x.rem) > 0).map(x => num(x[name]) / (num(x.deep) + num(x.light) + num(x.rem) + num(x.awake)) * 100); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+  const notes = [];
+  if (sl.h) notes.push(num(sl.h) >= need - 0.25 ? `Letzte Nacht ${fmt(num(sl.h), 1)} h, dein Bedarf heute liegt bei ${fmt(need, 1)} h. Passt.` : `Letzte Nacht ${fmt(num(sl.h), 1)} h, dein Bedarf heute liegt bei ${fmt(need, 1)} h. Geh heute etwa ${fmt((need - num(sl.h)) * 60)} Minuten früher ins Bett.`);
+  if (stages) { const dp = num(sl.deep) / tot * 100, rp = num(sl.rem) / tot * 100;
+    notes.push(dp >= 13 ? `Tiefschlaf ${Math.round(dp)} %: gut. Im Tiefschlaf erholen sich Muskeln und Körper am stärksten.` : `Tiefschlaf nur ${Math.round(dp)} %. Hilft: kein Alkohol, kein schweres Essen spät, kühles Zimmer (ca. 18 °C).`);
+    notes.push(rp >= 20 ? `REM-Schlaf ${Math.round(rp)} %: gut für Kopf, Lernen und Stimmung.` : `REM-Schlaf ${Math.round(rp)} %, etwas wenig. REM kommt vor allem am Ende der Nacht, also nicht zu früh aufstehen und regelmäßig schlafen.`); }
+  if (bSd != null) notes.push(bSd <= 30 ? `Dein Rhythmus ist stabil: Du gehst meist um ${min2hm(bAvg % (24 * 60))} ins Bett (± ${Math.round(bSd)} Min.). Laut deiner Quelle verbessert ein fester Rhythmus HRV und Schlafwert.` : `Deine Einschlafzeit schwankt um ± ${Math.round(bSd)} Minuten (meist um ${min2hm(bAvg % (24 * 60))}). Ein festerer Rhythmus verbessert laut deiner Quelle HRV und Schlafwert.`);
+  if (debt >= 1) notes.push(`Schlafschuld der letzten 7 Tage: ${fmt(debt, 1)} h unter deinem Ziel von ${fmt(c.sleepGoal, 1)} h. Am besten über ein paar Tage je 30 Minuten früher schlafen.`);
+  if (num(sl.stress) > 25) notes.push(`Dein Stress im Schlaf war mit ${fmt(num(sl.stress))} eher hoch. Abends runterfahren hilft: Licht dimmen, Atemübung 4-7-8, kein Handy im Bett.`);
+  insights().filter(x => /Schlaf/.test(x[1])).forEach(x => notes.push(x[2]));
+  const body = `<div class="kv" style="margin-bottom:12px">
+      <div><span class="eyebrow">Letzte Nacht</span><div class="v">${sl.h ? fmtHours(num(sl.h)) : "–"}</div><div class="small muted">${sl.bed ? esc(sl.bed) + " – " + esc(sl.wake || "") : ""}</div></div>
+      ${sl.score ? `<div><span class="eyebrow">Schlafwert</span><div class="v">${fmt(num(sl.score))}<span class="unit">/ 100</span></div></div>` : ""}
+      <div><span class="eyebrow">Bedarf heute</span><div class="v">${fmt(need, 1)}<span class="unit">h</span></div></div>
+      <div><span class="eyebrow">Ø 14 Nächte</span><div class="v">${avgH ? fmt(avgH, 1) : "–"}<span class="unit">h</span></div></div></div>
+    ${stages ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schlafphasen letzte Nacht</div>
+      <div style="display:flex;height:16px;border-radius:99px;overflow:hidden;gap:2px">${stages.filter(s => s[1] > 0).map(s => `<i title="${s[0]}: ${s[1]} Min." style="flex:${s[1]};background:${s[2]}"></i>`).join("")}</div>
+      <div class="stack" style="gap:6px;margin-top:10px">${stages.map(s => { const p = tot ? s[1] / tot * 100 : 0, a = stageAvg(s[0] === "Tief" ? "deep" : s[0] === "REM" ? "rem" : s[0] === "Leicht" ? "light" : "awake");
+        return `<div class="spread small"><span><span class="dot" style="background:${s[2]}"></span> ${s[0]}</span><span class="num"><b>${fmtHours(s[1] / 60)}</b> · ${Math.round(p)} %${s[3] ? ` <span class="muted">(gut: ${s[3][0]}–${s[3][1]} %)</span>` : ""}${a != null ? ` <span class="muted">· Ø ${Math.round(a)} %</span>` : ""}</span></div>`; }).join("")}</div>
+      ${sl.resp || sl.stress != null ? `<p class="small muted" style="margin:8px 0 0">${sl.resp ? "Atmung Ø " + fmt(num(sl.resp), 1) + " Atemzüge/Min." : ""}${sl.resp && sl.stress != null ? " · " : ""}${sl.stress != null ? "Stress im Schlaf " + fmt(num(sl.stress)) : ""}${sl.wakes != null ? " · " + sl.wakes + "× wach" : ""}</p>` : ""}</section>` : ""}
+    ${notes.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was das bedeutet</div><div class="stack" style="gap:8px">${notes.map(n => `<div class="small ink2">• ${esc(n)}</div>`).join("")}</div></section>` : ""}
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Schlafdauer · 14 Nächte</div>
+      ${weekBars(hVals, {h: 110, label: "Schlafdauer 14 Nächte", goal: c.sleepGoal, fmt: v => fmt(v, 1) + " h", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 50%,var(--surface))"})}
+      <p class="small muted" style="margin:4px 0 0">Gestrichelt: dein Schlafziel ${fmt(c.sleepGoal, 1)} h.</p>
+      ${sVals.filter(Boolean).length >= 3 ? `<div class="eyebrow" style="margin:12px 0 4px">Schlafwert · 14 Nächte</div>${weekBars(sVals, {h: 90, label: "Schlafwert", fmt: v => v + " / 100", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= 80 ? "var(--good)" : v >= 60 ? "var(--warn)" : "var(--bad)"})}` : ""}</section>
+    <section class="card"><div class="eyebrow" style="margin-bottom:8px">Für besseren Schlaf</div><div class="stack" style="gap:6px">
+      ${["Gleiche Zeit ins Bett und aufstehen, auch am Wochenende.", "Morgens 10–30 Minuten Tageslicht, abends ab etwa 22 Uhr Licht dimmen.", "Schlafzimmer kühl (ca. 18 °C), dunkel und ruhig, eine Stunde vorher Handy weg.", "Nach 14 Uhr kein Koffein, abends keine großen, fettigen Mahlzeiten."].map(t => `<div class="small ink2">• ${t}</div>`).join("")}</div></section>`;
+  openSheet("Schlaf im Detail", body);
+}
+
 /* ----- Freunde ----- */
 let FR = {loaded: 0, busy: false, feed: null, friends: [], name: null, avatar: null, msg: "", editProfile: false};
 async function loadFriends(force){
@@ -2382,7 +2475,7 @@ function viewRoutine(){
   const withSleep = nights.filter(n => n.v > 0);
   const avgSleep = withSleep.length ? withSleep.reduce((a, n) => a + n.v, 0) / withSleep.length : null;
   return `<section class="card">
-    <div class="card-h"><h2>Erholung & Belastung</h2><span class="small muted">letzte 14 Tage</span></div>
+    <div class="card-h"><h2>Erholung & Belastung</h2><button class="btn ghost" data-act="rec-detail" style="min-height:30px">Details ›</button></div>
     <div class="chart" data-chart="recovery" style="height:190px"></div>
     <div class="legend"><span><span class="dot" style="background:var(--good)"></span>Erholung ab 67 %</span><span><span class="dot" style="background:var(--warn)"></span>34–66 %</span><span><span class="dot" style="background:var(--bad)"></span>unter 34 %</span><span>Zahl darunter: Belastung 0–21</span></div>
   </section>
@@ -2405,7 +2498,8 @@ function viewRoutine(){
   </section>
   <div class="section-title">Schlaf</div>
   <section class="card">
-    <div class="card-h"><h2>Letzte 14 Nächte</h2><span class="small muted">Ø ${avgSleep ? fmt(avgSleep, 1) + " h" : "–"} · Ziel ${fmt(c.sleepGoal, 1)} h</span></div>
+    <div class="card-h"><h2>Letzte 14 Nächte</h2><button class="btn ghost" data-act="sleep-detail" style="min-height:30px">Details ›</button></div>
+    <div class="small muted" style="margin:-6px 0 8px">Ø ${avgSleep ? fmt(avgSleep, 1) + " h" : "–"} · Ziel ${fmt(c.sleepGoal, 1)} h</div>
     <div class="chart" data-chart="sleep" style="height:170px"></div>
     <form class="stack" data-form="sleep" style="margin-top:14px">
       <div class="fields">
@@ -3106,6 +3200,8 @@ document.addEventListener("click", async e => {
     case "wp-fb": if (wp) { wp.days[D.date].fb = D.v; renderPlanner(); } break;
     case "wp-save": if (wp) { savePlanner(); toast("Woche gespeichert. Die Tipps richten sich jetzt nach deinem Plan."); closeSheet(); } break;
     case "wp-clear": if (wp) { if (b.dataset.confirm) { const all = Object.assign({}, weekPlans()); delete all[wp.mon]; saveCfg({weekPlan: all}); workoutsSorted().filter(w => w.planner && w.status === "planned" && w.date >= wp.mon && w.date <= addDays(wp.mon, 6)).forEach(w => del("workouts", w.id)); toast("Plan gelöscht."); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } } break;
+    case "rec-detail": openRecoveryDetail(D.date || todayKey()); break;
+    case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
