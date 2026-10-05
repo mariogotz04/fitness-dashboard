@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:50";
+const APP_VERSION = "05.10.2026 09:55";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -816,6 +816,7 @@ function viewHeute(){
   const sl = d.sleep;
 
   return `${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
+  ${plannerPrompt(curDate)}
   ${recoverySection(curDate)}
   ${footballCard(curDate)}
   <section class="card">
@@ -1284,12 +1285,13 @@ function viewCalendar(){
   const sel = byDate[calSel] || [];
   const wk = weekSummary(calSel);
   const groups = Object.entries(wk.groups).sort((a, b) => b[1] - a[1]);
-  return `<section class="card">
+  const fbSel = (weekPlanOf(mondayOf(calSel)) || {})[calSel], fbTxt = fbSel && fbSel.fb ? (fbSel.fb === "match" ? "🏆 Fußballspiel geplant" : "⚽ Fußballtraining geplant") : "";
+  return `<button class="btn block" data-act="planner" style="margin-bottom:12px">🗓️ Woche planen${weekPlanOf(plannerDefaultWeek()) ? " (geplant ✓)" : ""}</button><section class="card">
     <div class="spread" style="margin-bottom:10px"><button class="iconbtn" data-act="cal-prev" aria-label="Vorheriger Monat">${ICON.left}</button><h2 style="font-size:22px">${MON[m - 1]} ${y}</h2><button class="iconbtn" data-act="cal-next" aria-label="Nächster Monat">${ICON.right}</button></div>
     <div class="cal">${cells}</div>
     <div class="legend"><span><span class="dot" style="background:var(--accent)"></span>Krafttraining erledigt</span><span><span class="dot" style="border:1.5px solid var(--accent)"></span>Geplant</span><span><span class="dot" style="background:var(--c)"></span>Sport</span></div>
   </section>
-  <div class="section-title">${fmtLong(calSel)}</div>
+  <div class="section-title">${fmtLong(calSel)}</div>${fbTxt ? `<div class="chip acc" style="margin:0 0 8px 2px">${fbTxt}</div>` : ""}
   <section class="card" style="padding-block:8px">
     <div class="list">${sel.map(w => workoutLine(w) + (w.status === "planned" || w.kind === "activity" ? `<div class="row" style="padding:0 0 10px;gap:4px"><label class="small muted" for="mv-${w.id}">Verschieben auf</label><input type="date" class="inp" id="mv-${w.id}" data-move="${w.id}" value="${w.date}" style="width:auto;min-height:36px;padding:5px 8px"><button class="btn ghost danger" data-act="workout-del" data-id="${w.id}">Löschen</button></div>` : "")).join("") || '<div class="empty" style="padding:10px">An diesem Tag ist nichts eingetragen.</div>'}</div>
     <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="plan-day" data-date="${calSel}">+ Training oder Sport eintragen</button></div>
@@ -1613,9 +1615,10 @@ function footballSchedule(){
 function footballDay(k){
   const sch = footballSchedule(); if (sch.off) return null;
   const planned = workoutsSorted().filter(w => w.kind === "activity" && w.status === "planned" && /fu(ss|ß)ball|spiel/i.test(w.title || ""));
-  const isMatch = d => planned.some(w => w.date === d && /spiel/i.test(w.title || "")) || (sch.match != null && dateOf(d).getDay() === sch.match);
-  const isTrain = d => planned.some(w => w.date === d && !/spiel/i.test(w.title || "")) || sch.train.includes(dateOf(d).getDay());
-  const y = addDays(k, -1), yWas = workoutsSorted().some(w => w.date === y && w.kind === "activity" && /fu(ss|ß)ball/i.test(w.title || "") && actLoad(w) === "hoch");
+  const pf = d => { const p = weekPlanOf(mondayOf(d)); return p ? ((p[d] || {}).fb || "") : undefined; };
+  const isMatch = d => pf(d) !== undefined ? pf(d) === "match" : planned.some(w => w.date === d && /spiel/i.test(w.title || "")) || (sch.match != null && dateOf(d).getDay() === sch.match);
+  const isTrain = d => pf(d) !== undefined ? pf(d) === "train" : planned.some(w => w.date === d && !/spiel/i.test(w.title || "")) || sch.train.includes(dateOf(d).getDay());
+  const y = addDays(k, -1), yWas = pf(y) === undefined && workoutsSorted().some(w => w.date === y && w.kind === "activity" && /fu(ss|ß)ball/i.test(w.title || "") && actLoad(w) === "hoch");
   if (isMatch(k)) return "match";
   if (isMatch(addDays(k, 1))) return "pre";
   if (isMatch(y) || yWas) return "post";
@@ -1645,7 +1648,7 @@ function footballCard(k){
       ["Trinken", "Gut getrunken ins Training, währenddessen regelmäßig ein paar Schlucke, danach zuerst trinken."],
       [legsToday ? "Beintraining und Fußball" : "Danach", legsToday ? "Heute stehen Beine und Fußball an. Mach die Beine lieber an einem anderen Tag, sonst leidet beides." : "Etwa eine Stunde danach Kohlenhydrate mit Eiweiß, z. B. Skyr mit Haferflocken oder Reis mit Hähnchen."]]]
   }[t];
-  return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>${L[0]}</h2><button class="btn ghost" data-act="settings" style="min-height:30px">Fußball-Tage</button></div>
+  return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>${L[0]}</h2><button class="btn ghost" data-act="planner" style="min-height:30px">Woche planen</button></div>
     <div class="stack" style="gap:10px">${L[1].map(([a, b]) => `<div><b>${esc(a)}</b><div class="small ink2" style="margin-top:2px">${esc(b)}</div></div>`).join("")}</div></section>`;
 }
 
@@ -1695,6 +1698,79 @@ async function lookupBarcode(code){
     put("foods", id, {name, kcal: Math.round(num(n["energy-kcal_100g"])), p: +num(n.proteins_100g).toFixed(1), c: +num(n.carbohydrates_100g).toFixed(1), f: +num(n.fat_100g).toFixed(1), portion: num(p.serving_quantity) > 0 ? Math.round(num(p.serving_quantity)) : undefined, nova: p.nova_group || undefined, unit: liquid ? "ml" : undefined, ean: code, uses: 0, src: "openfoodfacts"});
     af.mode = "suchen"; af.pick = id; af.g = ""; af.n = ""; af.u = null; renderAddFood(); toast("Gefunden: " + name);
   } catch(e) { if ($("#scanmsg")) $("#scanmsg").textContent = "Keine Verbindung zu Open Food Facts. Versuch es gleich noch einmal."; }
+}
+
+/* ---------- Wochenplaner ----------
+   Sonntags (oder jederzeit) die kommende Woche festlegen: Fußballtraining, Spiel und Gym pro Tag.
+   Ist eine Woche geplant, gilt für den Spieltags-Modus nur noch dein Plan, nicht die Automatik.
+   Gym-Tage werden als geplante Trainings aus deinen Plänen angelegt (planner: true). */
+const weekPlans = () => cfgRaw().weekPlan || {};
+const weekPlanOf = mon => weekPlans()[mon] || null;
+let wp = null;
+function plannerDefaultWeek(){ const t = todayKey(), wd = dateOf(t).getDay(); return wd === 0 || wd === 6 ? mondayOf(addDays(t, 7)) : mondayOf(t); }
+function openPlanner(mon){
+  mon = mon || plannerDefaultWeek();
+  const saved = weekPlanOf(mon), days = Array.from({length: 7}, (_, i) => addDays(mon, i));
+  const sch = footballSchedule(), prev = weekPlanOf(addDays(mon, -7));
+  const plannedGym = k => { const w = workoutsSorted().find(x => x.date === k && x.kind !== "activity" && x.status === "planned" && x.templateId); return w ? w.templateId : ""; };
+  // Vorschlag ohne gespeicherten Plan: Fußball aus der Erkennung bzw. Vorwoche, Gym aus schon geplanten Trainings
+  const draft = {};
+  days.forEach((k, i) => {
+    const s = saved && saved[k], p = prev && prev[addDays(mon, i - 7)], wd = dateOf(k).getDay();
+    draft[k] = s ? Object.assign({}, s) : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", gym: plannedGym(k) || (p ? p.gym || "" : "")};
+  });
+  wp = {mon, days: draft, saved: !!saved};
+  openSheet("Woche planen", "", null, () => { wp = null; });
+  renderPlanner();
+}
+function plannerWarnings(){
+  const out = [], tp = id => S.templates[id];
+  const legs = id => { const t = tp(id); return !!t && (t.items || []).some(it => ["Beine", "Waden"].includes((S.exercises[it.exId] || {}).group)); };
+  Object.keys(wp.days).sort().forEach((k, i, ks) => {
+    const d = wp.days[k], next = wp.days[ks[i + 1]] || {};
+    if (d.gym && legs(d.gym) && next.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Beintraining am Tag vor dem Spiel. Lieber auf einen anderen Tag legen.`);
+    if (d.gym && legs(d.gym) && d.fb) out.push(`${WDN[dateOf(k).getDay()]}: Beintraining und Fußball am selben Tag. Das belastet die Beine doppelt.`);
+    if (d.gym && d.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Krafttraining am Spieltag. Besser einen Tag früher oder später.`);
+  });
+  const gymDays = Object.values(wp.days).filter(d => d.gym).length, goal = cfg().strengthPerWeek;
+  if (gymDays && gymDays < goal) out.push(`${gymDays} von ${goal} geplanten Krafteinheiten.`);
+  return out;
+}
+function renderPlanner(){
+  if (!wp) return;
+  const tpls = templatesSorted(), sun = addDays(wp.mon, 6), warn = plannerWarnings();
+  $("#sheet-b").innerHTML = `<div class="spread" style="margin-bottom:10px"><button class="iconbtn" data-act="wp-week" data-d="-7" aria-label="Vorherige Woche">${ICON.left}</button>
+      <b>${fmtShort(wp.mon)} – ${fmtShort(sun)}${wp.saved ? ' <span class="chip good" style="margin-left:4px">geplant</span>' : ""}</b>
+      <button class="iconbtn" data-act="wp-week" data-d="7" aria-label="Nächste Woche">${ICON.right}</button></div>
+    <p class="small muted" style="margin:0 0 10px">Trag ein, wann du Fußball hast und wann du ins Gym gehst. Spieltags-Tipps und Erinnerungen richten sich dann nur nach deinem Plan.</p>
+    <div class="stack" style="gap:8px">${Object.keys(wp.days).sort().map(k => { const d = wp.days[k];
+      return `<div class="ex" style="padding:10px 12px"><div class="spread" style="margin-bottom:8px"><b>${WDN[dateOf(k).getDay()]}</b><span class="small muted">${fmtShort(k)}</span></div>
+        <div class="filt" style="margin:0 0 8px">${[["", "Kein Fußball"], ["train", "⚽ Training"], ["match", "🏆 Spiel"]].map(([v, l]) => `<button data-act="wp-fb" data-date="${k}" data-v="${v}" aria-pressed="${(d.fb || "") === v}">${l}</button>`).join("")}</div>
+        <select class="inp" data-wpgym="${k}" aria-label="Gym am ${WDN[dateOf(k).getDay()]}" style="min-height:38px;padding:6px 10px"><option value="">🏋️ Kein Gym</option>${tpls.map(t => `<option value="${t.id}" ${d.gym === t.id ? "selected" : ""}>🏋️ ${esc(t.name)}</option>`).join("")}</select></div>`; }).join("")}</div>
+    ${warn.length ? `<div class="hint" style="margin-top:12px;border:1.5px solid var(--warn)">${warn.map(w => `<div class="small">⚠︎ ${esc(w)}</div>`).join("")}</div>` : ""}
+    <div class="row" style="margin-top:14px"><button class="btn primary" data-act="wp-save">Woche speichern</button>${wp.saved ? `<button class="btn ghost danger" data-act="wp-clear">Plan löschen</button>` : ""}</div>`;
+}
+function savePlanner(){
+  const mon = wp.mon, days = wp.days, all = Object.assign({}, weekPlans());
+  all[mon] = days;
+  Object.keys(all).filter(m => m < addDays(mondayOf(todayKey()), -56)).forEach(m => delete all[m]);
+  saveCfg({weekPlan: all});
+  // Gym-Tage als geplante Trainings anlegen bzw. alte Planer-Einträge dieser Woche entfernen
+  const end = addDays(mon, 6);
+  workoutsSorted().filter(w => w.planner && w.status === "planned" && w.date >= mon && w.date <= end).forEach(w => { if (!days[w.date] || days[w.date].gym !== w.templateId) del("workouts", w.id); });
+  Object.keys(days).forEach(k => {
+    const g = days[k].gym; if (!g || !S.templates[g]) return;
+    if (workoutsSorted().some(w => w.date === k && w.templateId === g && w.status !== "skipped")) return;
+    put("workouts", uid("w"), Object.assign(newWorkoutFromTemplate(g, k), {planner: true}));
+  });
+}
+function plannerPrompt(k){
+  const t = todayKey(); if (k !== t) return "";
+  const wd = dateOf(t).getDay(), next = mondayOf(addDays(t, 7));
+  if (wd !== 0 || weekPlanOf(next)) return "";
+  return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>🗓️ Nächste Woche planen</h2></div>
+    <p class="small ink2" style="margin:0 0 10px">Wann hast du Fußballtraining, wann ein Spiel, wann gehst du ins Gym? Dann passen die Tipps genau zu deiner Woche.</p>
+    <button class="btn primary" data-act="planner" data-mon="${next}">Woche planen</button></section>`;
 }
 
 /* ----- Freunde ----- */
@@ -1918,7 +1994,7 @@ function openReview(mon){
     ${card("Schlaf pro Nacht", weekBars(sleepVals, {label: "Schlaf pro Nacht", goal: c.sleepGoal, fmt: v => fmt(v, 1) + " h", color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 55%,var(--surface))"}))}
     ${card("Schritte", `${weekBars(stepVals, {label: "Schritte pro Tag", goal: 10000, fmt: v => fmt(v) + " Schritte", short: v => fmt(v / 1000, 1) + "k", color: v => v >= 10000 ? "var(--good)" : "var(--accent)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø Schritte", st.steps ? fmt(st.steps) : "–", "", delta(st.steps, pv.steps, "", 0, true))}${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}</div>`)}`;
-  openSheet("Dein Wochenrückblick", body, `<button class="btn primary block" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
+  openSheet("Dein Wochenrückblick", body, `<button class="btn primary" style="flex:1" data-act="planner" data-mon="${addDays(mon, 7)}">🗓️ Nächste Woche planen</button><button class="btn" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
 }
 
 /* ----- Pausen-Timer im laufenden Training ----- */
@@ -2712,7 +2788,7 @@ function openSettings(){
     <div class="eyebrow" style="margin-top:6px">Fußball</div>
     ${(() => { const fs = cfgRaw().football || {}, sch = footballSchedule(), mode = fs.mode || "auto", tr = mode === "manual" ? (fs.train || []) : sch.train, mt = mode === "manual" ? fs.match : sch.match;
       return `<div class="field"><label for="gfm">Spieltags-Modus</label><select class="inp" id="gfm">${[["auto", "Automatisch aus meinen Garmin-Einheiten"], ["manual", "Selbst festlegen"], ["off", "Aus"]].map(([k2, l]) => `<option value="${k2}" ${mode === k2 ? "selected" : ""}>${l}</option>`).join("")}</select>
-        <span class="small muted">${mode === "auto" ? `Erkannt: Training ${tr.length ? tr.map(d => WDN[d]).join(", ") : "keins"}, Spieltag ${mt != null ? WDN[mt] : "keiner"}.` : "Für „Selbst festlegen“ unten die Tage wählen."}</span></div>
+        <span class="small muted">${mode === "auto" ? `Erkannt: Training ${tr.length ? tr.map(d => WDN[d]).join(", ") : "keins"}, Spieltag ${mt != null ? WDN[mt] : "keiner"}.` : "Für „Selbst festlegen“ unten die Tage wählen."} Geplante Wochen (Training → Woche planen) haben immer Vorrang.</span></div>
       <div class="row small" style="gap:6px 12px">${[1, 2, 3, 4, 5, 6, 0].map(d => `<label class="row" style="gap:4px"><input type="checkbox" class="gftr" value="${d}" ${tr.includes(d) ? "checked" : ""}>${WDN[d].slice(0, 2)}</label>`).join("")}<span class="muted">Training</span></div>
       <div class="field"><label for="gfmt">Spieltag</label><select class="inp" id="gfmt"><option value="">keiner</option>${[6, 0, 5].map(d => `<option value="${d}" ${mt === d ? "selected" : ""}>${WDN[d]}</option>`).join("")}</select></div>`; })()}
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
@@ -2914,6 +2990,11 @@ document.addEventListener("click", async e => {
     case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
     case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && d.water >= g.total && d.water - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
     case "review-open": openReview(reviewWeek() || mondayOf(addDays(todayKey(), -7))); break;
+    case "planner": closeSheet(); openPlanner(D.mon || null); break;
+    case "wp-week": if (wp) { const m = addDays(wp.mon, +D.d); closeSheet(); openPlanner(m); } break;
+    case "wp-fb": if (wp) { wp.days[D.date].fb = D.v; renderPlanner(); } break;
+    case "wp-save": if (wp) { savePlanner(); toast("Woche gespeichert. Die Tipps richten sich jetzt nach deinem Plan."); closeSheet(); } break;
+    case "wp-clear": if (wp) { if (b.dataset.confirm) { const all = Object.assign({}, weekPlans()); delete all[wp.mon]; saveCfg({weekPlan: all}); workoutsSorted().filter(w => w.planner && w.status === "planned" && w.date >= wp.mon && w.date <= addDays(wp.mon, 6)).forEach(w => del("workouts", w.id)); toast("Plan gelöscht."); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } } break;
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -2954,6 +3035,7 @@ document.addEventListener("change", e => {
   if (t.id === "avf" && t.files[0]) { shrinkImage(t.files[0]).then(async a => { const {error} = await sb.rpc("set_my_avatar", {p_avatar: a}); if (error) throw error; FR.avatar = a; toast("Profilbild gespeichert."); loadFriends(true); render(); }).catch(() => toast("Das Bild konnte nicht gespeichert werden.")); return; }
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
   if (t.dataset.suppTime) { const list = (cfg().supplements || []).map(x => x.id === t.dataset.suppTime ? Object.assign({}, x, {time: t.value}) : x); saveCfg({supplements: list}); toast(t.value ? "Erinnerung um " + t.value + " Uhr gespeichert." : "Erinnerung entfernt."); return; }
+  if (t.dataset.wpgym && wp) { wp.days[t.dataset.wpgym].gym = t.value; renderPlanner(); return; }
   if (t.id === "sld") { sleepDate = t.value || todayKey(); pendingRender = false; render(); return; }
 });
 
