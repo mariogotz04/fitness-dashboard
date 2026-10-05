@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:55";
+const APP_VERSION = "05.10.2026 09:58";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -690,8 +690,9 @@ function recoveryTips(k){
 
 /* ---------- Rendering ---------- */
 let tab = (location.hash || "").slice(1);
-if (!TABS.some(t => t[0] === tab)) tab = "heute";
+if (!TABS.some(t => t[0] === tab)) tab = (location.hash || "") === "#planen" ? "training" : "heute";
 let curDate = todayKey();
+let openPlanOnLoad = (location.hash || "") === "#planen";
 let trainSub = "kalender", calMonth = todayKey().slice(0, 7), calSel = todayKey();
 let weightRange = 90;
 let sleepDate = todayKey();
@@ -713,6 +714,7 @@ function render(){
   const html = ({heute: viewHeute, essen: viewEssen, training: viewTraining, freunde: viewFriends, koerper: viewKoerper, routine: viewRoutine})[tab]();
   v.innerHTML = html;
   drawCharts();
+  if (openPlanOnLoad && mode === "db") { openPlanOnLoad = false; setTimeout(() => openPlanner(), 400); }
   setTimeout(maybeShowReview, 600);
 }
 function renderTop(){
@@ -1717,7 +1719,7 @@ function openPlanner(mon){
   const draft = {};
   days.forEach((k, i) => {
     const s = saved && saved[k], p = prev && prev[addDays(mon, i - 7)], wd = dateOf(k).getDay();
-    draft[k] = s ? Object.assign({}, s) : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", gym: plannedGym(k) || (p ? p.gym || "" : "")};
+    draft[k] = s ? {fb: s.fb || "", gym: plannedGym(k)} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", gym: plannedGym(k) || (p ? p.gym || "" : "")};
   });
   wp = {mon, days: draft, saved: !!saved};
   openSheet("Woche planen", "", null, () => { wp = null; });
@@ -2794,6 +2796,7 @@ function openSettings(){
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
     <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
+    <div class="field"><label for="gpt">Sonntags: Woche planen</label><input class="inp num" type="time" id="gpt" value="${esc(c.planTime == null ? "19:00" : c.planTime)}"><span class="small muted">Erinnerung, falls die nächste Woche noch nicht geplant ist. Leer lassen = aus.</span></div>
     <p class="small muted" style="margin:0">Supplement-Erinnerungen stellst du direkt bei den Supplements unter Erholung ein.</p>
     <button class="btn primary" type="submit">Speichern</button></form>
     <div class="section-title">Hevy-Import</div>
@@ -3097,7 +3100,7 @@ document.addEventListener("submit", async e => {
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto", football: {mode: v("gfm") || "auto", train: [...f.querySelectorAll(".gftr:checked")].map(x => +x.value), match: v("gfmt") === "" || v("gfmt") == null ? null : +v("gfmt")}});
+    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", planTime: v("gpt") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto", football: {mode: v("gfm") || "auto", train: [...f.querySelectorAll(".gftr:checked")].map(x => +x.value), match: v("gfmt") === "" || v("gfmt") == null ? null : +v("gfmt")}});
       const wantN = !!(f.querySelector("#gaN") || {}).checked, rc = cfgRaw();
       let openCalcNext = false;
       if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birth && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
@@ -3110,7 +3113,7 @@ document.addEventListener("submit", async e => {
 });
 
 window.addEventListener("scroll", () => $("#top").classList.toggle("scrolled", window.scrollY > 4), {passive: true});
-window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (TABS.some(t => t[0] === h)) { tab = h; render(); } });
+window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (h === "planen") { tab = "training"; render(); if (loaded) openPlanner(); else openPlanOnLoad = true; return; } if (TABS.some(t => t[0] === h)) { tab = h; render(); } });
 
 render();
 initStore();
