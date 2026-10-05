@@ -7,45 +7,33 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fitness">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#F4F3F8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E0E14" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#08090B" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08090B" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png?v=2">
-<link rel="icon" href="icon-192.png?v=2">
+<link rel="apple-touch-icon" href="icon-180.png?v=3">
+<link rel="icon" href="icon-192.png?v=3">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
-/* Layout: App-Shell fürs iPhone. Kopfzeile mit Datum, eine Spalte Karten (ab 900px zwei), schwebende Tab-Leiste unten.
-   Look: ruhig und modern, Violett→Türkis als Akzent (unisex). Makro-Farben wie Hantelscheiben: Protein rot, Kohlenhydrate gelb, Fett grün. */
+/* Layout: App-Shell fürs iPhone. Kopfzeile, eine Spalte Karten (ab 900px zwei), Tab-Leiste unten.
+   Look angelehnt an Whoop: immer dunkel, fast schwarze Flächen, große kräftige Zahlen, Großbuchstaben-Labels,
+   eigene Farbe je Kennzahl (Erholung grün/gelb/rot, Belastung blau, Schlaf violett-blau), Akzent Mint.
+   Makro-Farben wie Hantelscheiben: Protein rot, Kohlenhydrate gelb, Fett grün. */
 :root{
-  --bg:#F4F3F8; --surface:#FFFFFF; --surface-2:#F1F0F6; --ink:#16151F; --ink-2:#4A4858; --muted:#77748A; --line:#E4E2EC;
-  --accent:#5B47E0; --accent-2:#14B8A6; --accent-ink:#FFFFFF; --accent-soft:#ECE9FD;
-  --grad:linear-gradient(135deg,#6D5BF0 0%,#4F7CF5 55%,#18B9B0 100%);
-  --p:#EF5A50; --c:#EAA514; --f:#21A87D;
-  --good:#12925F; --warn:#B26A00; --bad:#D9443A;
-  --shadow:0 1px 2px rgba(22,21,31,.04),0 6px 20px rgba(60,50,120,.07);
+  --bg:#08090B; --surface:#141619; --surface-2:#1E2125; --ink:#F4F5F6; --ink-2:#B4BAC2; --muted:#7A828C; --line:#262A2F;
+  --accent:#1FE0A5; --accent-2:#8E97FF; --accent-ink:#06120E; --accent-soft:#11302A;
+  --strain:#2E9BFF; --sleep:#8E97FF;
+  --grad:linear-gradient(160deg,#18302A 0%,#141619 75%);
+  --p:#FF5A5F; --c:#FFC531; --f:#2BD686;
+  --good:#2BDA6E; --warn:#FFC531; --bad:#FF3B4E;
+  --shadow:none;
   --display:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --r:20px;
-}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0E0E14; --surface:#17171F; --surface-2:#20202A; --ink:#EEEDF5; --ink-2:#B9B7C8; --muted:#8A879C; --line:#2A2935;
-  --accent:#A194FF; --accent-2:#3DD9C5; --accent-ink:#0E0E14; --accent-soft:#25223F;
-  --grad:linear-gradient(135deg,#8B7BFF 0%,#6C93FF 55%,#34D4C4 100%);
-  --p:#FF7A6E; --c:#F6C04A; --f:#45D19F;
-  --good:#4FD69A; --warn:#F2AE4C; --bad:#FF7A6E;
-  --shadow:none; color-scheme:dark;
-}}
-:root[data-theme="dark"]{
-  --bg:#0E0E14; --surface:#17171F; --surface-2:#20202A; --ink:#EEEDF5; --ink-2:#B9B7C8; --muted:#8A879C; --line:#2A2935;
-  --accent:#A194FF; --accent-2:#3DD9C5; --accent-ink:#0E0E14; --accent-soft:#25223F;
-  --grad:linear-gradient(135deg,#8B7BFF 0%,#6C93FF 55%,#34D4C4 100%);
-  --p:#FF7A6E; --c:#F6C04A; --f:#45D19F;
-  --good:#4FD69A; --warn:#F2AE4C; --bad:#FF7A6E;
-  --shadow:none; color-scheme:dark;
+  --r:16px;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -58,7 +46,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15p
 button,input,select,textarea{font:inherit;color:inherit}
 h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin:0;text-wrap:balance}
 .num{font-variant-numeric:tabular-nums}
-.app{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:0 calc(104px + env(safe-area-inset-bottom,0px))}
+.app{max-width:980px;margin:0 auto;padding-inline:16px;padding-block:0 calc(84px + env(safe-area-inset-bottom,0px))}
 
 /* Kopfzeile */
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 82%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(16px);backdrop-filter:saturate(1.6) blur(16px);display:flex;align-items:center;gap:8px;padding-block:12px 10px;margin-inline:-16px;padding-inline:16px;border-bottom:1px solid transparent}
@@ -70,34 +58,36 @@ h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin
 .iconbtn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* Tab-Leiste */
-.tabs{position:fixed;left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:30;max-width:560px;margin:0 auto;background:color-mix(in srgb,var(--surface) 86%,transparent);-webkit-backdrop-filter:saturate(1.6) blur(18px);backdrop-filter:saturate(1.6) blur(18px);border:1px solid var(--line);border-radius:24px;box-shadow:0 8px 30px rgba(20,16,50,.14)}
-.tabs nav{display:grid;grid-template-columns:repeat(7,1fr);padding:5px}
-.tabs button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);font-size:9.5px;letter-spacing:-.01em;min-width:0;font-weight:600;cursor:pointer;border-radius:18px;transition:background .2s,color .2s}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(8,9,11,.94);-webkit-backdrop-filter:saturate(1.4) blur(16px);backdrop-filter:saturate(1.4) blur(16px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs nav{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 4px 2px;max-width:680px;margin:0 auto}
+.tabs button{background:none;border:0;padding:8px 0 6px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;min-width:0;cursor:pointer;position:relative;transition:color .2s;white-space:nowrap}
+.tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
-.tabs button[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
+.tabs button[aria-current="page"]{color:var(--ink)}
+.tabs button[aria-current="page"]::before{content:"";position:absolute;top:-4px;left:28%;right:28%;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
 
 /* Karten */
 .grid{display:grid;gap:12px;grid-template-columns:1fr}
 @media (min-width:900px){.grid.two{grid-template-columns:1fr 1fr}.span2{grid-column:1/-1}}
 .card{background:var(--surface);border-radius:var(--r);padding:18px;box-shadow:var(--shadow);border:1px solid var(--line);min-width:0}
-@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .card{border-color:transparent}}
+.card{border-color:transparent}
 .card-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px}
 .card-h h2{font-size:20px}
-.eyebrow{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .muted{color:var(--muted)}
 .ink2{color:var(--ink-2)}
 .small{font-size:13px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .spread{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .stack{display:flex;flex-direction:column;gap:10px}
-.big{font-family:var(--display);font-size:42px;font-weight:700;letter-spacing:-.02em;line-height:.95;font-variant-numeric:tabular-nums}
-.mid{font-family:var(--display);font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
+.big{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:.95;font-variant-numeric:tabular-nums}
+.mid{font-family:var(--display);font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
 .unit{font-family:var(--body);font-size:14px;font-weight:500;color:var(--muted);margin-left:3px}
-.section-title{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:22px 4px 10px}
+.section-title{font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:22px 4px 10px}
 
 /* Buttons & Felder */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:14px;transition:transform .12s,filter .15s;border:1px solid var(--line);background:var(--surface);padding:9px 14px;font-weight:600;font-size:14.5px;cursor:pointer;min-height:40px}
-.btn.primary{background:var(--grad);border-color:transparent;color:#fff;box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 30%,transparent)}
+.btn.primary{background:var(--accent);border-color:transparent;color:var(--accent-ink);font-weight:700;letter-spacing:.01em}
 .btn.primary:hover{filter:brightness(1.05)}
 .btn.ghost{background:transparent;border-color:transparent;color:var(--accent);padding-inline:8px}
 .btn.danger{color:var(--bad)}
@@ -119,7 +109,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 
 /* Fortschrittsbalken */
 .bar{height:10px;border-radius:99px;background:var(--surface-2);overflow:hidden}
-.bar i{display:block;height:100%;border-radius:99px;background:var(--grad);transition:width .5s ease}
+.bar i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .5s ease}
 .bar.over i{background:var(--bad)}
 .macro{display:grid;grid-template-columns:96px 1fr auto;align-items:center;gap:10px;font-size:14px}
 .macro .lbl{display:flex;align-items:center;gap:7px;font-weight:500}
@@ -158,13 +148,13 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .cal button{aspect-ratio:1;max-width:100%;border:1px solid transparent;background:var(--surface-2);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-variant-numeric:tabular-nums;font-size:14px;padding:0}
 .cal button.out{opacity:.35}
 .cal button.today{border-color:var(--accent);color:var(--accent);font-weight:700}
-.cal button[aria-pressed="true"]{background:var(--grad);color:#fff;border-color:transparent}
+.cal button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 .cal .marks{display:flex;gap:3px;height:7px}
 .cal .m{width:7px;height:7px;border-radius:50%;background:var(--accent)}
 .cal .m.plan{background:transparent;border:1.5px solid var(--accent)}
 .cal .m.act{background:var(--c)}
-.cal button[aria-pressed="true"] .m{background:#fff}
-.cal button[aria-pressed="true"] .m.plan{background:transparent;border-color:#fff}
+.cal button[aria-pressed="true"] .m{background:var(--accent-ink)}
+.cal button[aria-pressed="true"] .m.plan{background:transparent;border-color:var(--accent-ink)}
 
 /* Training-Session */
 .ex{border:1px solid var(--line);border-radius:16px;padding:12px;background:var(--surface)}
@@ -207,11 +197,11 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 
 .banner{background:var(--accent-soft);border-radius:16px;padding:10px 12px;font-size:13.5px;margin-bottom:12px}
 .empty{text-align:center;padding:18px 8px;color:var(--muted);font-size:14px}
-.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:14px;z-index:60;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .toast[hidden]{display:none}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .kv > div{min-width:0}
-.kv .v{font-family:var(--display);font-size:24px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.05}
+.kv .v{font-family:var(--display);font-size:26px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.05}
 .ring{position:relative;width:118px;height:118px;flex:none}
 .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
 .ring .in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
@@ -227,9 +217,9 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .dial{position:relative;width:100%;max-width:132px;aspect-ratio:1;margin:0 auto}
 .dial svg{width:100%;height:100%;transform:rotate(-90deg)}
 .dial .in{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;padding-top:34%}
-.dial .dv{font-family:var(--display);font-size:clamp(22px,7vw,34px);font-weight:700;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.dial .dv{font-family:var(--display);font-size:clamp(24px,7.5vw,36px);font-weight:800;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
 .dial .du{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px}
-.dl{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-top:4px}
+.dl{font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-top:4px}
 .ds{font-size:12px;color:var(--muted);line-height:1.25}
 .checkin{background:var(--surface-2);border-radius:16px;padding:12px;border:1px solid var(--line)}
 .checkin .seg{background:var(--surface)}
@@ -238,7 +228,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .restbar{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:14px -16px -20px;padding:12px 16px;background:var(--surface);border-top:3px solid var(--accent);box-shadow:0 -4px 16px rgba(0,0,0,.12)}
 .dialbtn{background:none;border:0;padding:0;margin:0;cursor:pointer;color:inherit;font:inherit;min-width:0;border-radius:16px}
 .dialbtn:active{transform:scale(.97)}
-.av{width:36px;height:36px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
+.av{width:36px;height:36px;border-radius:50%;background:var(--surface-2);color:var(--accent);display:grid;place-items:center;font-family:var(--display);font-weight:700;font-size:18px;flex:none}
 .av.sm{width:22px;height:22px;font-size:12px}
 .av{overflow:hidden}.av img{width:100%;height:100%;object-fit:cover;display:block}
 .av.lg{width:64px;height:64px;font-size:28px}
@@ -302,7 +292,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 20:18";
+const APP_VERSION = "05.10.2026 20:46";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -819,7 +809,7 @@ function kcalRing(t, c0){
   const pct = Math.min(1, t.kcal / c.kcal), r = 50, C = 2 * Math.PI * r;
   const over = t.kcal > c.kcal;
   return `<div class="ring"><svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="11"/>
-    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7B68F5"/><stop offset=".55" stop-color="#4F8CF5"/><stop offset="1" stop-color="#1DBFB3"/></linearGradient></defs>
+    <defs><linearGradient id="kg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1FE0A5"/><stop offset="1" stop-color="#2E9BFF"/></linearGradient></defs>
     <circle class="prog" cx="60" cy="60" r="${r}" fill="none" stroke="${over ? "var(--bad)" : "url(#kg)"}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${C} ${C}" stroke-dashoffset="${C * (1 - pct)}" style="--c:${C}"/></svg>
     <div class="in"><span class="mid">${fmt(Math.abs(c.kcal - t.kcal))}</span><span class="small muted">${over ? "kcal drüber" : "kcal übrig"}</span></div></div>`;
 }
@@ -894,8 +884,8 @@ function viewHeute(){
 }
 function dial(frac, color, big, unit, label, sub){
   const r = 44, C = 2 * Math.PI * r, f = clamp(frac || 0, 0, 1);
-  return `<div class="dialw"><div class="dial"><svg viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="9"/>
-    ${f > 0 ? `<circle class="prog" cx="52" cy="52" r="${r}" fill="none" stroke="${color}" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C} ${C}" stroke-dashoffset="${C * (1 - f)}" style="--c:${C}"/>` : ""}</svg>
+  return `<div class="dialw"><div class="dial"><svg viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="10"/>
+    ${f > 0 ? `<circle class="prog" cx="52" cy="52" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${C} ${C}" stroke-dashoffset="${C * (1 - f)}" style="--c:${C}"/>` : ""}</svg>
     <div class="in"><span class="dv">${big}</span>${unit ? `<span class="du">${unit}</span>` : ""}</div></div>
     <div class="dl">${label}</div><div class="ds">${sub}</div></div>`;
 }
@@ -963,8 +953,8 @@ function recoverySection(k){
     <figure class="quote"><blockquote>${esc(qt[0])}</blockquote><figcaption>${esc(qt[1])}</figcaption></figure>
     <div class="dials">
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Erholung im Detail">${dial(r ? r.score / 100 : 0, zc, r ? r.score : "–", r ? "%" : "", "Erholung", `<span style="color:${zc}">${zoneTxt}</span>`)}</button>
-      <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--accent)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
-      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--accent-2)", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}</button>
+      <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--strain)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
+      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}</button>
     </div>
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
@@ -1500,7 +1490,7 @@ function dayFormHint(w){
    Fettverlust hängt an der Kalorienbilanz, nicht am Nüchtern- oder Fettstoffwechsel-Training; Hessmann: nach dem Sport zuerst
    trinken (Verlust × 1,5), nach ca. 1 h Kohlenhydrate + Eiweiß, 24 h Pause für gleiche Muskeln; statisch dehnen 30–60 s nach dem Sport. */
 const ZONES = [["Z1", "Erholung"], ["Z2", "Grundlage"], ["Z3", "Aerob"], ["Z4", "Schwelle"], ["Z5", "Maximal"]];
-const ZONE_COL = ["#9AD8F5", "#38BDF8", "#4F7CF5", "#7563F2", "#C2367A"];
+const ZONE_COL = ["#7A8899", "#2E9BFF", "#2BDA6E", "#FFB020", "#FF3B4E"];
 const teWord = v => v == null ? "–" : v < 1 ? "kein Effekt" : v < 2 ? "gering" : v < 3 ? "erhaltend" : v < 4 ? "verbessernd" : v < 5 ? "stark verbessernd" : "Überlastung";
 function actKind(w){
   const t = normT((w.title || "") + " " + (w.garminType || ""));
