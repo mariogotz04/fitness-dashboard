@@ -16,7 +16,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@500;600;700;800&family=Figtree:wght@400;500;600;700&display=swap">
 <style>
 /* Layout: App-Shell fürs iPhone. Kopfzeile, eine Spalte Karten (ab 900px zwei), Tab-Leiste unten.
    Look angelehnt an Whoop: immer dunkel, fast schwarze Flächen, große kräftige Zahlen, Großbuchstaben-Labels,
@@ -30,8 +30,9 @@
   --p:#FF5A5F; --c:#FFC531; --f:#2BD686;
   --good:#2BDA6E; --warn:#FFC531; --bad:#FF3B4E;
   --shadow:none;
-  --display:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --body:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  /* Schrift wie bei Whoop: kantige, kräftige Zahlen und Labels (Barlow, DIN-ähnlich), ruhiger Fließtext (Figtree) */
+  --display:"Barlow","DIN Alternate","Arial Narrow",system-ui,sans-serif;
+  --body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r:16px;
   color-scheme:dark;
 }
@@ -60,7 +61,7 @@ h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin
 /* Tab-Leiste */
 .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(8,9,11,.94);-webkit-backdrop-filter:saturate(1.4) blur(16px);backdrop-filter:saturate(1.4) blur(16px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
 .tabs nav{display:grid;grid-template-columns:repeat(7,1fr);padding:4px 4px 2px;max-width:680px;margin:0 auto}
-.tabs button{background:none;border:0;padding:8px 0 6px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;min-width:0;cursor:pointer;position:relative;transition:color .2s;white-space:nowrap}
+.tabs button{background:none;border:0;padding:8px 0 6px;display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--muted);font-family:var(--display);font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;min-width:0;cursor:pointer;position:relative;transition:color .2s;white-space:nowrap}
 .tabs button span{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 .tabs button[aria-current="page"]{color:var(--ink)}
@@ -73,15 +74,15 @@ h1,h2,h3{font-family:var(--display);font-weight:600;letter-spacing:-.01em;margin
 .card{border-color:transparent}
 .card-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px}
 .card-h h2{font-size:20px}
-.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.eyebrow{font-family:var(--display);font-size:11.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .muted{color:var(--muted)}
 .ink2{color:var(--ink-2)}
 .small{font-size:13px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .spread{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .stack{display:flex;flex-direction:column;gap:10px}
-.big{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.03em;line-height:.95;font-variant-numeric:tabular-nums}
-.mid{font-family:var(--display);font-size:28px;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.big{font-family:var(--display);font-size:46px;font-weight:700;letter-spacing:0;line-height:.95;font-variant-numeric:tabular-nums}
+.mid{font-family:var(--display);font-size:30px;font-weight:700;letter-spacing:0;line-height:1;font-variant-numeric:tabular-nums}
 .unit{font-family:var(--body);font-size:14px;font-weight:500;color:var(--muted);margin-left:3px}
 .section-title{font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:22px 4px 10px}
 
@@ -201,7 +202,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .toast[hidden]{display:none}
 .kv{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px}
 .kv > div{min-width:0}
-.kv .v{font-family:var(--display);font-size:26px;font-weight:800;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.05}
+.kv .v{font-family:var(--display);font-size:28px;font-weight:700;letter-spacing:0;font-variant-numeric:tabular-nums;line-height:1.05}
 .ring{position:relative;width:118px;height:118px;flex:none}
 .ring svg{width:100%;height:100%;transform:rotate(-90deg)}
 .ring .in{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
@@ -217,9 +218,9 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .dial{position:relative;width:100%;max-width:132px;aspect-ratio:1;margin:0 auto}
 .dial svg{width:100%;height:100%;transform:rotate(-90deg)}
 .dial .in{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;padding-top:34%}
-.dial .dv{font-family:var(--display);font-size:clamp(24px,7.5vw,36px);font-weight:800;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+.dial .dv{font-family:var(--display);font-size:clamp(28px,8.5vw,40px);font-weight:700;letter-spacing:0;line-height:1;font-variant-numeric:tabular-nums}
 .dial .du{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px}
-.dl{font-family:var(--display);font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;margin-top:4px}
+.dl{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-top:4px}
 .ds{font-size:12px;color:var(--muted);line-height:1.25}
 .checkin{background:var(--surface-2);border-radius:16px;padding:12px;border:1px solid var(--line)}
 .checkin .seg{background:var(--surface)}
@@ -292,7 +293,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 20:46";
+const APP_VERSION = "05.10.2026 20:52";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
