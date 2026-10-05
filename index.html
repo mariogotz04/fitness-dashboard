@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:07";
+const APP_VERSION = "05.10.2026 09:12";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -336,7 +336,7 @@ const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
 const ACTIVITIES = ["Fußball","Laufen","Rennrad","Spazieren","Tennis"];
 const GOALS = {cut: "Abnehmen (Cut)", bulk: "Muskeln aufbauen", maintain: "Gewicht halten"};
-const showRIR = () => cfg().showRIR === true;
+const showRIR = () => false; // RIR-Anzeige entfernt (Mario braucht sie nicht)
 const goalType = () => GOALS[cfg().goalType] ? cfg().goalType : "maintain";
 const DEFAULTS = {kcal: 2400, p: 180, f: 70, c: 260, goalLo: 81, goalHi: 81, rateLo: 0.4, rateHi: 0.6, sleepGoal: 7.5, strengthPerWeek: 3, supplements: []};
 
@@ -469,7 +469,7 @@ function recBox(x, ownId){
   const r = dynRec(x, ownId), wk = weekSummary(todayKey()), done = wk.groups[r.g] || 0;
   const plan = ownId ? templatesSorted().filter(t => !t.coach).flatMap(t => (t.items || []).filter(it => it.exId === ownId).map(it => ({t: t.short || t.name, it}))) : [];
   return `<div class="hint" style="margin-top:12px"><b>Empfehlung für dich</b> (${esc(GOALS[goalType()])}, nur Info)
-    <div class="num" style="margin-top:4px">${r.sets} Sätze × ${esc(r.reps)} Wdh.${r.rir !== "–" ? " · RIR " + esc(r.rir) : ""} · Pause ${esc(r.rest)}</div>
+    <div class="num" style="margin-top:4px">${r.sets} Sätze × ${esc(r.reps)} Wdh. · Pause ${esc(r.rest)}</div>
     <div class="small ink2" style="margin-top:4px">${esc(r.diet)}</div>
     ${r.g !== "Sonstiges" ? `<div class="small ink2" style="margin-top:4px">${esc(r.g)}: Ziel ${r.target} harte Sätze pro Woche${r.notes.length ? " (" + esc(r.notes.join(", ")) + ")" : ""}. Deine Pläne: ${r.planned}, diese Woche gemacht: ${done}.</div>` : ""}
     ${plan.length ? `<div class="small muted" style="margin-top:4px">Dein Plan: ${plan.map(p => esc(p.t) + " " + esc(p.it.sets || "?") + " × " + esc(p.it.reps || "?")).join(" · ")}</div>` : ""}
@@ -480,7 +480,7 @@ function planRecLine(it){
   if (!autoOn()) return "";
   const e = S.exercises[it.exId], x = e && e.ref ? EXDBI[e.ref] : null; if (!x) return "";
   const r = dynRec(x, it.exId), diff = (num(it.sets) || 0) - r.sets;
-  return `<div class="small" style="color:var(--accent);margin-top:2px">Empfehlung: ${r.sets} × ${esc(r.reps)}${r.rir !== "–" ? " · RIR " + esc(r.rir) : ""}${diff >= 2 ? " · eher weniger Sätze" : diff <= -2 ? " · eher mehr Sätze" : ""}</div>`;
+  return `<div class="small" style="color:var(--accent);margin-top:2px">Empfehlung: ${r.sets} × ${esc(r.reps)}${diff >= 2 ? " · eher weniger Sätze" : diff <= -2 ? " · eher mehr Sätze" : ""}</div>`;
 }
 function exGuide(x, ownId){
   if (!x) return "";
@@ -705,7 +705,7 @@ function recoveryTips(k){
   if (sl && sl.h && sl.h < c.sleepGoal - 0.75) tips.push(["Schlaf nachholen", `Du hast nur ${fmt(sl.h, 1)} h geschlafen. Geh heute früher ins Bett (Ziel ${fmt(sleepNeed(k), 1)} h), trink nach 14 Uhr keinen Kaffee mehr und mach bei Bedarf einen Powernap von 20 Minuten.`]);
   if (r && r.yStrain >= 14) tips.push(["Aktive Regeneration", `Gestern war die Belastung hoch (${fmt(r.yStrain, 1)}). Heute helfen 20–30 Minuten lockeres Gehen oder Radfahren und danach 10–15 Minuten Faszienrolle und statisches Dehnen.`]);
   if (ci && ci.soreness >= 4) tips.push(["Muskelkater", "Die betroffenen Muskeln heute nicht schwer belasten. Leichte Bewegung, Wärme und Massagepistole fördern die Durchblutung, und Protein über den Tag verteilt (etwa 40 g pro Mahlzeit) hilft beim Reparieren."]);
-  if (z === "bad") tips.push(["Heute zurückschalten", "Deine Erholung ist niedrig. Mach heute Pause oder nur ein leichtes Training mit RIR 3, ohne neue Rekordversuche. Ein schweres Unterkörpertraining verschiebst du besser."]);
+  if (z === "bad") tips.push(["Heute zurückschalten", "Deine Erholung ist niedrig. Mach heute Pause oder nur ein leichtes Training, bei dem du 3 Wiederholungen vor dem Versagen aufhörst, ohne neue Rekordversuche. Ein schweres Unterkörpertraining verschiebst du besser."]);
   if (z === "warn" && !tips.length) tips.push(["Normal trainieren, nicht übertreiben", "Trainiere nach Plan, aber lass bei den schweren Übungen eher 2 Wiederholungen in Reserve. Gönn dir ein gutes Warm-up von 12–15 Minuten."]);
   if (z === "good") tips.push(["Grünes Licht", "Gute Voraussetzungen: Heute kannst du an die Progression gehen und bei sauberer Technik das Gewicht erhöhen, wenn du den Wiederholungsbereich schaffst."]);
   if (Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). ${({cut: "Im Defizit ist Protein der wichtigste Hebel, damit du Muskeln behältst.", bulk: "Für den Muskelaufbau ist Protein der wichtigste Hebel bei der Ernährung.", maintain: "Protein ist der wichtigste Ernährungs-Hebel für die Regeneration."})[goalType()]}`]);
@@ -2396,7 +2396,6 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
     <div class="fields"><div class="field"><label for="gs">Krafteinheiten pro Woche</label><input class="inp num" id="gs" inputmode="numeric" value="${c.strengthPerWeek}"></div><div class="field"><label for="gsl">Schlafziel (h)</label><input class="inp num" id="gsl" inputmode="decimal" value="${fmt(c.sleepGoal, 1)}"></div></div>
-    <label class="row small"><input type="checkbox" id="grir" ${c.showRIR ? "checked" : ""}> RIR (Wiederholungen in Reserve) in Training und Plänen anzeigen</label>
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
     <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
@@ -2695,7 +2694,7 @@ document.addEventListener("submit", async e => {
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, showRIR: !!(f.querySelector("#grir") || {}).checked, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto"});
+    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto"});
       const wantN = !!(f.querySelector("#gaN") || {}).checked, rc = cfgRaw();
       let openCalcNext = false;
       if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birth && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
