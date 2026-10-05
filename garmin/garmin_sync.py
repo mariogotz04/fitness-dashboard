@@ -63,6 +63,16 @@ def day(api, d):
             "bed": hm(sl.get("sleepStartTimestampLocal")),
             "wake": hm(sl.get("sleepEndTimestampLocal")),
         }
+        # Schlafphasen in Minuten, Atmung und Stress im Schlaf (für die Schlaf-Analyse)
+        for key, src in (("deep", "deepSleepSeconds"), ("light", "lightSleepSeconds"), ("rem", "remSleepSeconds"), ("awake", "awakeSleepSeconds")):
+            if sl.get(src) is not None:
+                out["sleep"][key] = round(sl[src] / 60)
+        if sl.get("averageRespirationValue"):
+            out["sleep"]["resp"] = round(float(sl["averageRespirationValue"]), 1)
+        if sl.get("avgSleepStress") is not None:
+            out["sleep"]["stress"] = round(float(sl["avgSleepStress"]))
+        if sl.get("awakeCount") is not None:
+            out["sleep"]["wakes"] = int(sl["awakeCount"])
         score = ((sl.get("sleepScores") or {}).get("overall") or {}).get("value")
         if score:
             out["sleep"]["score"] = int(score)
