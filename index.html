@@ -281,7 +281,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 09:58";
+const APP_VERSION = "05.10.2026 10:00";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -821,6 +821,7 @@ function viewHeute(){
   ${plannerPrompt(curDate)}
   ${recoverySection(curDate)}
   ${footballCard(curDate)}
+  ${mealPlanCard(curDate)}
   <section class="card">
     <div class="card-h"><h2>Kalorien</h2><button class="btn ghost" data-act="tab" data-tab="essen">Essen eintragen</button></div>
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}
@@ -1235,6 +1236,7 @@ function viewEssen(){
     ${macroCheck()}
   </section>
   ${waterCard(curDate)}
+  ${mealPlanCard(curDate) ? '<div style="height:12px"></div>' + mealPlanCard(curDate) : ""}
   ${MEALS.map(([m, label]) => {
     const items = (d.meals && d.meals[m]) || [];
     const sum = items.reduce((a, it) => a + (+it.kcal || 0), 0), pm = items.reduce((a, it) => a + (+it.p || 0), 0);
@@ -1629,6 +1631,7 @@ function footballDay(k){
 }
 function footballCard(k){
   const t = footballDay(k); if (!t) return "";
+  if ((t === "match" || t === "training") && mealTimeline(k)) return "";
   const legsToday = workoutsSorted().some(w => w.date === k && w.kind !== "activity" && w.status !== "done" && (w.exercises || []).some(e => ["Beine", "Waden"].includes((S.exercises[e.exId] || {}).group)));
   const L = {
     pre: ["⚽ Morgen ist Spieltag", [
@@ -1719,7 +1722,7 @@ function openPlanner(mon){
   const draft = {};
   days.forEach((k, i) => {
     const s = saved && saved[k], p = prev && prev[addDays(mon, i - 7)], wd = dateOf(k).getDay();
-    draft[k] = s ? {fb: s.fb || "", gym: plannedGym(k)} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", gym: plannedGym(k) || (p ? p.gym || "" : "")};
+    draft[k] = s ? {fb: s.fb || "", fbTime: s.fbTime || "", gym: plannedGym(k), gymTime: s.gymTime || ""} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", fbTime: p ? p.fbTime || "" : "", gym: plannedGym(k) || (p ? p.gym || "" : ""), gymTime: p ? p.gymTime || "" : ""};
   });
   wp = {mon, days: draft, saved: !!saved};
   openSheet("Woche planen", "", null, () => { wp = null; });
@@ -1748,7 +1751,10 @@ function renderPlanner(){
     <div class="stack" style="gap:8px">${Object.keys(wp.days).sort().map(k => { const d = wp.days[k];
       return `<div class="ex" style="padding:10px 12px"><div class="spread" style="margin-bottom:8px"><b>${WDN[dateOf(k).getDay()]}</b><span class="small muted">${fmtShort(k)}</span></div>
         <div class="filt" style="margin:0 0 8px">${[["", "Kein Fußball"], ["train", "⚽ Training"], ["match", "🏆 Spiel"]].map(([v, l]) => `<button data-act="wp-fb" data-date="${k}" data-v="${v}" aria-pressed="${(d.fb || "") === v}">${l}</button>`).join("")}</div>
-        <select class="inp" data-wpgym="${k}" aria-label="Gym am ${WDN[dateOf(k).getDay()]}" style="min-height:38px;padding:6px 10px"><option value="">🏋️ Kein Gym</option>${tpls.map(t => `<option value="${t.id}" ${d.gym === t.id ? "selected" : ""}>🏋️ ${esc(t.name)}</option>`).join("")}</select></div>`; }).join("")}</div>
+        ${d.fb ? `<label class="row small" style="margin:0 0 8px;flex-wrap:nowrap">${d.fb === "match" ? "Anpfiff" : "Trainingsbeginn"} <input class="inp num" type="time" data-wptime="${k}" data-f="fbTime" value="${esc(d.fbTime || "")}" style="width:120px;min-height:36px;padding:4px 8px"></label>` : ""}
+        <div class="row" style="flex-wrap:nowrap;gap:6px"><select class="inp" data-wpgym="${k}" aria-label="Gym am ${WDN[dateOf(k).getDay()]}" style="min-height:38px;padding:6px 10px;flex:1;min-width:0"><option value="">🏋️ Kein Gym</option>${tpls.map(t => `<option value="${t.id}" ${d.gym === t.id ? "selected" : ""}>🏋️ ${esc(t.name)}</option>`).join("")}</select>
+        ${d.gym ? `<input class="inp num" type="time" data-wptime="${k}" data-f="gymTime" value="${esc(d.gymTime || "")}" aria-label="Uhrzeit Gym" style="width:110px;min-height:38px;padding:4px 8px">` : ""}</div></div>`; }).join("")}</div>
+    <p class="small muted" style="margin:10px 0 0">Mit Uhrzeit bekommst du am Tag einen Essensplan mit Zeiten: was du wann vor und nach dem Spiel, Training oder Gym essen solltest.</p>
     ${warn.length ? `<div class="hint" style="margin-top:12px;border:1.5px solid var(--warn)">${warn.map(w => `<div class="small">⚠︎ ${esc(w)}</div>`).join("")}</div>` : ""}
     <div class="row" style="margin-top:14px"><button class="btn primary" data-act="wp-save">Woche speichern</button>${wp.saved ? `<button class="btn ghost danger" data-act="wp-clear">Plan löschen</button>` : ""}</div>`;
 }
@@ -1773,6 +1779,60 @@ function plannerPrompt(k){
   return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>🗓️ Nächste Woche planen</h2></div>
     <p class="small ink2" style="margin:0 0 10px">Wann hast du Fußballtraining, wann ein Spiel, wann gehst du ins Gym? Dann passen die Tipps genau zu deiner Woche.</p>
     <button class="btn primary" data-act="planner" data-mon="${next}">Woche planen</button></section>`;
+}
+
+/* ---------- Essensplan nach Uhrzeit (Spieltag, Fußballtraining, Gym) ----------
+   Quellen: Hessmann (ca. 3 h vorher kohlenhydratreich, fettarm, leicht; 30 Min. vorher etwas Schnelles; danach zuerst trinken,
+   nach ca. 1 h Kohlenhydrate + Eiweiß), Spieltagsvorbereitung Ronaldo/Lewandowski (Frühstück, Powernap, Mittag 3 h vorher). */
+const hm2min = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+const min2hm = m => { m = Math.max(0, Math.min(23 * 60 + 59, Math.round(m / 15) * 15)); return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+function dayPlanOf(k){ const p = weekPlanOf(mondayOf(k)); return p ? p[k] || null : null; }
+function mealTimeline(k){
+  const p = dayPlanOf(k); if (!p) return null;
+  const ev = [];
+  if (p.fb && hm2min(p.fbTime) != null) ev.push({type: p.fb, t: hm2min(p.fbTime), dur: p.fb === "match" ? 105 : 90});
+  if (p.gym && hm2min(p.gymTime) != null) ev.push({type: "gym", t: hm2min(p.gymTime), dur: 75, name: (S.templates[p.gym] || {}).name || "Gym"});
+  if (!ev.length) return null;
+  ev.sort((a, b) => a.t - b.t);
+  const items = [], add = (t, icon, title, text) => items.push({t, icon, title, text});
+  const main = ev[0], late = e => e.t + e.dur >= 20 * 60 + 30;
+  ev.forEach((e, i) => {
+    const name = e.type === "match" ? "Spiel" : e.type === "train" ? "Fußballtraining" : e.name;
+    if (e.type === "match") {
+      if (e.t >= 13 * 60) add(Math.max(7.5 * 60, e.t - 6 * 60), "🍳", "Frühstück", "Eier, Vollkornbrot oder Haferflocken, Avocado und Obst wie Banane oder Beeren. Dazu viel Wasser.");
+      if (e.t >= 14 * 60) add(e.t - 4 * 60, "😴", "Powernap 20–30 Min.", "Kurz hinlegen, das bringt Energie und Konzentration fürs Spiel.");
+      add(e.t - 3 * 60, "🍝", e.t >= 13 * 60 ? "Mittagessen (letzte große Mahlzeit)" : "Frühstück als Hauptmahlzeit", "Kohlenhydratreich, fettarm und leicht verdaulich: Reis oder Nudeln mit Hähnchen und etwas Gemüse. Nichts Frittiertes, nicht zu viel Ballaststoffe.");
+      add(e.t - 2 * 60, "💧", "Gut trinken", "Bis zum Anpfiff etwa 0,5 l Wasser oder Saftschorle in kleinen Schlucken.");
+      add(e.t - 60, "🔥", "Aufwärmen und Fokus", "Dynamisch aufwärmen mit kurzen Sprints und Rumpfübungen, kurz das Spiel im Kopf durchgehen.");
+      add(e.t - 30, "🍌", "Snack", "Etwas Schnelles wie eine Banane oder ein paar Schlucke Saft.");
+      add(e.t, "🏆", "Anpfiff", "In den Pausen trinken, bevor Durst kommt.");
+      add(e.t + e.dur + 15, "💧", "Zuerst trinken", "Gleich nach dem Spiel Wasser oder Saftschorle, gern mit einer Prise Salz.");
+      add(e.t + e.dur + 75, "🍗", "Mahlzeit nach dem Spiel", `Eiweiß und Kohlenhydrate, z. B. Reis oder Kartoffeln mit Hähnchen oder Fisch.${late(e) ? " Am späten Abend lieber etwas Leichteres wie Skyr mit Obst und Haferflocken." : ""}`);
+    } else if (e.type === "train") {
+      if (!(i > 0 && e.t - ev[i - 1].t < 4 * 60)) add(e.t - 150, "🍝", "Mahlzeit vor dem Training", "Kohlenhydrate mit etwas Eiweiß und wenig Fett, z. B. Nudeln oder Reis mit Hähnchen oder ein Brot mit Putenbrust.");
+      add(e.t - 30, "🍌", "Snack", "Eine Banane oder ein Müsliriegel für schnelle Energie.");
+      add(e.t, "⚽", "Fußballtraining", "Gut getrunken starten und regelmäßig ein paar Schlucke nehmen.");
+      add(e.t + e.dur + 45, "🍗", "Nach dem Training", `Zuerst trinken, dann Kohlenhydrate mit Eiweiß.${late(e) ? " Spät am Abend: Skyr oder Quark mit Obst und Haferflocken, das liegt nicht schwer im Magen." : " Z. B. Reis mit Hähnchen oder Kartoffeln mit Ei."}`);
+    } else {
+      if (!(i > 0 && e.t - ev[i - 1].t < 4 * 60)) add(e.t - 150, "🍽️", "Mahlzeit vor dem Gym", "Kohlenhydrate und Eiweiß, wenig Fett, z. B. Haferflocken mit Skyr und Banane oder Reis mit Hähnchen.");
+      add(e.t - 45, "🍌", "Kleiner Snack (optional)", "Wenn die letzte Mahlzeit länger her ist: eine Banane oder ein Riegel.");
+      add(e.t, "🏋️", name, "Während des Trainings Wasser trinken.");
+      add(e.t + e.dur + 45, "🥩", "Nach dem Gym", `Mindestens 30 g Eiweiß mit Kohlenhydraten.${late(e) ? " Am späten Abend z. B. Skyr oder Magerquark mit Obst." : " Z. B. Reis mit Hähnchen, Skyr-Bowl oder Kartoffeln mit Ei."}`);
+    }
+  });
+  if (ev.length > 1) { const a = ev[0], b = ev[1]; if (b.t - (a.t + a.dur) < 3 * 60) add(a.t + a.dur + 5, "⚠︎", "Zwei Einheiten kurz hintereinander", "Iss dazwischen etwas Leichtes mit Kohlenhydraten und trink viel. Mach das Gym kürzer, wenn du merkst, dass die Kraft fehlt."); }
+  items.sort((a, b) => a.t - b.t);
+  const kind = ev.some(e => e.type === "match") ? "match" : ev.some(e => e.type === "train") ? "train" : "gym";
+  return {kind, ev, items};
+}
+function mealPlanCard(k){
+  const tl = mealTimeline(k); if (!tl) return "";
+  const head = {match: "🏆 Spieltag: dein Essensplan", train: "⚽ Trainingstag: dein Essensplan", gym: "🏋️ Gym-Tag: dein Essensplan"}[tl.kind];
+  const extra = tl.kind === "gym" ? "" : `<p class="small muted" style="margin:10px 0 0">An ${tl.kind === "match" ? "Spieltagen" : "Trainingstagen"} lieber mehr Kohlenhydrate und etwas weniger Fett. Dein Kalorienziel steigt durch die Trainingskalorien von Garmin automatisch.</p>`;
+  const now = new Date(), nowMin = k === todayKey() ? now.getHours() * 60 + now.getMinutes() : -1;
+  return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>${head}</h2><button class="btn ghost" data-act="planner" style="min-height:30px">Zeiten ändern</button></div>
+    <div class="stack" style="gap:2px">${tl.items.map(x => { const past = nowMin >= 0 && x.t + 30 < nowMin;
+      return `<div style="display:grid;grid-template-columns:48px 26px 1fr;gap:6px;align-items:start;padding:6px 0;${past ? "opacity:.45" : ""}"><span class="num small" style="font-weight:700;padding-top:1px">${min2hm(x.t)}</span><span style="font-size:17px;line-height:1.2">${x.icon}</span><div><b class="small">${esc(x.title)}</b><div class="small ink2">${esc(x.text)}</div></div></div>`; }).join("")}</div>${extra}</section>`;
 }
 
 /* ----- Freunde ----- */
@@ -3038,6 +3098,7 @@ document.addEventListener("change", e => {
   if (t.id === "avf" && t.files[0]) { shrinkImage(t.files[0]).then(async a => { const {error} = await sb.rpc("set_my_avatar", {p_avatar: a}); if (error) throw error; FR.avatar = a; toast("Profilbild gespeichert."); loadFriends(true); render(); }).catch(() => toast("Das Bild konnte nicht gespeichert werden.")); return; }
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
   if (t.dataset.suppTime) { const list = (cfg().supplements || []).map(x => x.id === t.dataset.suppTime ? Object.assign({}, x, {time: t.value}) : x); saveCfg({supplements: list}); toast(t.value ? "Erinnerung um " + t.value + " Uhr gespeichert." : "Erinnerung entfernt."); return; }
+  if (t.dataset.wptime && wp) { wp.days[t.dataset.wptime][t.dataset.f] = t.value; return; }
   if (t.dataset.wpgym && wp) { wp.days[t.dataset.wpgym].gym = t.value; renderPlanner(); return; }
   if (t.id === "sld") { sleepDate = t.value || todayKey(); pendingRender = false; render(); return; }
 });
