@@ -169,7 +169,13 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 /* Training-Session */
 .ex{border:1px solid var(--line);border-radius:16px;padding:12px;background:var(--surface)}
 .ex + .ex{margin-top:10px}
-.sets{display:grid;grid-template-columns:28px 1fr 1fr 44px;gap:6px;align-items:center;margin-top:8px}
+.sets{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.setrow{display:grid;grid-template-columns:28px 1fr 1fr 44px;gap:6px;align-items:center;padding:3px;margin:0 -3px;border-radius:13px;transition:background .2s}
+.setrow.done{background:color-mix(in srgb,var(--good) 24%,transparent)}
+.setrow.done .inp{background:color-mix(in srgb,var(--good) 10%,var(--surface));border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+.setrow.done .idx{color:var(--good)}
+.ex.exdone{border-color:color-mix(in srgb,var(--good) 55%,var(--line))}
+.exok{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--good);color:#fff;font-size:12px;font-weight:700;vertical-align:2px;margin-left:4px}
 .sets .h{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
 .sets .idx{font-weight:600;color:var(--muted);text-align:center;font-variant-numeric:tabular-nums}
 .sets .inp{text-align:center;padding:7px 4px;min-height:40px}
@@ -296,7 +302,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "05.10.2026 20:01";
+const APP_VERSION = "05.10.2026 20:15";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -3200,17 +3206,18 @@ function renderWs(){
     let hint = "";
     if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all && done ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft.</div>` : ""; }
     const rx = exRef(e.exId), open = wsInfo[ei];
-    return `<div class="ex"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}</div>
+    const work = (e.sets || []).filter(q => q.type !== "warmup"), exDone = work.length > 0 && work.every(q => q.done);
+    return `<div class="ex${exDone ? " exdone" : ""}"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
       ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
       ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
-      <div class="sets"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span>
-      ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
+      <div class="sets"><div class="setrow"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span></div>
+      ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<div class="setrow${s.done ? " done" : ""}"><span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
         <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
-        <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button>`; }).join("")}</div>
+        <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button></div>`; }).join("")}</div>
       ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}</div>`;
   }).join("");
   if (!done) b += `<div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="wsadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="ws-ex-add">Hinzufügen</button></div>`;
