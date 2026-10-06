@@ -200,6 +200,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .empty{text-align:center;padding:18px 8px;color:var(--muted);font-size:14px}
 .toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .toast[hidden]{display:none}
+.mk5{position:absolute;left:25%;top:-2px;bottom:-2px;width:2px;border-radius:1px;background:var(--ink-2);opacity:.55}
 .kbal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .kb{background:var(--surface-2);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
 .kbv{font-family:var(--display);font-size:22px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -297,7 +298,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 21:40";
+const APP_VERSION = "06.10.2026 22:16";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -474,7 +475,8 @@ function plannedSets(g){
 function dynRec(x, ownId){
   const gt = goalType(), xp = trainingXp(), sc = coachScheme(x, gt, xp), g = x.g;
   const tg = groupTarget(g), pl = plannedSets(g), small = g === "Bauch" || g === "Waden";
-  const sets = clamp(Math.round(tg.v / Math.max(pl.n, 1)), 2, small ? 3 : 4);
+  let sets = clamp(Math.round(tg.v / Math.max(pl.n, 1)), 2, small ? 3 : 4);
+  if (deloadOn()) sets = Math.max(1, Math.round(sets * 2 / 3)); // Entlastungswoche: ca. ⅓ weniger Sätze
   const c = cfgRaw(), pace = paceAdj();
   const diet = gt === "cut" ? `Im Defizit (${pace ? pace + " kcal" : "Abnehmen"}): Gewichte halten ist wichtiger als mehr Sätze, schwer genug bleiben.`
     : gt === "bulk" ? `Im Überschuss (${pace ? "+" + pace + " kcal" : "Aufbau"}): gute Phase, um Gewicht und Wiederholungen zu steigern.`
@@ -689,8 +691,8 @@ function recoveryPlan(k){
   });
   // Aktueller Zustand, nur wenn Messwerte es zeigen
   const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
-  const hrvLow = num(sl.hrv) > 0 && hrvB && num(sl.hrv) < hrvB * 0.9, rhrHigh = num(sl.rhr) > 0 && rhrB && num(sl.rhr) >= rhrB + 4;
-  if (hrvLow || rhrHigh) add("Belastung", "easy", "Heute eher locker oder Ruhetag", (hrvLow ? `Deine HRV liegt mit ${fmt(num(sl.hrv))} ms unter deinem Schnitt (${fmt(hrvB)} ms)` : `Dein Ruhepuls liegt mit ${fmt(num(sl.rhr))} über deinem Schnitt (${fmt(rhrB)})`) + (rel.length ? ", die letzte Belastung steckt noch drin." : ".") + " Lieber Spaziergang als harte Einheit.", 10);
+  const hrvLow = hrvLowStreak(k) >= 2, rhrHigh = num(sl.rhr) > 0 && rhrB && num(sl.rhr) >= rhrB + 4;
+  if (hrvLow || rhrHigh) add("Belastung", "easy", "Heute eher locker oder Ruhetag", (hrvLow ? `Deine HRV liegt seit ${hrvLowStreak(k)} Tagen unter deinem Schnitt (heute ${fmt(num(sl.hrv))} ms, Ø ${fmt(hrvB)} ms)` : `Dein Ruhepuls liegt mit ${fmt(num(sl.rhr))} über deinem Schnitt (${fmt(rhrB)})`) + (rel.length ? ", die letzte Belastung steckt noch drin." : ".") + " Lieber Spaziergang als harte Einheit.", 10);
   if (sl.h && sl.h < c.sleepGoal - 0.75 && rel.some(e => e.load !== "niedrig")) add("Schlaf", "nsdr", "20 Min. Powernap oder Tiefenentspannung", `Nur ${fmt(sl.h, 1)} h geschlafen nach Belastung: Ein kurzer Mittagsschlaf oder NSDR/Yoga Nidra gleicht einen Teil aus.`, 7);
   if (!rel.length && !out.length) add("Erholung", "restday", "Keine besondere Regeneration nötig", "Gestern und heute gab es keine anstrengende Einheit. Normale Alltagsbewegung und genug Schlaf reichen, du kannst ganz normal trainieren.", 1);
   return out.sort((a, b) => b.prio - a.prio).slice(0, 4);
@@ -1063,7 +1065,7 @@ function suggestKg(exId, reps){
 const autoTemplate = t => t && !t.coach;
 function autoPlanSync(){
   if (!loaded || mode !== "db" || !EXDB) return 0;
-  const on = autoOn(); let n = 0;
+  const on = autoOn(), today = todayKey(); let n = 0;
   templatesSorted().forEach(t => {
     let changed = false;
     const items = (t.items || []).map(it => {
@@ -1075,6 +1077,9 @@ function autoPlanSync(){
       const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
       const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
       const nv = {sets: r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
+      // Volumen langsam steigern: höchstens 1 Satz mehr pro Übung und Woche (ca. 5–10 %), außer direkt nach einer Entlastungswoche
+      const dl = cfgRaw().deload || {}, after = dl.to && dl.to < today && diffDays(dl.to, today) <= 7;
+      if (num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
       if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
         if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
         Object.assign(x, nv); if (!nv.kg) delete x.kg; changed = true;
@@ -1400,6 +1405,12 @@ function calcLine(){
   const t = autoTargets(); if (!t) return "";
   return `<button class="hint" data-act="calc-open" style="margin-top:10px;display:block;width:100%;text-align:left;cursor:pointer"><b>🧮 Automatisch: ${fmt(t.kcal)} kcal</b> <span class="muted">· ${GOALS[goalType()]} ${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal${t.auto && t.auto.weeks ? " · Ziel " + fmt(t.auto.target, 1) + " kg ca. " + fmtShort(t.auto.eta) + dateOf(t.auto.eta).getFullYear() : ""}${t.learned ? " · lernt aus " + t.learned.days + " Tagen" : ""}. Tippen für Details.</span></button>`;
 }
+/* Alltagsbewegung im Defizit: Schritte 7 Tage vs. 4 Wochen davor, nur wenn das Ziel ein Defizit ergibt */
+function neatHint(){
+  if (paceAdj() >= 0) return "";
+  const st = stepsTrend(); if (!st || st.now >= st.old * 0.85) return "";
+  return `<button class="hint" data-act="tip" data-id="neat" style="margin-top:8px;display:block;width:100%;text-align:left;cursor:pointer">🚶 <b>Deine Schritte sinken</b> (Ø ${fmt(st.now)} statt ${fmt(st.old)}). Das bremst das Abnehmen, weil der Körper im Defizit unbemerkt Bewegung spart. Kleine Spaziergänge helfen. <span class="muted">Mehr dazu ›</span></button>`;
+}
 /* Eiweiß pro Mahlzeit: mind. 30 g regt den Muskelaufbau am besten an (NotebookLM-Zusammenfassung) */
 function proteinMeals(d){
   const ms = MEALS.map(([m]) => (d.meals && d.meals[m]) || []).filter(it => it.length);
@@ -1419,7 +1430,7 @@ function macroCheck(){
   if (c.f < 25) warn.push(`Dein Fettziel ist mit ${c.f} g sehr niedrig. Mindestens etwa 2–3 EL Öl oder Fett am Tag (ca. 25–30 g) braucht der Körper.`);
   return `<details class="small" style="margin-top:10px"><summary class="ink2" style="cursor:pointer">${warn.length ? "⚠︎ " : "✓ "}Passt mein Ziel? (bei ${fmt(w, 1)} kg)</summary>
     <div class="stack" style="gap:6px;margin-top:8px">${warn.map(x => `<div class="hint">${esc(x)}</div>`).join("")}
-    <div class="muted">Ziel: Eiweiß ${fmt(pkg, 1)} g/kg${pToday > 0 ? " (heute bisher " + fmt(pToday / w, 1) + " g/kg)" : ""} · Kohlenhydrate ${fmt(ckg, 1)} g/kg · Fett ${Math.round(fatPct)} % der Kalorien.<br>Richtwerte: Eiweiß 1,6–2,2 g/kg, am besten 3–4 Mahlzeiten mit je mindestens 30 g. Kohlenhydrate 4 g/kg bei Fitness bis 5–8 g/kg bei viel Training, Fett höchstens 30 %.</div></div></details>`;
+    <div class="muted">Ziel: Eiweiß ${fmt(pkg, 1)} g/kg${pToday > 0 ? " (heute bisher " + fmt(pToday / w, 1) + " g/kg)" : ""} · Kohlenhydrate ${fmt(ckg, 1)} g/kg · Fett ${Math.round(fatPct)} % der Kalorien.<br>Richtwerte: Eiweiß 1,6–2,2 g/kg, am besten 3–4 Mahlzeiten mit je mindestens 30 g. Kohlenhydrate 4 g/kg bei Fitness bis 5–8 g/kg bei viel Training, Fett höchstens 30 %. Ballaststoffe 15 g pro 1.000 kcal, bei dir etwa ${fiberGoal()} g.</div></div></details>`;
 }
 
 /* ---------- Trinken ----------
@@ -1497,6 +1508,7 @@ function viewEssen(){
     ${burnRow(curDate)}
     ${proteinMeals(d)}
     ${calcLine()}
+    ${neatHint()}
     ${macroCheck()}
   </section>
   ${waterCard(curDate)}
@@ -1523,7 +1535,7 @@ function viewTraining(){
   if (trainSub === "kalender") body = viewCalendar();
   else if (trainSub === "plaene") body = viewTemplates();
   else body = viewExercises();
-  return seg + '<div style="height:12px"></div>' + body;
+  return seg + '<div style="height:12px"></div>' + (trainSub === "kalender" ? deloadCard() : "") + body;
 }
 /* 10–20 harte Sätze pro Muskelgruppe und Woche (NotebookLM-Zusammenfassung) */
 function setsHint(groups, wk){
@@ -1568,7 +1580,7 @@ function viewCalendar(){
   <div class="section-title">Woche ${fmtShort(wk.mon)} – ${fmtShort(wk.sun)}</div>
   <section class="card">
     <div class="row" style="margin-bottom:${groups.length ? 12 : 0}px"><span class="chip ${wk.strength.length >= c.strengthPerWeek ? "good" : ""}">${wk.strength.length} / ${c.strengthPerWeek} Krafteinheiten</span>${wk.acts.map(a => `<span class="chip">${esc(a.title)}${a.minutes ? " · " + a.minutes + " min" : ""}</span>`).join("")}</div>
-    ${groups.length ? `<div class="eyebrow" style="margin-bottom:6px">Sätze pro Muskelgruppe · Ziel 10–20 pro Woche</div><div class="stack" style="gap:7px">${groups.map(([g, n]) => { const col = g === "Sonstiges" ? "" : n > 20 ? "var(--warn)" : n >= 10 ? "var(--good)" : ""; return `<div class="macro" style="grid-template-columns:96px 1fr 34px"><span class="lbl">${esc(g)}</span><div class="bar"><i style="width:${Math.min(100, n / 20 * 100)}%${col ? ";background:" + col : ""}"></i></div><span class="num small" style="text-align:right${col ? ";color:" + col : ""}"><b>${n}</b></span></div>`; }).join("")}</div>${setsHint(groups, wk)}` : '<p class="muted small" style="margin:0">In dieser Woche ist noch kein Krafttraining erledigt.</p>'}
+    ${groups.length ? `<div class="eyebrow" style="margin-bottom:6px">Sätze pro Muskelgruppe · Ziel 10–20 pro Woche · Strich bei 5 = Erhalt</div><div class="stack" style="gap:7px">${groups.map(([g, n]) => { const col = g === "Sonstiges" ? "" : n > 20 ? "var(--warn)" : n >= 10 ? "var(--good)" : ""; return `<div class="macro" style="grid-template-columns:96px 1fr 34px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${col ? ";background:" + col : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right${col ? ";color:" + col : ""}"><b>${n}</b></span></div>`; }).join("")}</div>${setsHint(groups, wk)}` : '<p class="muted small" style="margin:0">In dieser Woche ist noch kein Krafttraining erledigt.</p>'}
     ${setsWeeks(calSel)}
   </section>`;
 }
@@ -1758,6 +1770,7 @@ function trendSvg(pts, o){
   const X = k => l + (W - l - r) * ((dateOf(k).getTime() - t0) / Math.max(1, t1 - t0)), Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo));
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
   [lo + (o.pad || 1), hi - (o.pad || 1)].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${fmt(v, o.dec || 0)}</text>`);
+  if (o.ref > 0 && o.ref > lo && o.ref < hi) svg += `<line x1="${l}" x2="${W - r}" y1="${Y(o.ref)}" y2="${Y(o.ref)}" stroke="var(--ink-2)" stroke-dasharray="4 4" opacity=".6"/><text x="${W - r}" y="${Y(o.ref) - 4}" text-anchor="end" font-size="9.5" fill="var(--muted)">${esc(o.refLabel || "")} ${fmt(o.ref, o.dec || 0)}</text>`;
   const line = o.smooth ? pts.map((p, i) => ({k: p.k, v: pts.slice(Math.max(0, i - 6), i + 1).reduce((a, x) => a + x.v, 0) / Math.min(i + 1, 7)})) : pts;
   svg += `<path d="${line.map((p, i) => (i ? "L" : "M") + X(p.k).toFixed(1) + " " + Y(p.v).toFixed(1)).join("")}" fill="none" stroke="${o.color || "var(--accent)"}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
   if (!o.smooth || pts.length < 40) pts.forEach(p => svg += `<g><title>${fmtShort(p.k)}: ${fmt(p.v, o.dec || 0)} ${o.unit || ""}</title><circle cx="${X(p.k)}" cy="${Y(p.v)}" r="${o.smooth ? 2.5 : 4}" fill="${o.color || "var(--accent)"}" stroke="var(--surface)" stroke-width="1.5"/></g>`);
@@ -2039,6 +2052,9 @@ function plannerWarnings(){
     if (d.gym && legs(d.gym) && next.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Beintraining am Tag vor dem Spiel. Lieber auf einen anderen Tag legen.`);
     if (d.gym && legs(d.gym) && d.fb) out.push(`${WDN[dateOf(k).getDay()]}: Beintraining und Fußball am selben Tag. Das belastet die Beine doppelt.`);
     if (d.gym && d.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Krafttraining am Spieltag. Besser einen Tag früher oder später.`);
+    else if (d.gym && d.fb) { const hm = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; }, a = hm(d.gymTime), b = hm(d.fbTime);
+      if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball nur ${fmt(Math.abs(a - b), 1)} h auseinander.${b < a ? " Wenn möglich Gym zuerst" : " Wenn möglich mehr Abstand"} (über 6 h), dann leidet der Muskelaufbau weniger.`);
+      else if (a == null || b == null) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball am selben Tag. Am besten über 6 h Abstand und Krafttraining zuerst.`); }
   });
   const gymDays = Object.values(wp.days).filter(d => d.gym).length, goal = cfg().strengthPerWeek;
   if (gymDays && gymDays < goal) out.push(`${gymDays} von ${goal} geplanten Krafteinheiten.`);
@@ -2180,7 +2196,7 @@ function openRecoveryDetail(k){
     ${acwr != null ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2 style="font-size:17px">Belastungsverhältnis</h2><span class="chip" style="color:${acwrTxt[1]}">${acwrTxt[0]}</span></div>
       <div class="bar" style="height:12px;position:relative;background:linear-gradient(90deg,var(--accent-2) 0 26%,var(--good) 26% 60%,var(--warn) 60% 73%,var(--bad) 73%)"><i style="position:absolute;left:calc(${Math.min(100, acwr / 2.2 * 100)}% - 3px);top:-3px;width:6px;height:18px;border-radius:3px;background:var(--ink)"></i></div>
       <p class="small ink2" style="margin:8px 0 0">Letzte 7 Tage zu den letzten 4 Wochen: <b>${fmt(acwr, 2)}</b>. ${acwrTxt[2]} Ideal ist etwa 0,8–1,3.</p></section>` : ""}
-    ${hrv.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">HRV · 30 Tage</div>${trendSvg(hrv, {label: "HRV 30 Tage", unit: "ms", smooth: true, pad: 3})}<p class="small muted" style="margin:6px 0 0">Höher ist besser. Die Linie zeigt den Schnitt über 7 Tage, die Punkte die einzelnen Nächte.</p></section>` : ""}
+    ${hrv.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">HRV · 30 Tage</div>${trendSvg(hrv, {label: "HRV 30 Tage", unit: "ms", smooth: true, pad: 3, ref: baseline(k, "hrv", 30), refLabel: "Ø 30 T"})}<p class="small muted" style="margin:6px 0 0">Höher ist besser. Die Linie zeigt den Schnitt über 7 Tage, die Punkte die einzelnen Nächte, gestrichelt dein 30-Tage-Schnitt. Vergleiche die HRV nur mit dir selbst: Ein einzelner Morgen sagt wenig, erst mehrere niedrige Tage in Folge sind ein Signal.</p></section>` : ""}
     ${rhr.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Ruhepuls · 30 Tage</div>${trendSvg(rhr, {label: "Ruhepuls 30 Tage", unit: "bpm", smooth: true, color: "var(--p)", pad: 2})}<p class="small muted" style="margin:6px 0 0">Niedriger ist besser. Steigt er mehrere Tage, braucht dein Körper mehr Erholung.</p></section>` : ""}
     ${bb.length >= 5 ? `<section class="card"><div class="eyebrow" style="margin-bottom:4px">Body Battery am Morgen · 30 Tage</div>${trendSvg(bb, {label: "Body Battery", unit: "", color: "var(--accent-2)", pad: 5})}</section>` : ""}`;
   openSheet("Erholung & Belastung", body);
@@ -2375,7 +2391,7 @@ async function runExport(){
 /* ---------- Tipps: Informationscenter ----------
    Wissen aus deinen Quellen (H = Hessmann „Sporternährung für jeden Tag“, N = Zusammenfassung NotebookLM,
    S = Spieltagsvorbereitung Fußball), plus „Für dich heute“ aus deinen Daten. Jeder Tipp hat einen Deep Dive. */
-const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)"};
+const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)"};
 const TIP_CATS = [["", "Alle"], ["ernaehrung", "🍽️ Ernährung"], ["training", "🏋️ Training"], ["erholung", "🌿 Erholung"], ["schlaf", "😴 Schlaf"], ["trinken", "💧 Trinken"], ["fussball", "⚽ Fußball"], ["supps", "💊 Supplements"]];
 const KB = [
   {id: "protein", cat: "ernaehrung", icon: "🥩", title: "1,6–2,2 g Eiweiß pro kg Körpergewicht", short: "Die wichtigste Stellschraube für Muskelaufbau und -erhalt, egal ob Aufbau, Diät oder Halten.", why: "Muskeln bestehen aus Eiweiß. Bekommt der Körper zu wenig, kann er nach dem Training kaum neue Muskelmasse aufbauen, und im Kaloriendefizit baut er sie sogar ab. Eiweiß sättigt außerdem am stärksten.", how: ["Rechne dein Ziel: Körpergewicht × 1,6 bis 2,2.", "Verteile es auf 3–4 Mahlzeiten.", "Gute Quellen: Skyr, Magerquark, Hähnchen, Pute, Eier, Thunfisch, körniger Frischkäse, Linsen."], src: "N"},
@@ -2385,7 +2401,9 @@ const KB = [
   {id: "surplus", cat: "ernaehrung", icon: "📈", title: "Im Aufbau: nur 200–300 kcal Überschuss", short: "Mehr Kalorien bringen nicht mehr Muskeln, sondern vor allem mehr Fett.", why: "Muskeln wachsen langsam. Der Körper kann nur einen kleinen Überschuss sinnvoll in Muskeln umsetzen, der Rest wird gespeichert.", how: ["Zunahme von etwa 0,25–0,5 % Körpergewicht pro Woche anpeilen.", "Genug Kohlenhydrate schützen das Muskeleiweiß."], src: "N"},
   {id: "fat", cat: "ernaehrung", icon: "🥑", title: "Fett: nicht zu viel, aber auch nicht zu wenig", short: "Höchstens etwa 30 % der Kalorien, aber mindestens 2–3 EL gutes Öl pro Tag.", why: "Fett liefert viel Energie pro Gramm, wird aber auch für Hormone und fettlösliche Vitamine gebraucht. Zu wenig Fett über längere Zeit ist ungünstig.", how: ["Gute Fette: Oliven- und Rapsöl, Nüsse, Avocado, fetter Fisch.", "Gesättigte Fette (Butter, Kokosöl) eher sparsam."], src: "H"},
   {id: "combo", cat: "ernaehrung", icon: "🥔", title: "Eiweiß clever kombinieren", short: "Kartoffeln mit Ei ergeben hochwertigeres Eiweiß als jedes für sich.", why: "Die biologische Wertigkeit sagt, wie gut der Körper Nahrungseiweiß in eigenes umbauen kann. Kartoffel + Ei (64:36) kommt auf 136, mehr als Ei allein (100).", how: ["Bratkartoffeln mit Spiegelei.", "Kartoffelpüree mit Milch.", "Bohnen oder Linsen mit Reis oder Vollkornbrot."], src: "H"},
-  {id: "fiber", cat: "ernaehrung", icon: "🌾", title: "30 g Ballaststoffe am Tag", short: "Gut für Verdauung und Sättigung, besonders wichtig im Cut.", why: "Ballaststoffe sättigen lange, stabilisieren den Blutzucker und sind gut für die Darmflora. Die Quelle nennt 30–50 g oder etwa 15 g pro 1.000 kcal.", how: ["Haferflocken, Vollkorn, Hülsenfrüchte, Beeren.", "Geschrotete Leinsamen oder Chiasamen in Skyr oder Müsli."], src: "N"},
+  {id: "fiber", cat: "ernaehrung", icon: "🌾", title: "Ballaststoffe: 15 g pro 1.000 kcal", short: "Mindestens 30 g am Tag. Gut für Verdauung, Sättigung und ein langes Leben.", why: "Ballaststoffe sättigen lange, stabilisieren den Blutzucker und sind gut für die Darmflora. Die Quellen nennen übereinstimmend etwa 15 g pro 1.000 kcal. In großen Beobachtungsstudien hängen 10 g mehr pro Tag mit etwa 10 % geringerer Sterblichkeit zusammen.", how: ["Haferflocken, Vollkorn, Hülsenfrüchte, Beeren.", "Geschrotete Leinsamen oder Chiasamen in Skyr oder Müsli.", "Langsam steigern und genug trinken, sonst drückt der Bauch."], src: "N"},
+  {id: "scale", cat: "ernaehrung", icon: "⚖️", title: "Warum die Waage springt", short: "Schnelle Sprünge nach oben oder unten sind fast immer Wasser, kein Fett.", why: "Kohlenhydrate und Salz binden Wasser im Körper. Nach einem salzigen oder kohlenhydratreichen Abend zeigt die Waage schnell ein Kilo mehr, ohne dass Fett dazugekommen ist. Fett ändert sich nur langsam, deshalb zählt der Schnitt über eine Woche.", how: ["Morgens nach der Toilette und vor dem Frühstück wiegen.", "Auf den 7-Tage-Schnitt schauen, nicht auf den einzelnen Tag.", "Nach Pizza, Restaurant oder Kohlenhydrat-Tagen 2–3 Tage abwarten."], src: "C"},
+  {id: "neat", cat: "ernaehrung", icon: "🚶", title: "Alltagsbewegung zählt", short: "Im Defizit bewegt man sich unbewusst weniger. Schritte halten bremst das nicht aus.", why: "Ein großer Teil des Verbrauchs kommt aus Alltagsbewegung (NEAT): Gehen, Stehen, Treppen. Im Defizit spart der Körper hier unbemerkt Energie, laut Quelle bei 10 % weniger Körpergewicht bis zu 500 kcal am Tag. Das ist oft der Grund, warum das Abnehmen stockt.", how: ["Ein festes Schrittziel halten, auch im Cut.", "Kurze Spaziergänge nach dem Essen.", "Treppe statt Aufzug, beim Telefonieren gehen."], src: "C"},
   {id: "nova", cat: "ernaehrung", icon: "🏭", title: "Stark verarbeitete Lebensmittel begrenzen", short: "NOVA 4 (z. B. Chips, Softdrinks, Fertigsnacks) machen es leicht, zu viel zu essen.", why: "Hochverarbeitete Produkte sind oft energiedicht und wenig sättigend. Beim Suchen markiert die App solche Produkte als „stark verarbeitet“.", how: ["Grundlage aus unverarbeiteten Lebensmitteln.", "Verarbeitete Produkte bewusst und eingeplant essen."], src: "N"},
   {id: "fatloss", cat: "ernaehrung", icon: "🔥", title: "So verlässt Fett den Körper", short: "Abgebautes Fett wird größtenteils als CO₂ ausgeatmet. Entscheidend ist die Kalorienbilanz.", why: "Ob nüchtern oder nicht, mit Fettverbrennungspuls oder ohne: Über den Tag zählt nur die Bilanz. Nüchterntraining bringt keinen zusätzlichen Fettverlust.", how: ["Konstantes, moderates Defizit.", "Viel Eiweiß und Krafttraining, damit die Muskeln bleiben."], src: "N"},
   {id: "watch", cat: "ernaehrung", icon: "⌚", title: "Uhren überschätzen Trainingskalorien", short: "Fitness-Uhren liegen laut Quelle 28–93 % zu hoch.", why: "Wer die angezeigten Trainingskalorien komplett zurückisst, landet schnell ohne Defizit. Deshalb kannst du in den Einstellungen nur 50 oder 75 % anrechnen lassen.", how: ["Zahnrad → „Davon anrechnen“ auf 75 % oder 50 %.", "Den Erfolg am Gewichtstrend über 2–3 Wochen prüfen."], src: "N"},
@@ -2394,20 +2412,25 @@ const KB = [
   {id: "rest", cat: "training", icon: "⏱️", title: "Lange Pausen bei schweren Sätzen", short: "Bei 3–5 Wiederholungen 3–5 Minuten Pause, sonst etwa 2–3 Minuten.", why: "Nach einer längeren Pause schaffst du im nächsten Satz mehr Gewicht und Wiederholungen, und das bringt mehr Fortschritt als kurze Pausen.", how: ["Der Pausen-Timer in der App läuft automatisch nach dem Abhaken.", "Isolationsübungen: 1–2 Minuten reichen."], src: "N"},
   {id: "progression", cat: "training", icon: "📈", title: "Doppelte Progression", short: "Erst Wiederholungen steigern, dann Gewicht.", why: "Schaffst du in allen Sätzen das obere Ende des Wiederholungsbereichs, ist es Zeit für mehr Gewicht. So wird der Reiz langsam, aber stetig größer, wie es für Muskelaufbau nötig ist (ca. 60–70 % der Maximalkraft).", how: ["Beispiel 3 × 6–10: erst 10/10/10 schaffen, dann +2,5 kg.", "Mit „Ernährung & Training automatisch“ trägt die App das Gewicht selbst in deinen Plan ein."], src: "H"},
   {id: "rest24", cat: "training", icon: "🗓️", title: "24 Stunden Pause für gleiche Muskeln", short: "Den gleichen Muskel frühestens nach 24 h wieder hart belasten.", why: "Muskeln wachsen in der Erholungsphase nach dem Training, nicht währenddessen. Ohne Pause bleibt der Fortschritt aus und das Verletzungsrisiko steigt.", how: ["Oberkörper und Unterkörper abwechseln.", "Am Tag vor einem Spiel kein hartes Beintraining."], src: "H"},
+  {id: "concurrent", cat: "training", icon: "🔀", title: "Kraft vor Ausdauer", short: "Gym und Fußball am selben Tag: möglichst über 6 h Abstand, sonst Krafttraining zuerst.", why: "Harte Ausdauer direkt vor dem Krafttraining macht müde Muskeln und kann die Anpassung an das Krafttraining etwas stören. Laufen und Sprints stören mehr als Radfahren. Mit genug Abstand und genug Essen ist der Störeffekt laut Quellen weitgehend weg.", how: ["Wenn beides an einem Tag: zuerst Gym, später Fußball.", "Mindestens 6 Stunden dazwischen, wenn es geht.", "Dazwischen eine Mahlzeit mit Kohlenhydraten und Eiweiß.", "Der Wochenplaner warnt dich, wenn der Abstand zu klein ist."], src: "C"},
+  {id: "deload", cat: "training", icon: "🪫", title: "Entlastungswoche", short: "Alle 4–6 Wochen eine Woche mit etwa ⅓ weniger Sätzen, wenn der Körper Signale sendet.", why: "Ermüdung baut sich über Wochen auf, oft schneller als die Fitness. Eine leichtere Woche lässt sie abklingen, schützt vor Überlastung und Verletzungen, und danach geht es oft stärker weiter. Gewichte bleiben dabei gleich, nur die Satzzahl sinkt.", how: ["Etwa ⅓ weniger Sätze, z. B. 3 → 2, Gewichte gleich lassen.", "Nicht nach Kalender, sondern bei Signalen: HRV mehrere Tage niedrig, mehrere Übungen stagnieren, oft starker Muskelkater.", "Volumen danach höchstens um etwa 5–10 % pro Woche steigern.", "Die App schlägt sie dir unter Training vor, du startest sie selbst."], src: "C"},
+  {id: "minvol", cat: "training", icon: "🛡️", title: "Muskeln halten mit wenig Zeit", short: "Etwa 5 harte Sätze pro Muskel und Woche reichen zum Erhalten, wenn die Gewichte schwer bleiben.", why: "Zum Aufbauen braucht es 10–20 harte Sätze pro Woche, zum Erhalten deutlich weniger. Wichtig ist, dass die Intensität bleibt: schwere Gewichte, nah am Versagen. Das hilft in vollen Fußballwochen, im Urlaub und im Cut.", how: ["Pro Muskelgruppe mindestens 5 harte Sätze in der Woche.", "Gewichte nicht reduzieren, lieber Sätze kürzen.", "Im Sätze-Diagramm unter Training zeigt der Strich bei 5 die Erhalt-Grenze."], src: "C"},
   {id: "zone2", cat: "training", icon: "❤️", title: "Zone 2 plus einmal pro Woche richtig hart", short: "Lockere Ausdauer, bei der du dich noch unterhalten kannst, plus ein intensiver Reiz.", why: "Zone 2 stärkt Herz und Mitochondrien und hilft der Erholung zwischen Sprints. Intensive Einheiten wie Sprints oder Fußball verbessern die VO2max.", how: ["2–3 × 30–60 Min. locker laufen, radeln oder zügig gehen.", "1 × pro Woche Intervalle oder ein Spiel.", "Die Auswertung jeder Einheit zeigt dir deine Pulszonen."], src: "N"},
   {id: "vo2", cat: "training", icon: "🫁", title: "VO2max: der wichtigste Langlebigkeits-Wert", short: "Wie viel Sauerstoff dein Körper maximal verwerten kann.", why: "Laut deiner Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben. Sie lässt sich in jedem Alter verbessern.", how: ["Zone-2-Grundlage plus intensive Intervalle.", "Die Uhr misst sie bei Läufen oder zügigen Gehrunden mit GPS.", "Verlauf unter Körper → Fitness-Werte."], src: "N"},
   {id: "stretch", cat: "erholung", icon: "🧘", title: "Statisch dehnen nach dem Sport", short: "30–60 Sekunden pro Dehnung, mindestens 5 Minuten pro Muskelgruppe und Woche.", why: "So verbessert sich die Beweglichkeit am stärksten. Vor Krafttraining, Sprints und Fußball dagegen dynamisch aufwärmen, weil statisches Dehnen kurzfristig Kraft kostet.", how: ["Nach dem Training Waden, Oberschenkel, Hüfte und Brust dehnen.", "Vorher: Beinschwingen, Ausfallschritte, lockere Sprints."], src: "N"},
+  {id: "mobility", cat: "erholung", icon: "🦵", title: "Mobility-Routine Unterkörper (10 Min.)", short: "Fünf Übungen für Hüfte, Knie und Oberschenkel, ideal nach Fußball.", why: "Fußball macht Hüftbeuger und Oberschenkel kurz und fest. Diese kurze Routine hält Hüfte und Knie beweglich und lässt sich nach dem Training oder abends machen.", how: ["Tiefe Hocke halten, Fersen am Boden (30–60 s).", "Hüftrotation im Sitzen (90/90), beide Seiten (30–60 s).", "Tauben-Dehnung, je Seite 30–60 s.", "Kniende Hüftbeuger-Dehnung, je Seite 30–60 s.", "Couch Stretch an der Wand, je Seite 30–60 s.", "Bei Knie- oder Schulterbeschwerden nur bis zu leichtem Ziehen."], src: "C"},
   {id: "cold", cat: "erholung", icon: "🧊", title: "Kälte nicht direkt nach Krafttraining", short: "Eisbad oder sehr kalte Dusche erst mit etwa 6 Stunden Abstand.", why: "Kälte dämpft die Signale, die nach dem Krafttraining das Muskelwachstum anstoßen. Nach Fußball oder an freien Tagen ist Kälte gut gegen Muskelkater.", how: ["Nach dem Krafttraining lieber Sauna oder warm duschen.", "Eisbad: 10 Min. bei 10–15 °C."], src: "N"},
   {id: "hrv", cat: "erholung", icon: "📉", title: "HRV als Ampel für dein Training", short: "Liegt die HRV deutlich unter deinem Schnitt, ist dein Körper noch nicht erholt.", why: "Die Herzfrequenzvariabilität zeigt, wie entspannt dein Nervensystem ist. Ein deutlich niedrigerer Wert oder ein höherer Ruhepuls sind ein Signal für mehr Erholung.", how: ["HRV unter Schnitt: locker trainieren oder Ruhetag.", "Erholung im Detail: unter Heute auf den Erholungs-Kreis tippen."], src: "N"},
   {id: "nsdr", cat: "erholung", icon: "🌙", title: "Tiefenentspannung (NSDR / Yoga Nidra)", short: "10–30 Minuten geführte Entspannung gleichen ein Stück fehlenden Schlaf aus.", why: "NSDR senkt den Stress und erholt das Nervensystem, ohne dass du schlafen musst. Ideal an Tagen mit wenig Schlaf.", how: ["Hinlegen, Augen zu, eine geführte Audio auf YouTube („NSDR“ oder „Yoga Nidra“).", "Am besten mittags oder nachmittags."], src: "N"},
+  {id: "ortho", cat: "schlaf", icon: "📵", title: "Schlaf-Tracker nicht überbewerten", short: "Wer sich zu sehr auf Schlafwerte fixiert, schläft oft schlechter. Dein Gefühl zählt mit.", why: "Fachleute nennen das Orthosomnie: Der Druck, gute Schlafwerte zu erreichen, erzeugt Stress und verschlechtert den Schlaf. Uhren schätzen Schlafphasen nur. Wie ausgeruht du dich fühlst, ist genauso wichtig wie der Wert der Uhr.", how: ["Werte als Trend über Wochen lesen, nicht jede Nacht bewerten.", "Schlafzimmer kühl, dunkel und gelüftet, das Bett nur zum Schlafen.", "Im Check-in ehrlich angeben, wie du dich fühlst."], src: "C"},
   {id: "sleep", cat: "schlaf", icon: "😴", title: "7,5–9 Stunden Schlaf", short: "Im Schlaf erholen sich Muskeln, Nervensystem und Hormone.", why: "Wer zu wenig schläft, regeneriert schlechter, hat mehr Hunger und weniger Kraft. Profis wie Lewandowski planen 8–9 Stunden ein.", how: ["Fester Rhythmus, auch am Wochenende.", "Schlafzimmer kühl (ca. 18 °C), dunkel und ruhig.", "Eine Stunde vorher Handy weg."], src: "H"},
   {id: "light", cat: "schlaf", icon: "☀️", title: "Morgenlicht und abends dimmen", short: "10–30 Min. Tageslicht in der ersten Stunde, ab ca. 22 Uhr wenig helles Licht.", why: "Licht stellt die innere Uhr. Morgenlicht macht abends früher müde, helles Licht am Abend verschiebt das Einschlafen nach hinten.", how: ["Morgens raus, auch bei Wolken, ohne Sonnenbrille.", "Abends Deckenlicht aus, warmes, gedimmtes Licht."], src: "N"},
-  {id: "caffeine", cat: "schlaf", icon: "☕", title: "Koffein nicht spät am Tag", short: "Koffein blockiert den Schlafdruck noch viele Stunden.", why: "Koffein besetzt die Andockstellen von Adenosin, dem Stoff, der müde macht. Spät getrunken verschlechtert es den Tiefschlaf, auch wenn du einschlafen kannst.", how: ["Letzter Kaffee oder Energydrink am frühen Nachmittag.", "Vor dem Training: 1–3 mg pro kg, 30–60 Min. vorher."], src: "N"},
+  {id: "caffeine", cat: "schlaf", icon: "☕", title: "Koffein nicht spät am Tag", short: "Koffein blockiert den Schlafdruck noch viele Stunden.", why: "Koffein besetzt die Andockstellen von Adenosin, dem Stoff, der müde macht. Spät getrunken verschlechtert es den Tiefschlaf, auch wenn du einschlafen kannst.", how: ["Letzter Kaffee oder Energydrink am frühen Nachmittag.", "Vor dem Training: 1–3 mg pro kg, etwa 30 Min. vorher. Ab etwa 5 mg pro kg wird die Leistung eher schlechter.", "Wer nicht früh trainiert, kann testen, den ersten Kaffee 90–120 Min. nach dem Aufstehen zu trinken (schwächer belegt)."], src: "N"},
   {id: "drink", cat: "trinken", icon: "💧", title: "Nach dem Sport: Verlust × 1,5 trinken", short: "Wiege dich vor und nach dem Training und trink das 1,5-Fache des Verlusts.", why: "Ein Teil der getrunkenen Menge wird gleich wieder ausgeschieden. Mit dem Faktor 1,5 füllst du den Wasserhaushalt wirklich auf.", how: ["Beispiel: 0,8 kg weniger → etwa 1,2 l trinken.", "Gut: Wasser, Saftschorle, isotonische Getränke.", "Der Trink-Rechner unter Heute rechnet das für dich."], src: "H"},
   {id: "electro", cat: "trinken", icon: "🧂", title: "Elektrolyte bei langem Sport", short: "Ab etwa einer Stunde Belastung gehen vor allem Natrium und Kalium verloren.", why: "Mit dem Schweiß verlierst du Salz. Nur Wasser nachzutrinken gleicht das nicht aus, mit etwas Salz bleibt die Flüssigkeit besser im Körper.", how: ["Selbst gemacht: 1 Teil Saft, 2 Teile Wasser, eine Prise Salz (ca. 1 g pro Liter).", "Kalium: Bananen, Kartoffeln."], src: "H"},
   {id: "prematch", cat: "fussball", icon: "📅", title: "Der Tag vor dem Spiel", short: "Leicht trainieren, kohlenhydratreich essen, früh schlafen.", why: "Volle Glykogenspeicher und erholte Beine entscheiden über die Leistung im Spiel. Profis wie Ronaldo und Lewandowski trainieren am Vortag nur locker.", how: ["Leichte Einheit oder Technik, kein hartes Beintraining.", "Mittags Nudeln oder Reis mit magerem Fleisch oder Fisch.", "Abends leichtes Fischgericht mit Nudeln.", "Ab 22 Uhr Bildschirme weg, 8 Stunden Schlaf."], src: "S"},
   {id: "matchday", cat: "fussball", icon: "🏆", title: "Spieltag-Routine", short: "Frühstück, Powernap, letzte Mahlzeit 3 h vorher, dynamisch aufwärmen.", why: "Eine feste Routine sorgt für volle Energie und einen klaren Kopf. Die Mahlzeit 3 h vorher ist verdaut, die Banane 30 Min. vorher gibt schnelle Energie.", how: ["Frühstück: Eier, Vollkornbrot, Haferflocken, Obst.", "Powernap 20–30 Min.", "3 h vorher: Reis oder Nudeln mit Hähnchen.", "Aufwärmen mit Sprints und Rumpfübungen, kurz das Spiel im Kopf durchgehen.", "Danach zuerst trinken, dann Eiweiß und Kohlenhydrate."], src: "S"},
-  {id: "creatine", cat: "supps", icon: "💊", title: "Kreatin: 3–5 g täglich", short: "Das am besten untersuchte Supplement für Kraft und Muskelaufbau.", why: "Kreatin füllt die schnellen Energiespeicher im Muskel. So schaffst du bei schweren Sätzen eine oder zwei Wiederholungen mehr. Über 100 kg Körpergewicht laut Quelle 5–10 g.", how: ["Jeden Tag nehmen, auch an Ruhetagen, die Uhrzeit ist egal.", "Kreatin-Monohydrat reicht völlig."], src: "N"},
+  {id: "creatine", cat: "supps", icon: "💊", title: "Kreatin: 3–5 g täglich", short: "Das am besten untersuchte Supplement für Kraft und Muskelaufbau.", why: "Kreatin füllt die schnellen Energiespeicher im Muskel. So schaffst du bei schweren Sätzen eine oder zwei Wiederholungen mehr. Über 100 kg Körpergewicht laut Quelle 5–10 g.", how: ["Jeden Tag nehmen, auch an Ruhetagen, die Uhrzeit ist egal.", "Kreatin-Monohydrat reicht völlig.", "Die Sorge um Haarausfall beruht auf einer einzigen Studie, die nie wiederholt wurde."], src: "N"},
   {id: "omega3", cat: "supps", icon: "🐟", title: "Omega-3: über 1.000 mg EPA", short: "Gemeint ist der EPA-Anteil, nicht die Kapselmenge.", why: "Omega-3-Fettsäuren wirken entzündungshemmend und unterstützen die Regeneration. Viele Kapseln enthalten pro Stück nur wenig EPA.", how: ["Auf der Packung den EPA-Gehalt pro Tagesdosis prüfen.", "Zusätzlich 1–2 Fischmahlzeiten pro Woche (Lachs, Hering)."], src: "N"},
   {id: "magnesium", cat: "supps", icon: "🌙", title: "Magnesium abends", short: "Als Bisglycinat oder Threonat kann es beim Schlaf helfen.", why: "Magnesium ist an Muskel- und Nervenfunktion beteiligt. Abends genommen kann es Entspannung und Schlaf unterstützen.", how: ["Form auf der Packung prüfen: Bisglycinat oder Threonat.", "Lebensmittel: Haferflocken, Bananen, dunkle Schokolade, Kürbiskerne."], src: "N"}
 ];
@@ -2423,7 +2446,14 @@ function tipPersonal(id){
     case "protein": if (avgP == null || !w) return null; return {note: `Ø ${fmt(avgP)} g Eiweiß in den letzten Tagen, das sind ${fmt(avgP / w, 1)} g/kg.`, hot: avgP / w < 1.6 ? 8 : 0, why: avgP / w < 1.6 ? `Du liegst mit ${fmt(avgP / w, 1)} g/kg unter 1,6 g/kg.` : ""};
     case "protein30": { let m = 0, ok = 0; eat.forEach(d => MEALS.forEach(([k]) => { const it = (d.meals || {})[k] || []; if (it.length) { m++; if (it.reduce((a, x) => a + (+x.p || 0), 0) >= 30) ok++; } })); if (!m) return null; return {note: `${ok} von ${m} Mahlzeiten hatten zuletzt mindestens 30 g Eiweiß.`, hot: ok / m < 0.5 ? 6 : 0, why: ok / m < 0.5 ? `Nur ${ok} von ${m} Mahlzeiten hatten 30 g Eiweiß.` : ""}; }
     case "sleep": if (avgS == null) return null; return {note: `Ø ${fmt(avgS, 1)} h Schlaf in den letzten 7 Nächten, Ziel ${fmt(c.sleepGoal, 1)} h.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmt(avgS, 1)} h geschlafen.` : ""};
-    case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const low = num(s0.hrv) < b * 0.9; return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms.`, hot: low ? 9 : 0, why: low ? `Deine HRV liegt heute deutlich unter deinem Schnitt.` : ""}; }
+    case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const n = hrvLowStreak(today); return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms${n === 1 ? ". Ein einzelner Morgen sagt wenig, erst ein Trend zählt" : ""}.`, hot: n >= 2 ? 9 : 0, why: n >= 2 ? `Deine HRV liegt seit ${n} Tagen deutlich unter deinem Schnitt.` : ""}; }
+    case "fiber": { const g = fiberGoal(); return {note: `Dein Ziel: etwa ${g} g Ballaststoffe am Tag (bei ${fmt(cfg().kcal)} kcal).`, hot: 0}; }
+    case "scale": { const ser = weightSeries(); if (!ser.length) return null; const last = ser[ser.length - 1], a = avgAt(ser, last.k), dv = last.v - a; return {note: `Letzte Messung ${fmt(last.v, 1)} kg, 7-Tage-Schnitt ${fmt(a, 1)} kg (${dv >= 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg).`, hot: Math.abs(dv) > 1 && last.k >= addDays(today, -1) ? 4 : 0, why: Math.abs(dv) > 1 ? `Deine letzte Messung liegt ${fmt(Math.abs(dv), 1)} kg ${dv > 0 ? "über" : "unter"} dem Schnitt, das ist meist Wasser.` : ""}; }
+    case "neat": { const st = stepsTrend(); if (!st) return null; const drop = st.now < st.old * 0.85; return {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen, davor Ø ${fmt(st.old)}.`, hot: drop && paceAdj() < 0 ? 6 : 0, why: drop ? `Deine Schritte sind um ${Math.round((1 - st.now / st.old) * 100)} % gesunken.` : ""}; }
+    case "concurrent": { const nx = nextGymFootball(); return nx ? {note: `${WDN[dateOf(nx.k).getDay()]}, ${fmtShort(nx.k)}: Gym und Fußball am selben Tag${nx.gap != null ? ", " + fmt(nx.gap, 1) + " h Abstand" : ""}.`, hot: nx.gap != null && nx.gap < 6 ? 5 : 0, why: nx.gap != null && nx.gap < 6 ? `Am ${WDN[dateOf(nx.k).getDay()]} liegen Gym und Fußball nur ${fmt(nx.gap, 1)} h auseinander.` : ""} : null; }
+    case "deload": { const dl = deloadState(); return {note: dl.active ? `Entlastungswoche läuft bis ${fmtShort(dl.to)}.` : dl.since != null ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen seit deiner letzten leichteren Trainingswoche${dl.signals.length ? ". Signale: " + dl.signals.join(", ") : ""}.` : "Noch zu wenig Trainingsdaten.", hot: dl.suggest ? 6 : 0, why: dl.suggest ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche und ${dl.signals.length > 1 ? "mehrere Ermüdungs-Signale" : "ein Ermüdungs-Signal"}.` : ""}; }
+    case "minvol": { const g = weekSummary(today).groups, low = MAIN_GROUPS.filter(x => (g[x] || 0) < 5); if (!Object.keys(g).length) return null; return {note: low.length ? `Diese Woche unter 5 Sätzen: ${low.join(", ")}.` : "Diese Woche alle Muskelgruppen mit mindestens 5 Sätzen.", hot: 0}; }
+    case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
     case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + n).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
     case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmt(z2)} Minuten in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
@@ -2437,6 +2467,61 @@ function tipPersonal(id){
     case "creatine": case "omega3": case "magnesium": { const name = {creatine: /kreatin|creatin/i, omega3: /omega/i, magnesium: /magnes/i}[id]; const s = (c.supplements || []).find(x => name.test(x.name)); return s ? {note: `Du nimmst ${s.name}${s.dose ? " (" + s.dose + ")" : ""}.`, hot: 0} : null; }
   }
   return null;
+}
+const MAIN_GROUPS = ["Brust", "Rücken", "Schultern", "Beine", "Bizeps", "Trizeps"];
+/* Ballaststoff-Ziel: 15 g pro 1.000 kcal, mindestens 30 g */
+const fiberGoal = () => Math.max(30, Math.round(15 * (cfg().kcal || 2000) / 1000));
+/* Garmin-Schritte: Ø letzte 7 Tage vs. Ø der 4 Wochen davor (ohne heute) */
+function stepsTrend(){
+  const t = todayKey(), av = (a, b) => { const v = []; for (let i = a; i <= b; i++) { const s = num((S.days[addDays(t, -i)] || {}).steps); if (s > 500) v.push(s); } return v.length >= Math.min(5, b - a) ? v.reduce((x, y) => x + y, 0) / v.length : null; };
+  const now = av(1, 7), old = av(8, 35);
+  return now && old && old > 3000 ? {now: Math.round(now), old: Math.round(old)} : null;
+}
+/* Wie viele Morgen in Folge liegt die HRV deutlich (> 10 %) unter deinem Schnitt? Ein einzelner Tag ist nur Info. */
+function hrvLowStreak(k){
+  let n = 0;
+  for (let i = 0; i < 7; i++) { const d = addDays(k, -i), h = num(((S.days[d] || {}).sleep || {}).hrv), b = baseline(d, "hrv"); if (h > 0 && b && h < b * 0.9) n++; else break; }
+  return n;
+}
+/* Nächster geplanter Tag mit Gym und Fußball (aus dem Wochenplan), mit Abstand in Stunden */
+function nextGymFootball(){
+  const t = todayKey(), hm = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; };
+  for (const mon of [mondayOf(t), addDays(mondayOf(t), 7)]) {
+    const wpl = weekPlanOf(mon); if (!wpl || !wpl.days) continue;
+    for (const k of Object.keys(wpl.days).sort()) { const d = wpl.days[k]; if (k < t || !d.gym || !d.fb) continue; const a = hm(d.gymTime), b = hm(d.fbTime); return {k, gap: a != null && b != null ? Math.abs(a - b) : null, fbFirst: a != null && b != null && b < a}; }
+  }
+  return null;
+}
+/* Entlastungswoche: läuft gerade? Seit wann keine? Welche Ermüdungs-Signale? Vorschlag erst ab 5 Wochen und mit Signal. */
+function deloadState(){
+  const c = cfgRaw(), t = todayKey(), dl = c.deload || {};
+  const active = !!(dl.from && dl.to && dl.from <= t && dl.to >= t);
+  // Letzte leichtere Woche aus deinen Trainings: höchstens 70 % der harten Sätze der 4 Wochen davor (oder gestartete Entlastungswoche)
+  const mon0 = mondayOf(t), wsets = [];
+  for (let i = 1; i <= 20; i++) { const m = addDays(mon0, -7 * i); wsets.push({m, n: Object.values(weekSummary(m).groups).reduce((a, b) => a + b, 0)}); }
+  let light = null;
+  for (let i = 0; i < wsets.length - 4 && !light; i++) { const prev = wsets.slice(i + 1, i + 5).filter(x => x.n > 0); if (prev.length >= 1 && wsets[i].n <= 0.7 * prev.reduce((a, x) => a + x.n, 0) / prev.length) light = addDays(wsets[i].m, 6); }
+  if (dl.to && dl.to < t && (!light || dl.to > light)) light = dl.to;
+  const trained = wsets.slice(0, 6).filter(x => x.n > 0).length;
+  const since = light ? Math.floor(diffDays(light, t) / 7) : trained >= 5 ? 16 : null, signals = [];
+  const lowDays = Array.from({length: 7}, (_, i) => addDays(t, -i)).filter(k => { const h = num(((S.days[k] || {}).sleep || {}).hrv), b = baseline(k, "hrv"); return h > 0 && b && h < b * 0.9; }).length;
+  if (lowDays >= 3) signals.push(`HRV an ${lowDays} von 7 Tagen niedrig`);
+  const pl = plateaus().length; if (pl >= 2) signals.push(`${pl} Übungen stagnieren`);
+  const sore = Array.from({length: 14}, (_, i) => (S.days[addDays(t, -i)] || {}).checkin).filter(x => x && x.soreness >= 4).length;
+  if (sore >= 3) signals.push(`${sore}× starker Muskelkater in 2 Wochen`);
+  return {active, from: dl.from, to: dl.to, last: !!dl.to, since, signals, suggest: !active && since != null && since >= 5 && signals.length >= 1};
+}
+const deloadOn = () => { const dl = cfgRaw().deload || {}, t = todayKey(); return !!(dl.from && dl.to && dl.from <= t && dl.to >= t); };
+function deloadCard(){
+  const dl = deloadState();
+  if (dl.active) return `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>🪫 Entlastungswoche</h2><span class="chip">bis ${fmtShort(dl.to)}</span></div>
+    <p class="small ink2" style="margin:0 0 10px">${autoOn() ? "Die Automatik hat in deinen Plänen etwa ⅓ weniger Sätze eingetragen. Gewichte bleiben gleich." : "Mach diese Woche etwa ⅓ weniger Sätze (z. B. 3 → 2), die Gewichte bleiben gleich."} Danach geht es automatisch normal weiter.</p>
+    <button class="btn ghost" data-act="deload-stop">Entlastungswoche beenden</button></section>`;
+  if (!dl.suggest) return "";
+  return `<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><div class="card-h"><h2>🪫 Zeit für eine Entlastungswoche?</h2></div>
+    <p class="small ink2" style="margin:0 0 6px">${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche, und dein Körper sendet Signale: ${esc(dl.signals.join(", "))}.</p>
+    <p class="small muted" style="margin:0 0 10px">7 Tage etwa ⅓ weniger Sätze, gleiche Gewichte. Das baut Ermüdung ab, danach geht es oft stärker weiter.${autoOn() ? " Die Automatik trägt das in deine Pläne ein und stellt danach selbst zurück." : ""}</p>
+    <div class="row"><button class="btn primary" data-act="deload-start">Entlastungswoche starten</button><button class="btn ghost" data-act="tip" data-id="deload">Mehr dazu</button></div></section>`;
 }
 let tipsCat = "";
 function tipsForYou(){
@@ -2681,7 +2766,7 @@ function openReview(mon){
     ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>
       <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
       ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
-      ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar"><i style="width:${Math.min(100, n / 20 * 100)}%"></i></div><span class="num small" style="text-align:right"><b>${n}</b></span></div>`).join("")}</div>` : ""}`)}
+      ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${n}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
     ${card("Kalorien pro Tag", `${weekBars(kcalVals, {label: "Kalorien pro Tag", goal: i => kcalGoal(days[i]), fmt: v => fmt(v) + " kcal", short: v => fmt(v / 1000, 1) + "k", color: (v, i) => v > kcalGoal(days[i]) * 1.05 ? "var(--warn)" : "var(--accent)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø gegessen", st.kcal ? fmt(st.kcal) : "–", "kcal", delta(st.kcal, pv.kcal, " kcal", 0, null))}${tile("Eingetragen", st.tracked, "von 7", "")}</div>
       <p class="small muted" style="margin:6px 0 0">Gestrichelt: dein Tagesziel inkl. Sport. Orange: mehr als 5 % drüber.</p>`)}
@@ -2948,6 +3033,7 @@ function viewKoerper(){
       <div><span class="eyebrow">Bis zum Ziel</span><div class="v">${remain != null ? fmt(Math.max(0, remain), 1) : "–"}<span class="unit">kg</span></div></div>
       ${gt === "maintain" ? "" : `<div><span class="eyebrow">Prognose Ziel</span><div class="v" style="font-size:20px">${eta}</div></div>`}
     </div>
+    ${scaleHint()}
     ${status ? `<div style="margin-top:12px">${c.calc && c.calc.on ? status.replace(/ (Reduziere|Erhöhe|Für Muskelaufbau erhöhe)[^.]*\./, " Der Kalorienrechner passt dein Ziel dafür automatisch an.") : status}</div>` : ""}
   </section>
   ${bodyCompCard()}
@@ -2968,6 +3054,14 @@ function viewKoerper(){
   <section class="card" style="padding-block:6px"><div class="list">${recent.map(p => `<div class="li"><div class="grow"><div class="title num">${fmt(p.v, 1)} kg${p.out ? ` <span class="chip" style="color:var(--warn)">Ausreißer, zählt nicht</span>` : ""}</div><div class="sub">${fmtMid(p.k)} ${dateOf(p.k).getFullYear()}</div></div><button class="x" data-act="weight-del" data-date="${p.k}" aria-label="Eintrag vom ${fmtShort(p.k)} löschen">×</button></div>`).join("") || '<div class="empty">Noch kein Gewicht eingetragen.</div>'}</div></section>`;
 }
 
+/* „Warum springt die Waage?“: letzte Messung > 1 kg weg vom 7-Tage-Schnitt (Ausreißer zählen nicht) */
+function scaleHint(){
+  const ser = weightSeries(); if (ser.length < 3) return "";
+  const last = ser[ser.length - 1]; if (last.k < addDays(todayKey(), -1)) return "";
+  const a = avgAt(ser.slice(0, -1), addDays(last.k, -1)); if (a == null) return "";
+  const dv = last.v - a; if (Math.abs(dv) <= 1) return "";
+  return `<button class="hint" data-act="tip" data-id="scale" style="margin-top:12px;display:block;width:100%;text-align:left;cursor:pointer">⚖️ <b>${dv > 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg zum Schnitt der Tage davor:</b> Wahrscheinlich Wasser (viele Kohlenhydrate, Salz oder spät gegessen), kein Fett. Der Trend zählt. <span class="muted">Mehr dazu ›</span></button>`;
+}
 /* Körperzusammensetzung (Garmin Index S2): Körperfett, Fett- und Muskelmasse mit Veränderung zu vor ca. 4 Wochen */
 function bodyCompCard(){
   const ser = bodySeries().filter(x => x.w); if (!ser.length) return "";
@@ -3745,6 +3839,8 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "deload-start": { const t = todayKey(); saveCfg({deload: {from: t, to: addDays(t, 6)}}); if (autoOn()) autoPlanSync(); toast(autoOn() ? "Entlastungswoche gestartet. Deine Pläne haben jetzt etwa ⅓ weniger Sätze." : "Entlastungswoche gestartet. Mach 7 Tage etwa ⅓ weniger Sätze."); render(); break; }
+    case "deload-stop": { const dl = cfgRaw().deload || {}; saveCfg({deload: Object.assign({}, dl, {to: addDays(todayKey(), -1)})}); if (autoOn()) autoPlanSync(); toast("Entlastungswoche beendet."); render(); break; }
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
