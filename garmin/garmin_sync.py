@@ -18,7 +18,7 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-TOKENS = os.path.expanduser("~/.garminconnect")
+TOKENS = os.path.expanduser(os.environ.get("GARMIN_DIR") or "~/.garminconnect")  # GARMIN_DIR: anderes Konto auf dem Mac
 if os.environ.get("GARMIN_TOKENS"):
     # In GitHub Actions: Sitzung kommt verschlüsselt als Secret (garth.dumps), nie als Datei im Repository.
     import tempfile
