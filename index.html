@@ -297,7 +297,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 21:29";
+const APP_VERSION = "06.10.2026 21:35";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -535,9 +535,20 @@ function dayTotals(d){
   MEALS.forEach(([m]) => (d.meals[m] || []).forEach(it => { t.kcal += +it.kcal || 0; t.p += +it.p || 0; t.f += +it.f || 0; t.c += +it.c || 0; }));
   return t;
 }
-function weightSeries(){
-  return Object.keys(S.days).filter(k => typeof S.days[k].weight === "number").sort().map(k => ({k, v: S.days[k].weight}));
+/* Ausreißer (z. B. mit Kleidung oder falsche Person auf der Waage) zählen nicht: mehr als 2,5 kg bzw. 2,5 %
+   weg vom Median der Messungen ±10 Tage. In „Letzte Einträge“ bleiben sie sichtbar und löschbar. */
+let wsMemo = {};
+function weightSeriesAll(){
+  if (wsMemo.days === S.days) return wsMemo.val;
+  const all = Object.keys(S.days).filter(k => typeof S.days[k].weight === "number").sort().map(k => ({k, v: S.days[k].weight}));
+  all.forEach(p => {
+    const nb = all.filter(q => q !== p && Math.abs(diffDays(q.k, p.k)) <= 10).map(q => q.v).sort((a, b) => a - b);
+    if (nb.length >= 2) { const med = nb.length % 2 ? nb[(nb.length - 1) / 2] : (nb[nb.length / 2 - 1] + nb[nb.length / 2]) / 2; p.out = Math.abs(p.v - med) > Math.max(2.5, med * 0.025); }
+  });
+  wsMemo = {days: S.days, val: all};
+  return all;
 }
+function weightSeries(){ return weightSeriesAll().filter(p => !p.out); }
 function avgAt(series, k, win = 7){
   const from = addDays(k, -(win - 1));
   const xs = series.filter(p => p.k >= from && p.k <= k).map(p => p.v);
@@ -1201,9 +1212,18 @@ function learnedBase(p){
    ca. 0,5–0,7 %, Erfahrene ca. 0,3–0,5 % des Körpergewichts pro Monat, Überschuss 150–450 kcal.
    Bremsen: schlechte Erholung, wenig Schlaf, Kraft stagniert, VO2max fällt. Kurz vor dem Ziel wird sanfter gelandet.
    Lange Cuts (> 12 Wochen): alle 10 Wochen 1 Woche Diätpause auf Erhaltungskalorien. */
+/* Körperzusammensetzung der Garmin-Index-Waage: Mittel der letzten 3 Messungen (BIA schwankt mit dem Wasserhaushalt) */
+function bodySeries(){ const out = new Set(weightSeriesAll().filter(p => p.out).map(p => p.k)); return Object.keys(S.days).filter(k => S.days[k].body && num(S.days[k].body.fat) > 0 && !out.has(k)).sort().map(k => Object.assign({k, w: num(S.days[k].weight) || null}, S.days[k].body)); }
+function bodyFatNow(){
+  const b = bodySeries().filter(x => x.k >= addDays(todayKey(), -30)).slice(-3);
+  return b.length ? {fat: b.reduce((a, x) => a + num(x.fat), 0) / b.length, n: b.length, k: b[b.length - 1].k} : null;
+}
 function autoPace(p, goal, w, base){
   const today = todayKey(), target = num(p.target) || num(cfgRaw().goalLo) || null;
-  const hm = (num(p.height) || 180) / 100, bmi = w / (hm * hm), why = [];
+  const hm = (num(p.height) || 180) / 100, bmi = w / (hm * hm), why = [], bf = bodyFatNow(), fem = p.sex === "w";
+  // Körperfett schlägt BMI (BMI hält Muskeln für Fett). Grenzen für Frauen ca. 8 Prozentpunkte höher.
+  const fatLvl = bf ? (bf.fat >= (fem ? 33 : 25) ? 3 : bf.fat >= (fem ? 28 : 20) ? 2 : bf.fat >= (fem ? 23 : 15) ? 1 : 0) : (bmi >= 30 ? 3 : bmi >= 27 ? 2 : bmi >= 25 ? 1 : 0);
+  const fatTxt = bf ? `Körperfett ${fmt(bf.fat, 1)} % (Index-Waage)` : `BMI ${fmt(bmi, 1)}`;
   const last = n => Array.from({length: n}, (_, i) => addDays(today, -i));
   const recs = last(14).map(k => recoveryOf(k)).filter(Boolean).map(r => r.score);
   const rec = recs.length >= 4 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
@@ -1214,8 +1234,8 @@ function autoPace(p, goal, w, base){
   const vOld = vk.filter(k => k <= addDays(today, -28)).pop(), vDrop = vNow && vOld ? num(S.days[vOld].vo2) - vNow : 0;
   const real = weeklyRate(weightSeries());
   if (goal === "cut") {
-    let pct = bmi >= 30 ? 0.75 : bmi >= 27 ? 0.65 : bmi >= 25 ? 0.55 : 0.45;
-    why.push(`BMI ${fmt(bmi, 1)}: Startwert ${fmt(pct, 2)} % deines Gewichts pro Woche${bmi < 25 ? " (schlank, daher vorsichtig)" : ""}`);
+    let pct = [0.45, 0.55, 0.65, 0.75][fatLvl];
+    why.push(`${fatTxt}: Startwert ${fmt(pct, 2)} % deines Gewichts pro Woche${fatLvl === 0 ? " (schlank, daher vorsichtig)" : ""}`);
     if (rec != null && rec < 38) { pct -= 0.2; why.push(`Erholung sehr niedrig (Ø ${Math.round(rec)} %): langsamer`); }
     else if (rec != null && rec < 50) { pct -= 0.1; why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): etwas langsamer`); }
     else if (rec != null) why.push(`Erholung ok (Ø ${Math.round(rec)} %)`);
@@ -1240,7 +1260,7 @@ function autoPace(p, goal, w, base){
   const xp = trainingXp();
   let mpct = xp === "beginner" ? 1.0 : xp === "intermediate" ? 0.6 : 0.4;
   why.push(`Trainingserfahrung „${xp === "beginner" ? "Einsteiger" : xp === "intermediate" ? "Fortgeschritten" : "Erfahren"}“: ${fmt(mpct, 1)} % deines Gewichts pro Monat`);
-  if (bmi >= 27) { mpct *= 0.6; why.push(`BMI ${fmt(bmi, 1)}: langsamer aufbauen, damit wenig Fett dazukommt`); }
+  if (fatLvl >= 2) { mpct *= 0.6; why.push(`${fatTxt}: langsamer aufbauen, damit wenig Fett dazukommt`); }
   if (rec != null && rec < 45) why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): mehr Essen hilft hier nicht, Schlaf schon`);
   if (stuck >= 2) why.push(`${stuck} Übungen stagnieren: Training anpassen, nicht mehr essen`);
   const rate0 = w * mpct / 100 / 4.33;
@@ -2885,7 +2905,7 @@ function viewKoerper(){
   // Bei automatischem Tempo regelt der Rechner selbst nach, statt dass du etwas umstellen musst
   const apT = gt !== "maintain" && c.calc && c.calc.on && c.calc.pace === "auto" ? autoTargets() : null;
   if (status && apT && apT.auto) status = status.replace(/(Reduziere|Erhöhe|Für Muskelaufbau erhöhe|Zum Halten (reduziere|erhöhe)) um etwa [^<]*/, "Der Rechner gleicht das automatisch über deinen gelernten Verbrauch aus.").replace(/\(Ziel [^)]*kg Abnahme pro Woche\)/, "(Ziel etwa " + fmt(apT.auto.rate, 2) + " kg pro Woche)");
-  const recent = ser.slice().reverse().slice(0, 30);
+  const recent = weightSeriesAll().slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
   const lastWaist = waist.length ? waist[waist.length - 1] : null;
   return `<button class="btn block" data-act="review-open" style="margin-bottom:12px">📊 Wochenrückblick ansehen</button><section class="card">
@@ -2906,6 +2926,7 @@ function viewKoerper(){
     </div>
     ${status ? `<div style="margin-top:12px">${c.calc && c.calc.on ? status.replace(/ (Reduziere|Erhöhe|Für Muskelaufbau erhöhe)[^.]*\./, " Der Kalorienrechner passt dein Ziel dafür automatisch an.") : status}</div>` : ""}
   </section>
+  ${bodyCompCard()}
   ${fitnessCard()}
   ${insightsCard()}
   <div class="section-title">Eintragen</div>
@@ -2920,7 +2941,29 @@ function viewKoerper(){
     </form>
   </section>
   <div class="section-title">Letzte Einträge</div>
-  <section class="card" style="padding-block:6px"><div class="list">${recent.map(p => `<div class="li"><div class="grow"><div class="title num">${fmt(p.v, 1)} kg</div><div class="sub">${fmtMid(p.k)} ${dateOf(p.k).getFullYear()}</div></div><button class="x" data-act="weight-del" data-date="${p.k}" aria-label="Eintrag vom ${fmtShort(p.k)} löschen">×</button></div>`).join("") || '<div class="empty">Noch kein Gewicht eingetragen.</div>'}</div></section>`;
+  <section class="card" style="padding-block:6px"><div class="list">${recent.map(p => `<div class="li"><div class="grow"><div class="title num">${fmt(p.v, 1)} kg${p.out ? ` <span class="chip" style="color:var(--warn)">Ausreißer, zählt nicht</span>` : ""}</div><div class="sub">${fmtMid(p.k)} ${dateOf(p.k).getFullYear()}</div></div><button class="x" data-act="weight-del" data-date="${p.k}" aria-label="Eintrag vom ${fmtShort(p.k)} löschen">×</button></div>`).join("") || '<div class="empty">Noch kein Gewicht eingetragen.</div>'}</div></section>`;
+}
+
+/* Körperzusammensetzung (Garmin Index S2): Körperfett, Fett- und Muskelmasse mit Veränderung zu vor ca. 4 Wochen */
+function bodyCompCard(){
+  const ser = bodySeries().filter(x => x.w); if (!ser.length) return "";
+  const avg3 = arr => { const a = arr.slice(-3); return {fat: a.reduce((s, x) => s + num(x.fat), 0) / a.length, w: a.reduce((s, x) => s + x.w, 0) / a.length, muscle: a.filter(x => num(x.muscle) > 0).reduce((s, x, _, A) => s + num(x.muscle) / A.length, 0)}; };
+  const now = avg3(ser), last = ser[ser.length - 1];
+  const oldSer = ser.filter(x => x.k <= addDays(last.k, -28)), old = oldSer.length ? avg3(oldSer) : null;
+  const fm = o => o.w * o.fat / 100, ffm = o => o.w - fm(o);
+  const dl = (a, b, d, good) => { if (b == null) return ""; const v = a - b; if (Math.abs(v) < (d ? 0.05 : 0.1)) return `<div class="small muted">±0</div>`; const ok = good === 0 ? null : (v > 0) === (good > 0); return `<div class="small num" style="color:${ok == null ? "var(--ink-2)" : ok ? "var(--good)" : "var(--warn)"}">${v > 0 ? "+" : "−"}${fmt(Math.abs(v), 1)}${d ? " %-P." : " kg"}</div>`; };
+  const tile = (l, v, u, d) => `<div><span class="eyebrow">${l}</span><div class="v">${v}<span class="unit">${u}</span></div>${d}</div>`;
+  let msg = "";
+  if (old) {
+    const dF = fm(now) - fm(old), dL = ffm(now) - ffm(old);
+    msg = dF <= -0.3 && dL >= -0.3 ? "Stark: Fett geht runter, deine fettfreie Masse bleibt." : dF >= 0.5 && dL <= 0.2 ? "Seitdem ist vor allem Fett dazugekommen." : dL >= 0.4 && dF < 0.4 ? "Gut: Du baust fettfreie Masse auf, ohne viel Fett." : "";
+  }
+  return `<div style="height:12px"></div><section class="card">
+    <div class="card-h"><h2>Körperzusammensetzung</h2><span class="small muted">Index-Waage · ${fmtShort(last.k)}</span></div>
+    <div class="kv">${tile("Körperfett", fmt(now.fat, 1), "%", old ? dl(now.fat, old.fat, true, -1) : "")}${tile("Fettmasse", fmt(fm(now), 1), "kg", old ? dl(fm(now), fm(old), false, -1) : "")}${now.muscle ? tile("Muskelmasse", fmt(now.muscle, 1), "kg", old && old.muscle ? dl(now.muscle, old.muscle, false, 1) : "") : ""}${tile("Fettfrei", fmt(ffm(now), 1), "kg", old ? dl(ffm(now), ffm(old), false, 1) : "")}</div>
+    ${msg ? `<div class="hint" style="margin-top:12px">${msg}</div>` : ""}
+    <p class="small muted" style="margin:10px 0 0">Mittel der letzten 3 Messungen${old ? ", Veränderung zu den 3 Messungen bis " + fmtShort(oldSer[oldSer.length - 1].k) : ""}. Waagen mit Körperfett schwanken stark mit dem Wasserhaushalt, deshalb zählt der Trend über Wochen, nicht der einzelne Wert. Am besten morgens nüchtern wiegen.</p>
+  </section>`;
 }
 
 /* ----- Routine ----- */

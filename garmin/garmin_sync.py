@@ -119,7 +119,24 @@ def day(api, d):
     weights = safe(api.get_body_composition, d).get("dateWeightList") or []
     if weights and weights[-1].get("weight"):
         out["weight"] = round(weights[-1]["weight"] / 1000, 1)
+        b = body_of(weights[-1])
+        if b:
+            out["body"] = b
     return out
+
+
+def body_of(x):
+    """Körperzusammensetzung der Index-Waage: Körperfett %, Muskel- und Knochenmasse kg, Wasser %."""
+    b = {}
+    if x.get("bodyFat"):
+        b["fat"] = round(float(x["bodyFat"]), 1)
+    if x.get("muscleMass"):
+        b["muscle"] = round(x["muscleMass"] / 1000, 1)
+    if x.get("boneMass"):
+        b["bone"] = round(x["boneMass"] / 1000, 1)
+    if x.get("bodyWater"):
+        b["water"] = round(float(x["bodyWater"]), 1)
+    return b
 
 
 def fetch(days):
