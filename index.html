@@ -298,7 +298,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 22:16";
+const APP_VERSION = "06.10.2026 22:23";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -2033,12 +2033,13 @@ function openPlanner(mon){
   mon = mon || plannerDefaultWeek();
   const saved = weekPlanOf(mon), days = Array.from({length: 7}, (_, i) => addDays(mon, i));
   const sch = footballSchedule(), prev = weekPlanOf(addDays(mon, -7));
-  const plannedGym = k => { const w = workoutsSorted().find(x => x.date === k && x.kind !== "activity" && x.status === "planned" && x.templateId); return w ? w.templateId : ""; };
+  // Gym aus geplanten UND schon erledigten Trainings (sonst verschwindet eine erledigte Einheit von gestern aus dem Plan)
+  const plannedGym = k => { const w = workoutsSorted().find(x => x.date === k && x.kind !== "activity" && (x.status === "planned" || x.status === "done") && x.templateId); return w ? w.templateId : ""; };
   // Vorschlag ohne gespeicherten Plan: Fußball aus der Erkennung bzw. Vorwoche, Gym aus schon geplanten Trainings
   const draft = {};
   days.forEach((k, i) => {
     const s = saved && saved[k], p = prev && prev[addDays(mon, i - 7)], wd = dateOf(k).getDay();
-    draft[k] = s ? {fb: s.fb || "", fbTime: s.fbTime || "", gym: plannedGym(k), gymTime: s.gymTime || ""} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", fbTime: p ? p.fbTime || "" : "", gym: plannedGym(k) || (p ? p.gym || "" : ""), gymTime: p ? p.gymTime || "" : ""};
+    draft[k] = s ? {fb: s.fb || "", fbTime: s.fbTime || "", gym: plannedGym(k) || (k < todayKey() ? s.gym || "" : ""), gymTime: s.gymTime || ""} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", fbTime: p ? p.fbTime || "" : "", gym: plannedGym(k) || (p ? p.gym || "" : ""), gymTime: p ? p.gymTime || "" : ""};
   });
   wp = {mon, days: draft, saved: !!saved};
   openSheet("Woche planen", "", null, () => { wp = null; });
