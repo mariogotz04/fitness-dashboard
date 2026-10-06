@@ -200,6 +200,15 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .empty{text-align:center;padding:18px 8px;color:var(--muted);font-size:14px}
 .toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.18);font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 .toast[hidden]{display:none}
+/* Nur Hochformat: iPhone-Web-Apps lassen sich nicht sperren, daher auf Handys im Querformat ein Hinweis statt gedrehter App */
+.rotlock{display:none}
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) and (hover: none){
+  .rotlock{display:flex;position:fixed;inset:0;z-index:9999;background:var(--bg);color:var(--ink);align-items:center;justify-content:center;text-align:center;padding:24px}
+  .rotlock > div{display:flex;flex-direction:column;gap:8px;align-items:center;font-family:var(--body)}
+  .rotlock b{font-family:var(--display);font-size:22px}
+  .rotlock span{color:var(--ink-2);font-size:14px}
+  .app{visibility:hidden}
+}
 .mk5{position:absolute;left:25%;top:-2px;bottom:-2px;width:2px;border-radius:1px;background:var(--ink-2);opacity:.55}
 .kbal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .kb{background:var(--surface-2);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
@@ -283,6 +292,7 @@ a.btn{color:var(--accent)}
 
 </head>
 <body>
+<div class="rotlock" aria-hidden="true"><div><div style="font-size:44px">📱</div><b>Bitte Handy hochkant halten</b><span>Die App ist fürs Hochformat gemacht.</span></div></div>
 <div class="app">
   <header class="top" id="top"></header>
   <main id="view" aria-live="polite"></main>
@@ -298,7 +308,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 22:23";
+const APP_VERSION = "06.10.2026 22:30";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
