@@ -297,7 +297,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 21:24";
+const APP_VERSION = "06.10.2026 21:29";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -453,7 +453,7 @@ function groupTarget(g){
   const small = g === "Waden" || g === "Bauch", arm = g === "Bizeps" || g === "Trizeps";
   const base = xp === "beginner" ? 10 : xp === "intermediate" ? 12 : 14;
   let v = small ? 6 : arm ? base - 4 : base + (gt === "bulk" ? 2 : gt === "cut" ? 0 : -1);
-  const pace = c.calc && c.calc.on ? num(c.calc.pace) : 0;
+  const pace = paceAdj();
   if (gt === "cut" && pace <= -750) { v -= 2; notes.push("großes Kaloriendefizit, daher etwas weniger Sätze"); }
   const recs = [0, 1, 2, 3, 4, 5, 6].map(i => recoveryOf(addDays(today, -i))).filter(Boolean).map(r => r.score);
   const recAvg = recs.length >= 3 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
@@ -475,7 +475,7 @@ function dynRec(x, ownId){
   const gt = goalType(), xp = trainingXp(), sc = coachScheme(x, gt, xp), g = x.g;
   const tg = groupTarget(g), pl = plannedSets(g), small = g === "Bauch" || g === "Waden";
   const sets = clamp(Math.round(tg.v / Math.max(pl.n, 1)), 2, small ? 3 : 4);
-  const c = cfgRaw(), pace = c.calc && c.calc.on ? num(c.calc.pace) : 0;
+  const c = cfgRaw(), pace = paceAdj();
   const diet = gt === "cut" ? `Im Defizit (${pace ? pace + " kcal" : "Abnehmen"}): Gewichte halten ist wichtiger als mehr Sätze, schwer genug bleiben.`
     : gt === "bulk" ? `Im Überschuss (${pace ? "+" + pace + " kcal" : "Aufbau"}): gute Phase, um Gewicht und Wiederholungen zu steigern.`
     : "Kalorien im Gleichgewicht: Gewichte langsam steigern.";
@@ -1162,11 +1162,11 @@ const PAL_OLD = {1.3: 1.2, 1.4: 1.3, 1.6: 1.45, 1.8: 1.6, 2.0: 1.8, 2: 1.8};
 const palOf = p => { const v = num(p && p.pal) || 1.3; return p && p.palV === 2 ? v : (PAL_OLD[v] || v); };
 const palName = v => (PALS.find(x => x[0] === v) || [0, "Eigener Wert"])[1];
 const PACE = {
-  cut: [[-300, "Sanft: −300 kcal (ca. 0,3 kg pro Woche)"], [-500, "Empfohlen: −500 kcal (ca. 0,5 kg pro Woche)"], [-750, "Zügig: −750 kcal (ca. 0,7 kg pro Woche)"]],
-  bulk: [[200, "Sauber: +200 kcal"], [300, "Empfohlen: +300 kcal"], [500, "Schneller: +500 kcal (mehr Fett)"]],
+  cut: [["auto", "Automatisch (empfohlen)"], [-300, "Sanft: −300 kcal (ca. 0,3 kg pro Woche)"], [-500, "Empfohlen: −500 kcal (ca. 0,5 kg pro Woche)"], [-750, "Zügig: −750 kcal (ca. 0,7 kg pro Woche)"]],
+  bulk: [["auto", "Automatisch (empfohlen)"], [200, "Sauber: +200 kcal"], [300, "Empfohlen: +300 kcal"], [500, "Schneller: +500 kcal (mehr Fett)"]],
   maintain: [[0, "Genau halten"], [-200, "Leicht drunter für Recomp: −200 kcal"]]
 };
-const PACE_DEF = {cut: -500, bulk: 300, maintain: 0};
+const PACE_DEF = {cut: "auto", bulk: "auto", maintain: 0};
 const curWeight = () => { const ser = weightSeries(); return ser.length ? avgAt(ser, ser[ser.length - 1].k) : null; };
 /* Alter exakt aus dem Geburtstag; ältere Einträge haben nur das Geburtsjahr */
 function ageOf(p){
@@ -1195,6 +1195,74 @@ function learnedBase(p){
   const eat = logged.reduce((a, x) => a + x.kcal, 0) / logged.length, burn = logged.reduce((a, x) => a + x.burn, 0) / logged.length;
   return {base: eat - (w1 - w0) * 7700 / span - burn, days: logged.length, eat, burn, rate: (w1 - w0) / span * 7};
 }
+/* Automatisches Tempo (Cut/Aufbau) aus Zielgewicht und deinen Daten.
+   Quellen-Richtwerte: Abnehmen 0,5–1 % des Körpergewichts pro Woche (je mehr Fett, desto schneller möglich; schlanker = langsamer,
+   damit Muskeln bleiben), Defizit höchstens ca. 25 % des Verbrauchs und nie über 750 kcal. Aufbau: Anfänger ca. 1 %, Fortgeschrittene
+   ca. 0,5–0,7 %, Erfahrene ca. 0,3–0,5 % des Körpergewichts pro Monat, Überschuss 150–450 kcal.
+   Bremsen: schlechte Erholung, wenig Schlaf, Kraft stagniert, VO2max fällt. Kurz vor dem Ziel wird sanfter gelandet.
+   Lange Cuts (> 12 Wochen): alle 10 Wochen 1 Woche Diätpause auf Erhaltungskalorien. */
+function autoPace(p, goal, w, base){
+  const today = todayKey(), target = num(p.target) || num(cfgRaw().goalLo) || null;
+  const hm = (num(p.height) || 180) / 100, bmi = w / (hm * hm), why = [];
+  const last = n => Array.from({length: n}, (_, i) => addDays(today, -i));
+  const recs = last(14).map(k => recoveryOf(k)).filter(Boolean).map(r => r.score);
+  const rec = recs.length >= 4 ? recs.reduce((a, b) => a + b, 0) / recs.length : null;
+  const sls = last(14).map(k => num(((S.days[k] || {}).sleep || {}).h)).filter(h => h >= 3);
+  const sleep = sls.length >= 4 ? sls.reduce((a, b) => a + b, 0) / sls.length : null;
+  const stuck = plateaus().length;
+  const vk = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(), vNow = vk.length ? num(S.days[vk[vk.length - 1]].vo2) : null;
+  const vOld = vk.filter(k => k <= addDays(today, -28)).pop(), vDrop = vNow && vOld ? num(S.days[vOld].vo2) - vNow : 0;
+  const real = weeklyRate(weightSeries());
+  if (goal === "cut") {
+    let pct = bmi >= 30 ? 0.75 : bmi >= 27 ? 0.65 : bmi >= 25 ? 0.55 : 0.45;
+    why.push(`BMI ${fmt(bmi, 1)}: Startwert ${fmt(pct, 2)} % deines Gewichts pro Woche${bmi < 25 ? " (schlank, daher vorsichtig)" : ""}`);
+    if (rec != null && rec < 38) { pct -= 0.2; why.push(`Erholung sehr niedrig (Ø ${Math.round(rec)} %): langsamer`); }
+    else if (rec != null && rec < 50) { pct -= 0.1; why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): etwas langsamer`); }
+    else if (rec != null) why.push(`Erholung ok (Ø ${Math.round(rec)} %)`);
+    if (sleep != null && sleep < 6.5) { pct -= 0.05; why.push(`wenig Schlaf (Ø ${fmt(sleep, 1)} h): etwas langsamer`); }
+    if (stuck >= 2) { pct -= 0.1; why.push(`${stuck} Übungen stagnieren: kleineres Defizit schützt die Kraft`); }
+    else why.push(stuck ? "Kraft fast überall stabil" : "Kraft steigt oder hält");
+    if (vDrop >= 1.5) { pct -= 0.05; why.push(`VO2max ${fmt(vDrop, 1)} gefallen: etwas langsamer`); }
+    pct = clamp(pct, 0.3, 0.8);
+    let rate = w * pct / 100, remain = target && target < w ? w - target : null;
+    if (remain != null && remain < 2) { rate *= 0.75; why.push("kurz vor dem Ziel: sanfter landen"); }
+    let adj = -rate * 7700 / 7;
+    const cap = Math.min(750, base * 0.25);
+    if (-adj > cap) { adj = -cap; why.push(`Defizit auf ${fmt(cap)} kcal begrenzt (max. 25 % deines Verbrauchs)`); }
+    adj = -Math.max(250, Math.round(-adj / 10) * 10); rate = -adj * 7 / 7700;
+    // Diätpause: nach je 10 Wochen Cut 1 Woche auf Erhaltungskalorien (hilft Kopf, Hormonen und Training)
+    const cw = p.cutStart ? Math.floor(diffDays(p.cutStart, today) / 7) : 0;
+    if (cw >= 10 && cw % 11 === 10) { why.unshift("Diese Woche ist Diätpause: Erhaltungskalorien, danach geht der Cut weiter"); return Object.assign({adj: 0, rate: 0, pct: 0, why, target, bmi, dietBreak: true}, paceEta(w, target, w * pct / 100, true)); }
+    if (real != null && real < -w * 0.01) why.push(`du nimmst gerade schneller ab als geplant (${fmt(real, 2)} kg/Woche): der Rechner hebt dein Ziel über den gelernten Verbrauch automatisch an`);
+    return Object.assign({adj, rate, pct: rate / w * 100, why, target, bmi}, paceEta(w, target, rate, true));
+  }
+  // Aufbau
+  const xp = trainingXp();
+  let mpct = xp === "beginner" ? 1.0 : xp === "intermediate" ? 0.6 : 0.4;
+  why.push(`Trainingserfahrung „${xp === "beginner" ? "Einsteiger" : xp === "intermediate" ? "Fortgeschritten" : "Erfahren"}“: ${fmt(mpct, 1)} % deines Gewichts pro Monat`);
+  if (bmi >= 27) { mpct *= 0.6; why.push(`BMI ${fmt(bmi, 1)}: langsamer aufbauen, damit wenig Fett dazukommt`); }
+  if (rec != null && rec < 45) why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): mehr Essen hilft hier nicht, Schlaf schon`);
+  if (stuck >= 2) why.push(`${stuck} Übungen stagnieren: Training anpassen, nicht mehr essen`);
+  const rate0 = w * mpct / 100 / 4.33;
+  const adj = Math.round(clamp(rate0 * 7700 / 7 + 60, 150, 450) / 10) * 10, rate = (adj - 60) * 7 / 7700;
+  if (real != null && real > 0.5) why.push(`du nimmst gerade schnell zu (${fmt(real, 2)} kg/Woche): der Rechner senkt dein Ziel über den gelernten Verbrauch`);
+  return Object.assign({adj, rate, pct: rate / w * 100, why, target, bmi}, paceEta(w, target, rate, false));
+}
+/* Zeitraum bis zum Zielgewicht: Woche für Woche rechnen (Tempo hängt am Gewicht), mit Landephase und Diätpausen */
+function paceEta(w, target, rate, cut){
+  if (!target) return {weeks: null};
+  if (cut ? target >= w - 0.2 : target <= w + 0.2) return {weeks: 0, reached: true};
+  let cw = w, wk = 0, breaks = 0, active = 0;
+  const pctW = rate / w;
+  while (wk < 260 && (cut ? cw > target : cw < target)) {
+    wk++;
+    if (cut && active > 0 && active % 10 === 0 && wk > 1) { breaks++; active++; continue; }
+    let r = cw * pctW; const rem = Math.abs(cw - target); if (cut && rem < 2) r *= 0.75;
+    cw += cut ? -Math.min(r, rem) : Math.min(r, rem); active++;
+  }
+  if (cut && wk <= 12) { wk -= breaks; breaks = 0; }
+  return {weeks: wk, breaks, eta: addDays(todayKey(), wk * 7)};
+}
 function calcTargets(p, goal){
   const w = curWeight(); if (!w) return null;
   const bm = (cfgRaw().burnMode || "workouts") === "off" ? "off" : "workouts";
@@ -1205,20 +1273,26 @@ function calcTargets(p, goal){
   const L = learnedBase(p);
   let base = formula, share = 0;
   if (L) { share = Math.min(1, (L.days - 7) / 14) * 0.8; base = formula * (1 - share) + clamp(L.base, formula * 0.75, formula * 1.25) * share; }
-  const adj = p.pace != null && PACE[goal].some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
+  const pace = p.pace != null && PACE[goal].some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
+  const auto = pace === "auto" ? autoPace(p, goal, w, base) : null;
+  const adj = auto ? auto.adj : pace;
   const floor = Math.round(Math.max(bmr * 0.75, p.sex === "w" ? 1200 : 1500) / 10) * 10;
   const kcal = Math.round(Math.max(floor, base + adj) / 10) * 10;
   const pk = num(p.pkg) || (goal === "cut" ? 2.0 : 1.8), fpct = num(p.fat) || 25;
   const pr = Math.round(w * pk), fat = Math.max(Math.round(kcal * fpct / 100 / 9), Math.round(w * 0.6));
   const carbs = Math.max(0, Math.round((kcal - pr * 4 - fat * 9) / 4));
-  return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, floor, floorHit: base + adj < floor};
+  return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, auto, floor, floorHit: base + adj < floor};
 }
-let autoMemo = {};
+/* Defizit/Überschuss in kcal, auch wenn das Tempo automatisch ist */
+const paceAdj = () => { const c = cfgRaw(); if (!(c.calc && c.calc.on)) return 0; if (c.calc.pace !== "auto") return num(c.calc.pace); const t = autoTargets(); return t ? t.adj : 0; };
+let autoMemo = {}, autoBusy = false;
 function autoTargets(){
   const st = S.settings.main || {}, key = todayKey();
   if (autoMemo.days === S.days && autoMemo.set === S.settings.main && autoMemo.key === key) return autoMemo.val;
+  if (autoBusy) return null; // Erholung & Co. lesen cfg() während der Rechnung: dann die gespeicherten Werte nehmen
   const g = GOALS[st.goalType] ? st.goalType : "maintain";
-  const val = calcTargets(st.calc || {}, g);
+  let val; autoBusy = true;
+  try { val = calcTargets(st.calc || {}, g); } finally { autoBusy = false; }
   autoMemo = {days: S.days, set: S.settings.main, key, val};
   return val;
 }
@@ -1230,13 +1304,24 @@ function calcExplain(t, goal){
     <div class="spread"><span>Grundumsatz (${fmt(t.w, 1)} kg)</span><b class="num">${fmt(t.bmr)} kcal</b></div>
     <div class="spread"><span>× Aktivität „${palName(Math.round((t.factor - (bm === "off" ? 0.3 : 0)) * 100) / 100)}“ (${fmt(t.factor, 1)}${bm === "off" ? ", inkl. Sport" : ""})</span><b class="num">${fmt(t.formula)} kcal</b></div>
     ${L ? `<div class="spread"><span>Gelernt aus ${L.days} Tagen Essen + Gewicht (zählt ${Math.round(t.share * 100)} %)</span><b class="num">${fmt(L.base)} kcal</b></div>` : ""}
-    <div class="spread"><span>${GOALS[goal]}</span><b class="num">${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal</b></div>
+    <div class="spread"><span>${GOALS[goal]}${t.auto ? " (automatisch)" : ""}</span><b class="num">${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal</b></div>
+    ${t.auto ? paceBox(t.auto, goal) : ""}
     <div class="spread" style="border-top:1px solid var(--line);padding-top:6px"><b>Tagesziel</b><b class="num" style="font-size:20px">${fmt(t.kcal)} kcal</b></div>
     <div class="small muted num">Eiweiß ${t.p} g · Kohlenhydrate ${t.c} g · Fett ${t.f} g</div>
     ${bm !== "off" ? `<div class="small ink2">+ an jedem Tag deine Schritte und Trainingskalorien von Garmin${num(cfgRaw().burnShare) && num(cfgRaw().burnShare) < 100 ? " (" + cfgRaw().burnShare + " %)" : ""}.</div>` : ""}
     ${t.floorHit ? `<div class="hint">Weniger als ${fmt(t.floor)} kcal (ohne Sport) empfehle ich nicht, deshalb ist das Ziel hier begrenzt.</div>` : ""}
     ${L ? `<div class="small muted">In den letzten 3 Wochen: Ø ${fmt(L.eat)} kcal gegessen, Gewicht ${L.rate > 0 ? "+" : ""}${fmt(L.rate, 2)} kg pro Woche. Daraus lernt der Rechner deinen echten Verbrauch und passt das Ziel an, damit dein Ziel auch wirklich eintritt.</div>` : `<div class="small muted">Sobald du etwa 2 Wochen dein Essen einträgst und dich wiegst, lernt der Rechner deinen echten Verbrauch dazu und passt das Ziel an.</div>`}
   </div>`;
+}
+function paceBox(a, goal){
+  const cut = goal === "cut";
+  const eta = a.reached ? `<b>Zielgewicht ${fmt(a.target, 1)} kg ist schon erreicht.</b> Stell dein Ziel auf „Gewicht halten“ oder wähle ein neues Zielgewicht.`
+    : a.weeks ? `<b>Ziel ${fmt(a.target, 1)} kg voraussichtlich am ${fmtShort(a.eta)}${dateOf(a.eta).getFullYear()}</b> (ca. ${a.weeks} Wochen${a.breaks ? ", inkl. " + a.breaks + " Woche" + (a.breaks > 1 ? "n" : "") + " Diätpause auf Erhaltungskalorien" : ""}).`
+    : a.target ? `Dein Zielgewicht ${fmt(a.target, 1)} kg passt nicht zu „${GOALS[goal]}“. Trag ein Gewicht ${cut ? "unter" : "über"} deinem aktuellen ein.` : "Trag ein Zielgewicht ein, dann schlage ich dir einen Zeitraum vor.";
+  if (a.dietBreak) return `<div class="hint" style="margin:4px 0"><b>🌿 Diätpause-Woche:</b> Du isst diese Woche auf Erhaltungskalorien. Danach geht der Cut automatisch weiter. ${a.weeks ? "Ziel " + fmt(a.target, 1) + " kg voraussichtlich am " + fmtShort(a.eta) + dateOf(a.eta).getFullYear() + "." : ""}</div>`;
+  return `<div class="hint" style="margin:4px 0"><div>${cut ? "Abnehmen" : "Zunehmen"}: <b>${fmt(a.rate, 2)} kg pro Woche</b> (${fmt(a.pct, 2)} % deines Gewichts)</div><div style="margin-top:4px">${eta}</div>
+    <details style="margin-top:6px"><summary class="small ink2" style="cursor:pointer">Warum dieses Tempo?</summary><ul class="small muted" style="margin:6px 0 0;padding-left:18px">${a.why.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
+    <div class="small muted" style="margin-top:6px">${cut ? "Gesund und nachhaltig: 0,5–1 % pro Woche, nie mehr als 750 kcal Defizit und nie unter dem Mindestwert. Das Tempo wird jeden Tag neu aus deinen Daten berechnet." : "Sauberer Aufbau: kleiner Überschuss, damit vor allem Muskeln und wenig Fett dazukommen. Das Tempo wird jeden Tag neu aus deinen Daten berechnet."}</div></details></div>`;
 }
 function calcForm(p, goal){
   const paces = PACE[goal], pace = paces.some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
@@ -1248,6 +1333,7 @@ function calcForm(p, goal){
     <div class="field"><label for="cht">Größe (cm)</label><input class="inp num" id="cht" inputmode="numeric" value="${esc(p.height || "")}" placeholder="z. B. 182"></div></div>
     <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Aktivitätslevel durch Job und Alltag (ohne Schritte und Sport)</legend><div class="stack" style="gap:6px">${PALS.map(([v, l, ex]) => `<label class="pick" style="align-items:flex-start;gap:10px;cursor:pointer"><input type="radio" name="cpal" value="${v}" ${palOf(p) === v ? "checked" : ""} style="margin-top:4px"><span style="flex:1;min-width:0"><b>${l}</b><span class="small muted" style="display:block">${ex}</span></span></label>`).join("")}</div>
       <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Schritte, Training und Fußball gehören nicht hierher: Die kommen jeden Tag über Garmin dazu. An Tagen mit wenig Schritten ist dein Ziel dadurch niedriger, an Tagen mit vielen höher."}</span></fieldset>
+    ${goal !== "maintain" ? `<div class="field"><label for="ctw">Zielgewicht (kg)</label><input class="inp num" id="ctw" inputmode="decimal" value="${esc(fmt(num(p.target) || num(cfgRaw().goalLo) || "", 1))}" placeholder="z. B. 85"></div>` : ""}
     <div class="field"><label for="cpace">Tempo</label><select class="inp" id="cpace">${paces.map(([v, l]) => `<option value="${v}" ${pace === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
     <div class="field"><label for="cft">Fett-Anteil</label><select class="inp" id="cft">${[25, 30].map(v => `<option value="${v}" ${(num(p.fat) || 25) === v ? "selected" : ""}>${v} %</option>`).join("")}</select></div></div>
@@ -1258,7 +1344,7 @@ function calcForm(p, goal){
 }
 function calcRead(){
   const v = id => ($("#" + id) || {}).value;
-  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(v("cbd") || "") ? v("cbd") : "", birth: /^\d{4}/.test(v("cbd") || "") ? +v("cbd").slice(0, 4) : (cfgRaw().calc || {}).birth || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
+  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(v("cbd") || "") ? v("cbd") : "", birth: /^\d{4}/.test(v("cbd") || "") ? +v("cbd").slice(0, 4) : (cfgRaw().calc || {}).birth || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: v("cpace") === "auto" ? "auto" : num(v("cpace")), target: num(String(v("ctw") || "").replace(",", ".")) || num((cfgRaw().calc || {}).target) || "", pkg: num(v("cpk")), fat: num(v("cft"))}};
 }
 function openCalc(){
   const st = S.settings.main || {};
@@ -1268,7 +1354,7 @@ function calcLine(){
   const c = cfgRaw();
   if (!(c.calc && c.calc.on)) return `<button class="btn ghost" data-act="calc-open" style="margin-top:8px;min-height:36px">🧮 Kalorienrechner</button>`;
   const t = autoTargets(); if (!t) return "";
-  return `<button class="hint" data-act="calc-open" style="margin-top:10px;display:block;width:100%;text-align:left;cursor:pointer"><b>🧮 Automatisch: ${fmt(t.kcal)} kcal</b> <span class="muted">· ${GOALS[goalType()]} ${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal${t.learned ? " · lernt aus " + t.learned.days + " Tagen" : ""}. Tippen für Details.</span></button>`;
+  return `<button class="hint" data-act="calc-open" style="margin-top:10px;display:block;width:100%;text-align:left;cursor:pointer"><b>🧮 Automatisch: ${fmt(t.kcal)} kcal</b> <span class="muted">· ${GOALS[goalType()]} ${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal${t.auto && t.auto.weeks ? " · Ziel " + fmt(t.auto.target, 1) + " kg ca. " + fmtShort(t.auto.eta) + dateOf(t.auto.eta).getFullYear() : ""}${t.learned ? " · lernt aus " + t.learned.days + " Tagen" : ""}. Tippen für Details.</span></button>`;
 }
 /* Eiweiß pro Mahlzeit: mind. 30 g regt den Muskelaufbau am besten an (NotebookLM-Zusammenfassung) */
 function proteinMeals(d){
@@ -2203,7 +2289,7 @@ function buildExport(){
   const strengthN = ws.filter(w => w.kind !== "activity").length, weeks = Math.max(1, (diffDays(from, to) + 1) / 7);
   const cc = cfg();
   L.push("## Ziele und Stand", "");
-  L.push(`- Ziel: ${GOALS[gt]}${c.calc && c.calc.on ? ` (Kalorienrechner aktiv, Tempo ${num(c.calc.pace) > 0 ? "+" : ""}${num(c.calc.pace)} kcal)` : ""}`);
+  L.push(`- Ziel: ${GOALS[gt]}${c.calc && c.calc.on ? ` (Kalorienrechner aktiv, Tempo ${c.calc.pace === "auto" ? "automatisch, " : ""}${paceAdj() > 0 ? "+" : ""}${paceAdj()} kcal)` : ""}`);
   if (c.goalLo) L.push(`- Zielgewicht: ${de(num(c.goalLo), 1)} kg${avgW ? ` · aktuell Ø 7 Tage ${de(avgW, 1)} kg (Stand ${last.k}), noch ${de(Math.abs(avgW - num(c.goalLo)), 1)} kg` : ""}`);
   L.push(`- Tagesziel Ernährung: ${de(cc.kcal)} kcal, ${de(cc.p)} g Eiweiß (Stand ${to})`);
   L.push(`- Krafttraining: Ziel ${cc.strengthPerWeek} Einheiten pro Woche · im Zeitraum Ø ${de(strengthN / weeks, 1)} pro Woche`);
@@ -2796,6 +2882,9 @@ function viewKoerper(){
       else status = `<div class="hint good">Dein Gewicht ist stabil. Nichts ändern.</div>`;
     }
   }
+  // Bei automatischem Tempo regelt der Rechner selbst nach, statt dass du etwas umstellen musst
+  const apT = gt !== "maintain" && c.calc && c.calc.on && c.calc.pace === "auto" ? autoTargets() : null;
+  if (status && apT && apT.auto) status = status.replace(/(Reduziere|Erhöhe|Für Muskelaufbau erhöhe|Zum Halten (reduziere|erhöhe)) um etwa [^<]*/, "Der Rechner gleicht das automatisch über deinen gelernten Verbrauch aus.").replace(/\(Ziel [^)]*kg Abnahme pro Woche\)/, "(Ziel etwa " + fmt(apT.auto.rate, 2) + " kg pro Woche)");
   const recent = ser.slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
   const lastWaist = waist.length ? waist[waist.length - 1] : null;
@@ -3680,7 +3769,9 @@ document.addEventListener("submit", async e => {
     }
     case "calc": { const r = calcRead(); if (!(r.p.birthDate && r.p.birth > 1920 && r.p.birth < 2015) || !(r.p.height > 120 && r.p.height < 230)) { toast("Bitte Geburtstag und Größe eintragen."); return; }
       const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
-      if (r.goal === "cut") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
+      if (r.p.target > 30 && r.goal !== "maintain") Object.assign(patch, {goalLo: r.p.target, goalHi: r.p.target});
+      if (r.goal === "cut") patch.calc.cutStart = goalType() === "cut" && (cfgRaw().calc || {}).cutStart || todayKey();
+      if (r.goal === "cut" && r.p.pace !== "auto") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
       saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
     case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; FR.editProfile = false; toast("Gespeichert."); loadFriends(true); break; }
     case "addfriend": {
