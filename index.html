@@ -293,7 +293,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 15:51";
+const APP_VERSION = "06.10.2026 17:29";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -731,6 +731,7 @@ function render(){
   if (animNext) { animNext = false; v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter"); clearTimeout(animT); animT = setTimeout(() => v.classList.remove("enter"), 1200); }
   drawCharts();
   if (loaded && EXDB) setTimeout(autoPlanDaily, 600);
+  if (loaded && mode === "db" && (cfgRaw().drinkRem || {}).on) setTimeout(syncWaterGoal, 800);
   if (openPlanOnLoad && mode === "db") { openPlanOnLoad = false; setTimeout(() => openPlanner(), 400); }
   setTimeout(maybeShowReview, 600);
 }
@@ -1069,6 +1070,10 @@ function autoPlanSync(){
   return n;
 }
 let autoPlanDay = null;
+function syncWaterGoal(){
+  const k = todayKey(), d = S.days[k], g = d ? waterGoal(k).total : 0;
+  if (g > 0 && num(d.waterGoal) !== g) put("days", k, Object.assign({}, d, {waterGoal: g}));
+}
 function autoPlanDaily(){ const t = todayKey(); if (autoPlanDay === t || !EXDB || !loaded) return; autoPlanDay = t; autoPlanSync(); }
 /* Vorschau eines Trainings: alle Übungen mit Sätzen, ohne es zu starten */
 function openWorkoutPreview(id){
@@ -1153,8 +1158,17 @@ const PACE = {
 };
 const PACE_DEF = {cut: -500, bulk: 300, maintain: 0};
 const curWeight = () => { const ser = weightSeries(); return ser.length ? avgAt(ser, ser[ser.length - 1].k) : null; };
+/* Alter exakt aus dem Geburtstag; ältere Einträge haben nur das Geburtsjahr */
+function ageOf(p){
+  p = p || {};
+  if (/^\d{4}-\d{2}-\d{2}$/.test(p.birthDate || "")) {
+    const n = new Date(), [y, mo, d] = p.birthDate.split("-").map(Number);
+    return n.getFullYear() - y - ((n.getMonth() + 1 < mo || (n.getMonth() + 1 === mo && n.getDate() < d)) ? 1 : 0);
+  }
+  return num(p.birth) > 0 ? new Date().getFullYear() - num(p.birth) : null;
+}
 function bmrOf(p, w){
-  const age = new Date().getFullYear() - (num(p.birth) || 1995), m = (num(p.height) || 180) / 100;
+  const age = ageOf(p) || 30, m = (num(p.height) || 180) / 100;
   return p.sex === "w" ? 655.1 + 9.563 * w + 184.96 * m - 4.676 * age : 13.707 * w + 492.3 * m - 6.673 * age + 77;
 }
 /* Tatsächlicher Verbrauch aus den letzten 21 Tagen: Ø gegessen − Gewichtsänderung × 7700 kcal/kg, ohne angerechnete Sportkalorien */
@@ -1220,7 +1234,7 @@ function calcForm(p, goal){
   return `<form class="stack" data-form="calc">
     <div class="field"><label for="cg">Mein Ziel</label><select class="inp" id="cg">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goal === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="fields"><div class="field"><label for="csx">Geschlecht</label><select class="inp" id="csx"><option value="m" ${p.sex !== "w" ? "selected" : ""}>Mann</option><option value="w" ${p.sex === "w" ? "selected" : ""}>Frau</option></select></div>
-    <div class="field"><label for="cby">Alter (Jahre)</label><input class="inp num" id="cby" inputmode="numeric" value="${esc(p.birth ? new Date().getFullYear() - num(p.birth) : "")}" placeholder="z. B. 22"></div>
+    <div class="field"><label for="cbd">Geburtstag</label><input class="inp num" type="date" id="cbd" min="1920-01-01" max="${todayKey()}" value="${esc(p.birthDate || "")}">${ageOf(p) != null ? `<span class="small muted">${p.birthDate ? ageOf(p) + " Jahre" : "Bitte genaues Datum eintragen"}</span>` : ""}</div>
     <div class="field"><label for="cht">Größe (cm)</label><input class="inp num" id="cht" inputmode="numeric" value="${esc(p.height || "")}" placeholder="z. B. 182"></div></div>
     <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Aktivitätslevel durch Job und Alltag (ohne Schritte und Sport)</legend><div class="stack" style="gap:6px">${PALS.map(([v, l, ex]) => `<label class="pick" style="align-items:flex-start;gap:10px;cursor:pointer"><input type="radio" name="cpal" value="${v}" ${palOf(p) === v ? "checked" : ""} style="margin-top:4px"><span style="flex:1;min-width:0"><b>${l}</b><span class="small muted" style="display:block">${ex}</span></span></label>`).join("")}</div>
       <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Schritte, Training und Fußball gehören nicht hierher: Die kommen jeden Tag über Garmin dazu. An Tagen mit wenig Schritten ist dein Ziel dadurch niedriger, an Tagen mit vielen höher."}</span></fieldset>
@@ -1234,7 +1248,7 @@ function calcForm(p, goal){
 }
 function calcRead(){
   const v = id => ($("#" + id) || {}).value;
-  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birth: num(v("cby")) > 0 && num(v("cby")) < 110 ? new Date().getFullYear() - Math.round(num(v("cby"))) : "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
+  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(v("cbd") || "") ? v("cbd") : "", birth: /^\d{4}/.test(v("cbd") || "") ? +v("cbd").slice(0, 4) : (cfgRaw().calc || {}).birth || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: num(v("cpace")), pkg: num(v("cpk")), fat: num(v("cft"))}};
 }
 function openCalc(){
   const st = S.settings.main || {};
@@ -1590,7 +1604,7 @@ function openEval(id){
 const VO2_NORMS = {m: [[20, [41.7, 45.4, 51.1, 55.2]], [30, [40.5, 44.0, 48.3, 52.5]], [40, [38.5, 42.4, 46.4, 50.4]], [50, [35.6, 39.2, 43.4, 48.2]]],
                    w: [[20, [36.1, 39.5, 43.9, 49.6]], [30, [34.4, 37.8, 42.4, 47.4]], [40, [32.0, 35.9, 39.6, 45.3]], [50, [28.7, 32.0, 35.7, 41.1]]]};
 function vo2Class(v){
-  const c = cfgRaw(), p = c.calc || {}, sex = p.sex === "w" ? "w" : "m", age = p.birth ? new Date().getFullYear() - num(p.birth) : 25;
+  const c = cfgRaw(), p = c.calc || {}, sex = p.sex === "w" ? "w" : "m", age = ageOf(p) || 25;
   const row = VO2_NORMS[sex].filter(r => age >= r[0]).pop() || VO2_NORMS[sex][0], t = row[1];
   const i = v < t[0] ? 0 : v < t[1] ? 1 : v < t[2] ? 2 : v < t[3] ? 3 : 4;
   return {label: ["Schwach", "Mittel", "Gut", "Sehr gut", "Hervorragend"][i], next: i < 4 ? t[i] : null, col: ["var(--bad)", "var(--warn)", "var(--accent-2)", "var(--good)", "var(--good)"][i]};
@@ -3347,6 +3361,10 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
     <div class="field"><label for="gpt">Sonntags: Woche planen</label><input class="inp num" type="time" id="gpt" value="${esc(c.planTime == null ? "19:00" : c.planTime)}"><span class="small muted">Erinnerung, falls die nächste Woche noch nicht geplant ist. Leer lassen = aus.</span></div>
+    ${(() => { const dr = c.drinkRem || {}; return `<div class="field"><label for="gdr">💧 Trink-Erinnerungen</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gdr" ${dr.on ? "checked" : ""}> Regelmäßig ans Trinken erinnern</label></div>
+    <div class="fields"><div class="field"><label for="gdi">Alle</label><select class="inp" id="gdi">${[[60, "1 Stunde"], [90, "1,5 Stunden"], [120, "2 Stunden"], [180, "3 Stunden"]].map(([m, l]) => `<option value="${m}" ${(num(dr.every) || 120) === m ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+    <div class="field"><label for="gdf">Von</label><input class="inp num" type="time" id="gdf" value="${esc(dr.from || "08:00")}"></div><div class="field"><label for="gdt">Bis</label><input class="inp num" type="time" id="gdt" value="${esc(dr.to || "21:00")}"></div></div>
+    <span class="small muted" style="margin-top:-6px">Hast du dein Trinkziel für heute schon erreicht, kommt keine Erinnerung mehr.</span>`; })()}
     <p class="small muted" style="margin:0">Supplement-Erinnerungen stellst du direkt bei den Supplements unter Erholung ein.</p>
     <button class="btn primary" type="submit">Speichern</button></form>
     <div class="section-title">Hevy-Import</div>
@@ -3648,7 +3666,7 @@ document.addEventListener("submit", async e => {
       authMsg = "Konto angelegt. Bestätige jetzt den Link in der E-Mail und melde dich dann hier an.";
       render(); return;
     }
-    case "calc": { const r = calcRead(); if (!(r.p.birth > 1920 && r.p.birth < 2015) || !(r.p.height > 120 && r.p.height < 230)) { toast("Bitte Alter und Größe eintragen."); return; }
+    case "calc": { const r = calcRead(); if (!(r.p.birthDate && r.p.birth > 1920 && r.p.birth < 2015) || !(r.p.height > 120 && r.p.height < 230)) { toast("Bitte Geburtstag und Größe eintragen."); return; }
       const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
       if (r.goal === "cut") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
       saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
@@ -3661,15 +3679,15 @@ document.addEventListener("submit", async e => {
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
-    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", planTime: v("gpt") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, experience: v("gxp") || "auto"});
+    case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", planTime: v("gpt") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, drinkRem: {on: !!(f.querySelector("#gdr") || {}).checked, every: num(v("gdi")) || 120, from: v("gdf") || "08:00", to: v("gdt") || "21:00"}, experience: v("gxp") || "auto"});
       const wantN = !!(f.querySelector("#gaN") || {}).checked, rc = cfgRaw();
       let openCalcNext = false;
-      if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birth && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
+      if (wantN && !(rc.calc && rc.calc.on)) { const p = rc.calc || {}; if (p.birthDate && p.height) saveCfg({calc: Object.assign({}, p, {on: true})}); else openCalcNext = true; }
       if (!wantN && rc.calc && rc.calc.on) { const t = autoTargets(); saveCfg(Object.assign({calc: Object.assign({}, rc.calc, {on: false})}, t ? {kcal: t.kcal, p: t.p, c: t.c, f: t.f} : {})); }
       if (rc.coach && rc.coach.on) saveCfg({coach: Object.assign({}, rc.coach, {on: false})});
       closeSheet();
       setTimeout(autoPlanSync, 300);
-      if (openCalcNext) { openCalc(); toast("Trag noch Alter und Größe ein, dann läuft die Ernährung automatisch."); } else toast("Gespeichert.");
+      if (openCalcNext) { openCalc(); toast("Trag noch Geburtstag und Größe ein, dann läuft die Ernährung automatisch."); } else toast("Gespeichert.");
       break; }
   }
 });
