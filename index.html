@@ -297,7 +297,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 21:35";
+const APP_VERSION = "06.10.2026 21:40";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1175,7 +1175,7 @@ const palName = v => (PALS.find(x => x[0] === v) || [0, "Eigener Wert"])[1];
 const PACE = {
   cut: [["auto", "Automatisch (empfohlen)"], [-300, "Sanft: −300 kcal (ca. 0,3 kg pro Woche)"], [-500, "Empfohlen: −500 kcal (ca. 0,5 kg pro Woche)"], [-750, "Zügig: −750 kcal (ca. 0,7 kg pro Woche)"]],
   bulk: [["auto", "Automatisch (empfohlen)"], [200, "Sauber: +200 kcal"], [300, "Empfohlen: +300 kcal"], [500, "Schneller: +500 kcal (mehr Fett)"]],
-  maintain: [[0, "Genau halten"], [-200, "Leicht drunter für Recomp: −200 kcal"]]
+  maintain: [[0, "Genau halten"]]
 };
 const PACE_DEF = {cut: "auto", bulk: "auto", maintain: 0};
 const curWeight = () => { const ser = weightSeries(); return ser.length ? avgAt(ser, ser[ser.length - 1].k) : null; };
@@ -1218,6 +1218,24 @@ function bodyFatNow(){
   const b = bodySeries().filter(x => x.k >= addDays(todayKey(), -30)).slice(-3);
   return b.length ? {fat: b.reduce((a, x) => a + num(x.fat), 0) / b.length, n: b.length, k: b[b.length - 1].k} : null;
 }
+/* Muskelerhalt-Check: Muskelmasse laut Waage (Mittel der letzten 3 vs. 3 Messungen bis 4 Wochen davor)
+   und Kraft (bester geschätzter 1RM der letzten 3 Wochen vs. 3–9 Wochen davor, nur Übungen mit genug Daten) */
+function muscleCheck(){
+  const bs = bodySeries().filter(x => num(x.muscle) > 0), out = {};
+  if (bs.length >= 4) {
+    const last = bs[bs.length - 1], now = bs.slice(-3), old = bs.filter(x => x.k <= addDays(last.k, -28)).slice(-3);
+    if (old.length) { const a = arr => arr.reduce((s, x) => s + num(x.muscle), 0) / arr.length; out.muscle = a(now) - a(old); out.muscleSince = old[old.length - 1].k; }
+  }
+  const today = todayKey(); let up = 0, down = 0, n = 0; const drops = [];
+  Object.keys(S.exercises).forEach(id => {
+    const h = exHistory(id).filter(x => x.kind === "kg" && x.k >= addDays(today, -63));
+    const rec = h.filter(x => x.k >= addDays(today, -21)), old = h.filter(x => x.k < addDays(today, -21));
+    if (!rec.length || old.length < 2) return;
+    const rb = Math.max(...rec.map(x => x.v)), ob = Math.max(...old.map(x => x.v)); n++;
+    if (rb < ob * 0.95) { down++; drops.push(exName(id)); } else if (rb > ob * 1.01) up++;
+  });
+  return Object.assign(out, {n, up, down, drops});
+}
 function autoPace(p, goal, w, base){
   const today = todayKey(), target = num(p.target) || num(cfgRaw().goalLo) || null;
   const hm = (num(p.height) || 180) / 100, bmi = w / (hm * hm), why = [], bf = bodyFatNow(), fem = p.sex === "w";
@@ -1240,10 +1258,15 @@ function autoPace(p, goal, w, base){
     else if (rec != null && rec < 50) { pct -= 0.1; why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): etwas langsamer`); }
     else if (rec != null) why.push(`Erholung ok (Ø ${Math.round(rec)} %)`);
     if (sleep != null && sleep < 6.5) { pct -= 0.05; why.push(`wenig Schlaf (Ø ${fmt(sleep, 1)} h): etwas langsamer`); }
-    if (stuck >= 2) { pct -= 0.1; why.push(`${stuck} Übungen stagnieren: kleineres Defizit schützt die Kraft`); }
+    const mc = muscleCheck();
+    if (mc.down >= 2) { pct -= 0.15; why.push(`Kraft sinkt bei ${mc.down} Übungen (${mc.drops.slice(0, 3).join(", ")}): kleineres Defizit, damit die Muskeln bleiben`); }
+    else if (stuck >= 2) { pct -= 0.1; why.push(`${stuck} Übungen stagnieren: kleineres Defizit schützt die Kraft`); }
     else why.push(stuck ? "Kraft fast überall stabil" : "Kraft steigt oder hält");
+    if (mc.muscle != null && mc.muscle <= -1.2) { pct -= 0.2; why.push(`Muskelmasse laut Waage ${fmt(mc.muscle, 1)} kg seit ${fmtShort(mc.muscleSince)}: deutlich langsamer`); }
+    else if (mc.muscle != null && mc.muscle <= -0.7) { pct -= 0.1; why.push(`Muskelmasse laut Waage ${fmt(mc.muscle, 1)} kg seit ${fmtShort(mc.muscleSince)}: etwas langsamer`); }
+    else if (mc.muscle != null) why.push(`Muskelmasse laut Waage stabil (${mc.muscle >= 0 ? "+" : ""}${fmt(mc.muscle, 1)} kg seit ${fmtShort(mc.muscleSince)})`);
     if (vDrop >= 1.5) { pct -= 0.05; why.push(`VO2max ${fmt(vDrop, 1)} gefallen: etwas langsamer`); }
-    pct = clamp(pct, 0.3, 0.8);
+    pct = clamp(pct, 0.25, 0.8);
     let rate = w * pct / 100, remain = target && target < w ? w - target : null;
     if (remain != null && remain < 2) { rate *= 0.75; why.push("kurz vor dem Ziel: sanfter landen"); }
     let adj = -rate * 7700 / 7;
@@ -1304,7 +1327,7 @@ function calcTargets(p, goal){
   return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, auto, floor, floorHit: base + adj < floor};
 }
 /* Defizit/Überschuss in kcal, auch wenn das Tempo automatisch ist */
-const paceAdj = () => { const c = cfgRaw(); if (!(c.calc && c.calc.on)) return 0; if (c.calc.pace !== "auto") return num(c.calc.pace); const t = autoTargets(); return t ? t.adj : 0; };
+const paceAdj = () => { const c = cfgRaw(); if (!(c.calc && c.calc.on)) return 0; const t = autoTargets(); return t ? t.adj : (c.calc.pace === "auto" ? 0 : num(c.calc.pace) || 0); };
 let autoMemo = {}, autoBusy = false;
 function autoTargets(){
   const st = S.settings.main || {}, key = todayKey();
@@ -1341,7 +1364,8 @@ function paceBox(a, goal){
   if (a.dietBreak) return `<div class="hint" style="margin:4px 0"><b>🌿 Diätpause-Woche:</b> Du isst diese Woche auf Erhaltungskalorien. Danach geht der Cut automatisch weiter. ${a.weeks ? "Ziel " + fmt(a.target, 1) + " kg voraussichtlich am " + fmtShort(a.eta) + dateOf(a.eta).getFullYear() + "." : ""}</div>`;
   return `<div class="hint" style="margin:4px 0"><div>${cut ? "Abnehmen" : "Zunehmen"}: <b>${fmt(a.rate, 2)} kg pro Woche</b> (${fmt(a.pct, 2)} % deines Gewichts)</div><div style="margin-top:4px">${eta}</div>
     <details style="margin-top:6px"><summary class="small ink2" style="cursor:pointer">Warum dieses Tempo?</summary><ul class="small muted" style="margin:6px 0 0;padding-left:18px">${a.why.map(x => `<li>${esc(x)}</li>`).join("")}</ul>
-    <div class="small muted" style="margin-top:6px">${cut ? "Gesund und nachhaltig: 0,5–1 % pro Woche, nie mehr als 750 kcal Defizit und nie unter dem Mindestwert. Das Tempo wird jeden Tag neu aus deinen Daten berechnet." : "Sauberer Aufbau: kleiner Überschuss, damit vor allem Muskeln und wenig Fett dazukommen. Das Tempo wird jeden Tag neu aus deinen Daten berechnet."}</div></details></div>`;
+    <div class="small muted" style="margin-top:6px">${cut ? "Gesund und nachhaltig: 0,5–1 % pro Woche, nie mehr als 750 kcal Defizit und nie unter dem Mindestwert. Das Tempo wird jeden Tag neu aus deinen Daten berechnet." : "Sauberer Aufbau: kleiner Überschuss, damit vor allem Muskeln und wenig Fett dazukommen. Das Tempo wird jeden Tag neu aus deinen Daten berechnet."}</div></details>
+    ${cut ? `<div class="small" style="margin-top:8px"><b>So bleiben deine Muskeln im Cut</b><ul class="muted" style="margin:4px 0 0;padding-left:18px"><li>Eiweiß 2,0–2,4 g pro kg, verteilt auf 3–4 Mahlzeiten mit je mindestens 30 g</li><li>Weiter schwer trainieren: Gewichte halten ist wichtiger als neue Rekorde, Satzzahl nicht stark kürzen</li><li>Mindestens 7 h Schlaf, Schritte statt extra Cardio</li><li>Kraft und Muskelmasse prüft die App laufend und bremst das Tempo, wenn sie sinken</li></ul></div>` : ""}</div>`;
 }
 function calcForm(p, goal){
   const paces = PACE[goal], pace = paces.some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
@@ -1355,7 +1379,7 @@ function calcForm(p, goal){
       <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Schritte, Training und Fußball gehören nicht hierher: Die kommen jeden Tag über Garmin dazu. An Tagen mit wenig Schritten ist dein Ziel dadurch niedriger, an Tagen mit vielen höher."}</span></fieldset>
     ${goal !== "maintain" ? `<div class="field"><label for="ctw">Zielgewicht (kg)</label><input class="inp num" id="ctw" inputmode="decimal" value="${esc(fmt(num(p.target) || num(cfgRaw().goalLo) || "", 1))}" placeholder="z. B. 85"></div>` : ""}
     <div class="field"><label for="cpace">Tempo</label><select class="inp" id="cpace">${paces.map(([v, l]) => `<option value="${v}" ${pace === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
+    <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2, 2.4].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
     <div class="field"><label for="cft">Fett-Anteil</label><select class="inp" id="cft">${[25, 30].map(v => `<option value="${v}" ${(num(p.fat) || 25) === v ? "selected" : ""}>${v} %</option>`).join("")}</select></div></div>
     <div class="card" style="background:var(--surface-2);box-shadow:none" id="calcres">${calcExplain(calcTargets(p, goal), goal)}</div>
     <button class="btn primary" type="submit">${p.on ? "Speichern" : "Automatisch berechnen lassen"}</button>
@@ -2962,6 +2986,7 @@ function bodyCompCard(){
     <div class="card-h"><h2>Körperzusammensetzung</h2><span class="small muted">Index-Waage · ${fmtShort(last.k)}</span></div>
     <div class="kv">${tile("Körperfett", fmt(now.fat, 1), "%", old ? dl(now.fat, old.fat, true, -1) : "")}${tile("Fettmasse", fmt(fm(now), 1), "kg", old ? dl(fm(now), fm(old), false, -1) : "")}${now.muscle ? tile("Muskelmasse", fmt(now.muscle, 1), "kg", old && old.muscle ? dl(now.muscle, old.muscle, false, 1) : "") : ""}${tile("Fettfrei", fmt(ffm(now), 1), "kg", old ? dl(ffm(now), ffm(old), false, 1) : "")}</div>
     ${msg ? `<div class="hint" style="margin-top:12px">${msg}</div>` : ""}
+    ${goalType() === "cut" ? (() => { const mc = muscleCheck(); const bad = (mc.muscle != null && mc.muscle <= -0.7) || mc.down >= 2; return `<div class="hint" style="margin-top:8px${bad ? ";border:1.5px solid var(--warn)" : ""}"><b>Muskelerhalt im Cut:</b> ${mc.muscle != null ? `Muskelmasse ${mc.muscle >= 0 ? "+" : "−"}${fmt(Math.abs(mc.muscle), 1)} kg seit ${fmtShort(mc.muscleSince)}` : "Muskelmasse noch ohne Vergleich"}${mc.n ? `, Kraft: ${mc.up} Übungen stärker, ${mc.down} schwächer` : ""}. ${bad ? "Das Tempo ist deshalb gebremst. Achte auf Eiweiß, Schlaf und schweres Training." : "Passt, du verlierst vor allem Fett."}</div>`; })() : ""}
     <p class="small muted" style="margin:10px 0 0">Mittel der letzten 3 Messungen${old ? ", Veränderung zu den 3 Messungen bis " + fmtShort(oldSer[oldSer.length - 1].k) : ""}. Waagen mit Körperfett schwanken stark mit dem Wasserhaushalt, deshalb zählt der Trend über Wochen, nicht der einzelne Wert. Am besten morgens nüchtern wiegen.</p>
   </section>`;
 }
