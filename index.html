@@ -308,7 +308,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 22:30";
+const APP_VERSION = "06.10.2026 22:37";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -799,6 +799,7 @@ function viewAuth(){
 
 /* ----- Heute ----- */
 function macroRows(t, c){
+  c = dayMacros(curDate, c);
   return [["p","Protein",c.p],["c","Kohlenhydr.",c.c],["f","Fett",c.f]].map(([k, l, goal]) => {
     const pct = goal ? Math.min(100, t[k] / goal * 100) : 0;
     return `<div class="macro m2"><span class="lbl"><span class="dot" style="background:var(--${k})"></span>${l}</span>
@@ -1336,10 +1337,38 @@ function calcTargets(p, goal){
   const adj = auto ? auto.adj : pace;
   const floor = Math.round(Math.max(bmr * 0.75, p.sex === "w" ? 1200 : 1500) / 10) * 10;
   const kcal = Math.round(Math.max(floor, base + adj) / 10) * 10;
-  const pk = num(p.pkg) || (goal === "cut" ? 2.0 : 1.8), fpct = num(p.fat) || 25;
-  const pr = Math.round(w * pk), fat = Math.max(Math.round(kcal * fpct / 100 / 9), Math.round(w * 0.6));
+  const mac = autoMacros(p, goal, w, kcal);
+  const pr = mac.p, fat = Math.max(Math.round(kcal * mac.fpct / 100 / 9), Math.round(w * 0.6));
   const carbs = Math.max(0, Math.round((kcal - pr * 4 - fat * 9) / 4));
-  return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, auto, floor, floorHit: base + adj < floor};
+  return {kcal, p: pr, f: fat, c: carbs, w, bmr: Math.round(bmr), factor, formula: Math.round(formula), learned: L, share, base: Math.round(base), adj, auto, mac, floor, floorHit: base + adj < floor};
+}
+/* Makros automatisch aus deinen Daten (Quellen: Eiweiß 1,6–2,2 g/kg, im Defizit bis 2,4; bei viel Körperfett nach fettfreier Masse;
+   Fett 20–30 % der Kalorien, mind. 0,6 g/kg; der Rest Kohlenhydrate als Treibstoff fürs Training) */
+function autoMacros(p, goal, w, kcal){
+  const why = [], bf = bodyFatNow(), fem = p.sex === "w", age = ageOf(p) || 30;
+  let pr;
+  if (bf) {
+    const ffm = w * (1 - bf.fat / 100), per = goal === "cut" ? 2.6 : goal === "bulk" ? 2.2 : 2.3;
+    pr = ffm * per; why.push(`${fmt(per, 1)} g pro kg fettfreier Masse (${fmt(ffm, 1)} kg laut Index-Waage)${goal === "cut" ? ": im Defizit mehr, damit die Muskeln bleiben" : ""}`);
+  } else {
+    const per = goal === "cut" ? 2.0 : 1.8; pr = w * per; why.push(`${fmt(per, 1)} g pro kg Körpergewicht (${GOALS[goal]})`);
+  }
+  if (goal === "cut") { const mc = muscleCheck(); if ((mc.muscle != null && mc.muscle <= -0.7) || mc.down >= 2) { pr += w * 0.2; why.push("Kraft oder Muskelmasse sinken: +0,2 g/kg"); } }
+  const wkStr = workoutsSorted().filter(x => x.status === "done" && x.kind !== "activity" && x.date >= addDays(todayKey(), -28)).length / 4;
+  if (wkStr >= 3) { pr += w * 0.1; why.push(`${fmt(wkStr, 1)} Krafteinheiten pro Woche: +0,1 g/kg`); }
+  if (age >= 40) { pr += w * 0.2; why.push("ab 40 reagieren Muskeln schwächer auf Eiweiß: +0,2 g/kg"); }
+  pr = clamp(pr, w * 1.6, w * (goal === "cut" ? 2.4 : 2.2));
+  // Fett: bei viel Sport weniger Fett zugunsten der Kohlenhydrate, sonst 30 %
+  const burns = Array.from({length: 14}, (_, i) => burnedOf(addDays(todayKey(), -i - 1))), burn = burns.reduce((a, b) => a + b, 0) / 14;
+  const sportDays = workoutsSorted().filter(x => x.status === "done" && x.date >= addDays(todayKey(), -14)).length / 2;
+  const fpct = burn >= 350 || sportDays >= 4 ? 25 : 30;
+  const fwhy = fpct === 25 ? `Fett 25 %: viel Sport (${fmt(sportDays, 1)} Einheiten pro Woche), deshalb mehr Platz für Kohlenhydrate` : "Fett 30 %: weniger Sport, deshalb etwas mehr Fett und weniger Kohlenhydrate";
+  return {p: Math.round(pr), pk: pr / w, fpct, why, fwhy};
+}
+/* Tagesziele für Makros: verbrannte Kalorien kommen als Treibstoff dazu (80 % Kohlenhydrate, 20 % Fett), Eiweiß bleibt */
+function dayMacros(k, c){
+  const b = burnedOf(k); if (!(b > 0)) return c;
+  return Object.assign({}, c, {c: Math.round(c.c + b * 0.8 / 4), f: Math.round(c.f + b * 0.2 / 9)});
 }
 /* Defizit/Überschuss in kcal, auch wenn das Tempo automatisch ist */
 const paceAdj = () => { const c = cfgRaw(); if (!(c.calc && c.calc.on)) return 0; const t = autoTargets(); return t ? t.adj : (c.calc.pace === "auto" ? 0 : num(c.calc.pace) || 0); };
@@ -1365,7 +1394,8 @@ function calcExplain(t, goal){
     <div class="spread"><span>${GOALS[goal]}${t.auto ? " (automatisch)" : ""}</span><b class="num">${t.adj > 0 ? "+" : t.adj < 0 ? "−" : "±"}${fmt(Math.abs(t.adj))} kcal</b></div>
     ${t.auto ? paceBox(t.auto, goal) : ""}
     <div class="spread" style="border-top:1px solid var(--line);padding-top:6px"><b>Tagesziel</b><b class="num" style="font-size:20px">${fmt(t.kcal)} kcal</b></div>
-    <div class="small muted num">Eiweiß ${t.p} g · Kohlenhydrate ${t.c} g · Fett ${t.f} g</div>
+    <div class="small muted num">Eiweiß ${t.p} g (${fmt(t.mac.pk, 1)} g/kg) · Kohlenhydrate ${t.c} g · Fett ${t.f} g</div>
+    <details><summary class="small ink2" style="cursor:pointer">Wie kommen die Makros zustande?</summary><ul class="small muted" style="margin:6px 0 0;padding-left:18px">${t.mac.why.map(x => `<li>Eiweiß: ${esc(x)}</li>`).join("")}<li>${esc(t.mac.fwhy)}</li><li>Kohlenhydrate: der Rest. An Tagen mit Sport kommen die verbrannten Kalorien dazu, vor allem als Kohlenhydrate.</li></ul></details>
     ${bm !== "off" ? `<div class="small ink2">+ an jedem Tag deine Schritte und Trainingskalorien von Garmin${num(cfgRaw().burnShare) && num(cfgRaw().burnShare) < 100 ? " (" + cfgRaw().burnShare + " %)" : ""}.</div>` : ""}
     ${t.floorHit ? `<div class="hint">Weniger als ${fmt(t.floor)} kcal (ohne Sport) empfehle ich nicht, deshalb ist das Ziel hier begrenzt.</div>` : ""}
     ${L ? `<div class="small muted">In den letzten 3 Wochen: Ø ${fmt(L.eat)} kcal gegessen, Gewicht ${L.rate > 0 ? "+" : ""}${fmt(L.rate, 2)} kg pro Woche. Daraus lernt der Rechner deinen echten Verbrauch und passt das Ziel an, damit dein Ziel auch wirklich eintritt.</div>` : `<div class="small muted">Sobald du etwa 2 Wochen dein Essen einträgst und dich wiegst, lernt der Rechner deinen echten Verbrauch dazu und passt das Ziel an.</div>`}
@@ -1383,8 +1413,6 @@ function paceBox(a, goal){
     ${cut ? `<div class="small" style="margin-top:8px"><b>So bleiben deine Muskeln im Cut</b><ul class="muted" style="margin:4px 0 0;padding-left:18px"><li>Eiweiß 2,0–2,4 g pro kg, verteilt auf 3–4 Mahlzeiten mit je mindestens 30 g</li><li>Weiter schwer trainieren: Gewichte halten ist wichtiger als neue Rekorde, Satzzahl nicht stark kürzen</li><li>Mindestens 7 h Schlaf, Schritte statt extra Cardio</li><li>Kraft und Muskelmasse prüft die App laufend und bremst das Tempo, wenn sie sinken</li></ul></div>` : ""}</div>`;
 }
 function calcForm(p, goal){
-  const paces = PACE[goal], pace = paces.some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
-  const pk = num(p.pkg) || (goal === "cut" ? 2.0 : 1.8);
   return `<form class="stack" data-form="calc">
     <div class="field"><label for="cg">Mein Ziel</label><select class="inp" id="cg">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goal === k ? "selected" : ""}>${l}</option>`).join("")}</select></div>
     <div class="fields"><div class="field"><label for="csx">Geschlecht</label><select class="inp" id="csx"><option value="m" ${p.sex !== "w" ? "selected" : ""}>Mann</option><option value="w" ${p.sex === "w" ? "selected" : ""}>Frau</option></select></div>
@@ -1393,9 +1421,7 @@ function calcForm(p, goal){
     <fieldset class="field" style="border:0;padding:0;margin:0"><legend style="font-weight:600;margin-bottom:6px">Aktivitätslevel durch Job und Alltag (ohne Schritte und Sport)</legend><div class="stack" style="gap:6px">${PALS.map(([v, l, ex]) => `<label class="pick" style="align-items:flex-start;gap:10px;cursor:pointer"><input type="radio" name="cpal" value="${v}" ${palOf(p) === v ? "checked" : ""} style="margin-top:4px"><span style="flex:1;min-width:0"><b>${l}</b><span class="small muted" style="display:block">${ex}</span></span></label>`).join("")}</div>
       <span class="small muted">${(cfgRaw().burnMode || "workouts") === "off" ? "Deine Trainings sind pauschal mit drin, weil du Trainingskalorien nicht anrechnest." : "Schritte, Training und Fußball gehören nicht hierher: Die kommen jeden Tag über Garmin dazu. An Tagen mit wenig Schritten ist dein Ziel dadurch niedriger, an Tagen mit vielen höher."}</span></fieldset>
     ${goal !== "maintain" ? `<div class="field"><label for="ctw">Zielgewicht (kg)</label><input class="inp num" id="ctw" inputmode="decimal" value="${esc(fmt(num(p.target) || num(cfgRaw().goalLo) || "", 1))}" placeholder="z. B. 85"></div>` : ""}
-    <div class="field"><label for="cpace">Tempo</label><select class="inp" id="cpace">${paces.map(([v, l]) => `<option value="${v}" ${pace === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
-    <div class="fields"><div class="field"><label for="cpk">Eiweiß pro kg</label><select class="inp" id="cpk">${[1.6, 1.8, 2.0, 2.2, 2.4].map(v => `<option value="${v}" ${pk === v ? "selected" : ""}>${fmt(v, 1)} g</option>`).join("")}</select></div>
-    <div class="field"><label for="cft">Fett-Anteil</label><select class="inp" id="cft">${[25, 30].map(v => `<option value="${v}" ${(num(p.fat) || 25) === v ? "selected" : ""}>${v} %</option>`).join("")}</select></div></div>
+    <p class="small muted" style="margin:0">Tempo, Eiweiß und Fett stellt die App selbst ein und passt sie laufend an deine Daten an. Du gibst nur Ziel, Zielgewicht und deine Körperdaten an.</p>
     <div class="card" style="background:var(--surface-2);box-shadow:none" id="calcres">${calcExplain(calcTargets(p, goal), goal)}</div>
     <button class="btn primary" type="submit">${p.on ? "Speichern" : "Automatisch berechnen lassen"}</button>
     ${p.on ? `<button class="btn ghost" type="button" data-act="calc-off">Ausschalten und Werte selbst festlegen</button>` : `<p class="small muted" style="margin:0">Danach passt die App Kalorien und Makros jeden Tag selbst an: an dein Gewicht, deinen Sport und daran, wie schnell du wirklich ab- oder zunimmst.</p>`}
@@ -1403,7 +1429,7 @@ function calcForm(p, goal){
 }
 function calcRead(){
   const v = id => ($("#" + id) || {}).value;
-  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(v("cbd") || "") ? v("cbd") : "", birth: /^\d{4}/.test(v("cbd") || "") ? +v("cbd").slice(0, 4) : (cfgRaw().calc || {}).birth || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: v("cpace") === "auto" ? "auto" : num(v("cpace")), target: num(String(v("ctw") || "").replace(",", ".")) || num((cfgRaw().calc || {}).target) || "", pkg: num(v("cpk")), fat: num(v("cft"))}};
+  return {goal: v("cg") || "maintain", p: {sex: v("csx"), birthDate: /^\d{4}-\d{2}-\d{2}$/.test(v("cbd") || "") ? v("cbd") : "", birth: /^\d{4}/.test(v("cbd") || "") ? +v("cbd").slice(0, 4) : (cfgRaw().calc || {}).birth || "", height: num(v("cht")) || "", pal: num((document.querySelector('input[name="cpal"]:checked') || {}).value) || 1.3, palV: 2, pace: (v("cg") || "maintain") === "maintain" ? 0 : "auto", target: num(String(v("ctw") || "").replace(",", ".")) || num((cfgRaw().calc || {}).target) || ""}};
 }
 function openCalc(){
   const st = S.settings.main || {};
