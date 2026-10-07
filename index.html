@@ -308,7 +308,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "06.10.2026 22:37";
+const APP_VERSION = "07.10.2026 19:02";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -607,7 +607,9 @@ function exHistory(exId){
 }
 /* Gewicht ohne überflüssige Nachkommanullen: 50 → "50", 52,50 → "52,5" */
 const fmtKg = w => { const t = fmt(w, w % 1 ? 2 : 0); return t.includes(",") ? t.replace(/0+$/, "").replace(/,$/, "") : t; };
-const setsStr = sets => sets.map(s => (num(s.w) ? fmtKg(num(s.w)) + "×" : "") + (s.r || (s.sec ? s.sec + " s" : "–"))).join(" · ");
+const setsStr = (sets, bw) => sets.map(s => (num(s.w) ? (bw ? "KG+" : "") + fmtKg(num(s.w)) + "×" : bw ? "KG×" : "") + (s.r || (s.sec ? s.sec + " s" : "–"))).join(" · ");
+/* Körpergewicht-Übung? Eigene Einstellung, sonst aus der Übungsdatenbank bzw. dem Equipment */
+const isBw = exId => { const e = S.exercises[exId] || {}; if (typeof e.bw === "boolean") return e.bw; const x = e.ref ? EXDBI[e.ref] : null; return !!(x && x.bw) || e.equipment === "Körpergewicht"; };
 function weekSummary(k){
   const mon = mondayOf(k), sun = addDays(mon, 6);
   const ws = workoutsSorted().filter(w => w.status === "done" && w.date >= mon && w.date <= sun);
@@ -646,7 +648,7 @@ function recoveryOf(k){
   const c = cfg(), d = S.days[k] || {}, sl = d.sleep, ci = d.checkin;
   const parts = [];
   if (sl && num(sl.score) > 0) parts.push({key: "sleep", label: "Schlafwert", disp: fmt(num(sl.score)), score: clamp(num(sl.score), 0, 100), w: 0.4});
-  else if (sl && sl.h) { let s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; if (sl.q) s *= 0.85 + 0.03 * sl.q; parts.push({key: "sleep", label: "Schlaf", disp: fmt(sl.h, 1) + " h", score: clamp(s, 0, 100), w: 0.4}); }
+  else if (sl && sl.h) { let s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; if (sl.q) s *= 0.85 + 0.03 * sl.q; parts.push({key: "sleep", label: "Schlaf", disp: fmtH(sl.h) + "", score: clamp(s, 0, 100), w: 0.4}); }
   if (sl && num(sl.bb) > 0) parts.push({key: "bb", label: "Body Battery", disp: fmt(num(sl.bb)), score: clamp(num(sl.bb), 0, 100), w: 0.25});
   const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
   if (sl && num(sl.hrv) > 0 && hrvB) parts.push({key: "hrv", label: "HRV", disp: fmt(num(sl.hrv)) + " ms (Ø " + fmt(hrvB) + ")", score: clamp(50 + (num(sl.hrv) / hrvB - 1) * 150, 0, 100), w: 0.3});
@@ -687,7 +689,7 @@ function recoveryPlan(k){
       if (e.load === "hoch") {
         add("Beine", "legs", e.today ? "Beine 24 h schonen" : "Heute lockere Bewegung statt hart", e.today ? `Nach ${name} brauchen Beine und Gelenke mindestens 24 Stunden bis zur nächsten harten Belastung. Morgen eher Oberkörper oder locker.` : `Nach ${name} gestern helfen 20–30 Minuten lockeres Radfahren oder Spazierengehen, die Beine zu lockern. Keine harte Beineinheit.`, 9);
         if (["fussball", "lauf", "tennis"].includes(e.kind)) add("Kälte & Faszien", "cold", e.today ? "Kaltes Bad oder Faszienrolle" : "Faszienrolle für die Beine", e.today ? "10 Minuten bei 10–15 °C oder 10 Minuten Faszienrolle für Waden, Oberschenkel und Gesäß lindern Muskelkater nach Laufen und Sprints." : "10 Minuten langsam über Waden, Oberschenkel und Gesäß rollen, danach statisch dehnen.", 6 + boost);
-        add("Schlaf", "sleep", `${e.today ? "Heute" : "Heute Nacht"} ${fmt(sleepNeed(k), 1)} h Schlaf einplanen`, "Nach einer harten Einheit ist Schlaf die wichtigste Regeneration. Eine Stunde vorher Handy weg, Zimmer kühl.", 6);
+        add("Schlaf", "sleep", `${e.today ? "Heute" : "Heute Nacht"} ${fmtH(sleepNeed(k))} Schlaf einplanen`, "Nach einer harten Einheit ist Schlaf die wichtigste Regeneration. Eine Stunde vorher Handy weg, Zimmer kühl.", 6);
       } else {
         add("Dehnen", "stretch", "5–10 Minuten dehnen", `Nach ${name}: Waden, Oberschenkel und Hüfte je 30–60 Sekunden statisch dehnen.`, 4 + boost);
       }
@@ -703,7 +705,7 @@ function recoveryPlan(k){
   const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
   const hrvLow = hrvLowStreak(k) >= 2, rhrHigh = num(sl.rhr) > 0 && rhrB && num(sl.rhr) >= rhrB + 4;
   if (hrvLow || rhrHigh) add("Belastung", "easy", "Heute eher locker oder Ruhetag", (hrvLow ? `Deine HRV liegt seit ${hrvLowStreak(k)} Tagen unter deinem Schnitt (heute ${fmt(num(sl.hrv))} ms, Ø ${fmt(hrvB)} ms)` : `Dein Ruhepuls liegt mit ${fmt(num(sl.rhr))} über deinem Schnitt (${fmt(rhrB)})`) + (rel.length ? ", die letzte Belastung steckt noch drin." : ".") + " Lieber Spaziergang als harte Einheit.", 10);
-  if (sl.h && sl.h < c.sleepGoal - 0.75 && rel.some(e => e.load !== "niedrig")) add("Schlaf", "nsdr", "20 Min. Powernap oder Tiefenentspannung", `Nur ${fmt(sl.h, 1)} h geschlafen nach Belastung: Ein kurzer Mittagsschlaf oder NSDR/Yoga Nidra gleicht einen Teil aus.`, 7);
+  if (sl.h && sl.h < c.sleepGoal - 0.75 && rel.some(e => e.load !== "niedrig")) add("Schlaf", "nsdr", "20 Min. Powernap oder Tiefenentspannung", `Nur ${fmtH(sl.h)} geschlafen nach Belastung: Ein kurzer Mittagsschlaf oder NSDR/Yoga Nidra gleicht einen Teil aus.`, 7);
   if (!rel.length && !out.length) add("Erholung", "restday", "Keine besondere Regeneration nötig", "Gestern und heute gab es keine anstrengende Einheit. Normale Alltagsbewegung und genug Schlaf reichen, du kannst ganz normal trainieren.", 1);
   return out.sort((a, b) => b.prio - a.prio).slice(0, 4);
 }
@@ -717,7 +719,7 @@ function recoveryTips(k){
   const y = S.days[addDays(k, -1)] || {}, yt = dayTotals(y);
   const tips = [];
   const z = r ? zoneOf(r.score) : null;
-  if (sl && sl.h && sl.h < c.sleepGoal - 0.75) tips.push(["Schlaf nachholen", `Du hast nur ${fmt(sl.h, 1)} h geschlafen. Geh heute früher ins Bett (Ziel ${fmt(sleepNeed(k), 1)} h), trink nach 14 Uhr keinen Kaffee mehr und mach bei Bedarf einen Powernap von 20 Minuten.`]);
+  if (sl && sl.h && sl.h < c.sleepGoal - 0.75) tips.push(["Schlaf nachholen", `Du hast nur ${fmtH(sl.h)} geschlafen. Geh heute früher ins Bett (Ziel ${fmtH(sleepNeed(k))}), trink nach 14 Uhr keinen Kaffee mehr und mach bei Bedarf einen Powernap von 20 Minuten.`]);
   if (r && r.yStrain >= 14) tips.push(["Aktive Regeneration", `Gestern war die Belastung hoch (${fmt(r.yStrain, 1)}). Heute helfen 20–30 Minuten lockeres Gehen oder Radfahren und danach 10–15 Minuten Faszienrolle und statisches Dehnen.`]);
   if (ci && ci.soreness >= 4) tips.push(["Muskelkater", "Die betroffenen Muskeln heute nicht schwer belasten. Leichte Bewegung, Wärme und Massagepistole fördern die Durchblutung, und Protein über den Tag verteilt (etwa 40 g pro Mahlzeit) hilft beim Reparieren."]);
   if (z === "bad") tips.push(["Heute zurückschalten", "Deine Erholung ist niedrig. Mach heute Pause oder nur ein leichtes Training, bei dem du 3 Wiederholungen vor dem Versagen aufhörst, ohne neue Rekordversuche. Ein schweres Unterkörpertraining verschiebst du besser."]);
@@ -990,7 +992,7 @@ function recoverySection(k){
     <div class="dials">
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Erholung im Detail">${dial(r ? r.score / 100 : 0, zc, r ? r.score : "–", r ? "%" : "", "Erholung", `<span style="color:${zc}">${zoneTxt}</span>`)}</button>
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--strain)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
-      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? fmt(sl.h, 1) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmt(need, 1)} h`)}</button>
+      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? fmtHs(sl.h, true) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmtH(need)}`)}</button>
     </div>
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
@@ -1022,7 +1024,7 @@ async function runTipsAI(k){
   const facts = [
     `Ziel: ${GOALS[goalType()]}, Zielgewicht ${c.goalLo} kg, ${c.kcal} kcal und ${c.p} g Protein pro Tag, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
     `Erholung heute: ${r ? r.score + " % (" + r.parts.map(p => p.label + " " + Math.round(p.score)).join(", ") + ")" : "unbekannt"}.`,
-    `Schlaf letzte Nacht: ${d.sleep && d.sleep.h ? fmt(d.sleep.h, 1) + " h" + (d.sleep.q ? ", Qualität " + d.sleep.q + "/5" : "") + (d.sleep.hrv ? ", HRV " + d.sleep.hrv + " ms" : "") + (d.sleep.rhr ? ", Ruhepuls " + d.sleep.rhr : "") : "nicht eingetragen"}. Bedarf heute Nacht etwa ${fmt(sleepNeed(k), 1)} h.`,
+    `Schlaf letzte Nacht: ${d.sleep && d.sleep.h ? fmtH(d.sleep.h) + "" + (d.sleep.q ? ", Qualität " + d.sleep.q + "/5" : "") + (d.sleep.hrv ? ", HRV " + d.sleep.hrv + " ms" : "") + (d.sleep.rhr ? ", Ruhepuls " + d.sleep.rhr : "") : "nicht eingetragen"}. Bedarf heute Nacht etwa ${fmtH(sleepNeed(k))}.`,
     `Check-in: ${d.checkin ? "Energie " + d.checkin.energy + "/5, Muskelkater " + d.checkin.soreness + "/5" : "keiner"}.`,
     `Belastung gestern: ${fmt(strainOf(y), 1)} von 21${wsY.length ? " durch " + wsY.join("; ") : ""}.`,
     `Heute im Kalender: ${wsT.join("; ") || "nichts"}.`,
@@ -1087,10 +1089,10 @@ function autoPlanSync(){
       }
       const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
       const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
-      const nv = {sets: r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
+      const nv = {sets: x.userSets ? (deloadOn() ? Math.max(1, Math.round(x.userSets * 2 / 3)) : x.userSets) : r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
       // Volumen langsam steigern: höchstens 1 Satz mehr pro Übung und Woche (ca. 5–10 %), außer direkt nach einer Entlastungswoche
       const dl = cfgRaw().deload || {}, after = dl.to && dl.to < today && diffDays(dl.to, today) <= 7;
-      if (num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
+      if (!x.userSets && num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
       if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
         if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
         Object.assign(x, nv); if (!nv.kg) delete x.kg; changed = true;
@@ -1106,12 +1108,45 @@ function autoPlanSync(){
   });
   return n;
 }
+/* Was du im Training an Übungen und Satzzahl änderst, übernimmt der Plan für die nächsten Male:
+   Reihenfolge und Übungen wie im Training, entfernte Übungen fliegen raus, neue kommen dazu.
+   Änderst du bei einer Übung aus dem Plan die Satzzahl, gilt deine Zahl (die Automatik ändert sie dann nicht mehr).
+   Neue Übungen bekommen ihre Sätze von der Automatik. */
+function syncPlanFromWorkout(w){
+  if (!w || !w.templateId || w.status !== "done") return false;
+  const t = S.templates[w.templateId]; if (!t) return false;
+  const old = t.items || [], items = [];
+  (w.exercises || []).forEach(e => {
+    const n = (e.sets || []).filter(q => q.type !== "warmup").length; if (!n || items.some(x => x.exId === e.exId)) return;
+    const it = old.find(x => x.exId === e.exId);
+    if (it) {
+      const x = clone(it), tgt = num(e.target && e.target.sets) || num(it.sets);
+      if (n !== tgt) { x.userSets = n; x.sets = n; if (x.orig) x.orig.sets = n; }
+      items.push(x);
+    } else {
+      const rx = exRef(e.exId), r = rx && autoOn() ? dynRec(rx, e.exId) : null;
+      items.push({exId: e.exId, sets: n, reps: r ? r.reps : "8–12", rest: r ? r.rest : "2 min"});
+    }
+  });
+  if (!items.length) return false;
+  const same = items.length === old.length && items.every((x, i) => x.exId === old[i].exId && num(x.sets) === num(old[i].sets));
+  if (same) { if (!w.planSynced) put("workouts", w.id, Object.assign(clone(S.workouts[w.id] || {}), {planSynced: true})); return false; }
+  put("templates", w.templateId, Object.assign(clone(t), {items}));
+  put("workouts", w.id, Object.assign(clone(S.workouts[w.id] || {}), {planSynced: true}));
+  return true;
+}
+/* Beim Öffnen: zuletzt abgeschlossene Trainings (heute/gestern), die noch nicht übernommen wurden */
+function syncRecentPlans(){
+  const t = addDays(todayKey(), -1); let n = 0;
+  workoutsSorted().filter(w => w.status === "done" && w.templateId && !w.planSynced && w.date >= t).forEach(w => { if (syncPlanFromWorkout(Object.assign({}, w))) { n++; toast(`Plan „${(S.templates[w.templateId] || {}).name || "Training"}“ an dein Training angepasst.`); } });
+  return n;
+}
 let autoPlanDay = null;
 function syncWaterGoal(){
   const k = todayKey(), d = S.days[k], g = d ? waterGoal(k).total : 0;
   if (g > 0 && num(d.waterGoal) !== g) put("days", k, Object.assign({}, d, {waterGoal: g}));
 }
-function autoPlanDaily(){ const t = todayKey(); if (autoPlanDay === t || !EXDB || !loaded) return; autoPlanDay = t; autoPlanSync(); }
+function autoPlanDaily(){ if (!EXDB || !loaded || mode !== "db") return; const synced = syncRecentPlans(); const t = todayKey(); if (autoPlanDay === t && !synced) return; autoPlanDay = t; autoPlanSync(); }
 /* Vorschau eines Trainings: alle Übungen mit Sätzen, ohne es zu starten */
 function openWorkoutPreview(id){
   const w = S.workouts[id]; if (!w) return;
@@ -1121,8 +1156,8 @@ function openWorkoutPreview(id){
     const doneSets = (e.sets || []).filter(q => q.type !== "warmup" && num(q.r) > 0);
     const rec = !done && autoOn() && x ? dynRec(x, e.exId) : null;
     return `<button class="pick" data-act="open-ex" data-id="${e.exId}" style="align-items:flex-start">${x ? exAnim(x, "48px") : ""}<span style="flex:1;min-width:0"><span style="display:block;font-weight:600">${esc(exName(e.exId) || e.name)}</span>
-      <span class="small muted num" style="display:block">${done ? esc(setsStr(doneSets)) || "keine Sätze" : t ? `${t.sets} × ${esc(t.reps)}${t.rest ? " · Pause " + esc(t.rest) : ""}` : (e.sets || []).length + " Sätze"}</span>
-      ${!done && last ? `<span class="small ink2 num" style="display:block">Letztes Mal: ${esc(setsStr(last.sets))}</span>` : ""}
+      <span class="small muted num" style="display:block">${done ? esc(setsStr(doneSets, isBw(e.exId))) || "keine Sätze" : t ? `${t.sets} × ${esc(t.reps)}${t.rest ? " · Pause " + esc(t.rest) : ""}` : (e.sets || []).length + " Sätze"}</span>
+      ${!done && last ? `<span class="small ink2 num" style="display:block">Letztes Mal: ${esc(setsStr(last.sets, isBw(e.exId)))}</span>` : ""}
       ${rec ? `<span class="small num" style="display:block;color:var(--accent)">Empfehlung: ${rec.sets} × ${esc(rec.reps)}</span>` : ""}</span></button>`;
   }).join("");
   const groups = {}; (w.exercises || []).forEach(e => { const g = (S.exercises[e.exId] || {}).group; if (g && g !== "Sonstiges") groups[g] = 1; });
@@ -1273,7 +1308,7 @@ function autoPace(p, goal, w, base){
     if (rec != null && rec < 38) { pct -= 0.2; why.push(`Erholung sehr niedrig (Ø ${Math.round(rec)} %): langsamer`); }
     else if (rec != null && rec < 50) { pct -= 0.1; why.push(`Erholung niedrig (Ø ${Math.round(rec)} %): etwas langsamer`); }
     else if (rec != null) why.push(`Erholung ok (Ø ${Math.round(rec)} %)`);
-    if (sleep != null && sleep < 6.5) { pct -= 0.05; why.push(`wenig Schlaf (Ø ${fmt(sleep, 1)} h): etwas langsamer`); }
+    if (sleep != null && sleep < 6.5) { pct -= 0.05; why.push(`wenig Schlaf (Ø ${fmtH(sleep)}): etwas langsamer`); }
     const mc = muscleCheck();
     if (mc.down >= 2) { pct -= 0.15; why.push(`Kraft sinkt bei ${mc.down} Übungen (${mc.drops.slice(0, 3).join(", ")}): kleineres Defizit, damit die Muskeln bleiben`); }
     else if (stuck >= 2) { pct -= 0.1; why.push(`${stuck} Übungen stagnieren: kleineres Defizit schützt die Kraft`); }
@@ -1497,6 +1532,9 @@ function waterGoal(k){
   if (sweat > sport) sport = sweat;
   return {base, sport, total: base + sport, parts, sweat, drunk: num(d.water) || 0};
 }
+/* Stunden als „6 h 48 min“ statt „6,8 h“ (kurz für Diagramme: „6:48“) */
+const fmtH = h => { const m = Math.round(num(h) * 60); if (!(m > 0)) return "0 min"; const hh = Math.floor(m / 60), mm = m % 60; return hh ? hh + " h" + (mm ? " " + mm + " min" : "") : mm + " min"; };
+const fmtHs = (h, bare) => { const m = Math.round(num(h) * 60); return Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0") + (bare ? "" : " h"); };
 const fmtL = ml => fmt(ml / 1000, ml % 1000 === 0 ? 0 : ml % 100 === 0 ? 1 : 2) + " l";
 function waterTip(k, g){
   const n = Math.floor(dateOf(k) / 864e5), long = g.parts.some(p => p.min >= 60 && p.ml >= 450);
@@ -1624,7 +1662,7 @@ function viewTemplates(){
   const tpls = templatesSorted();
   return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
     <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
-    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${fmtKg(it.kg)} kg</b>` : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
+    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${isBw(it.exId) ? "KG + " : ""}${fmtKg(it.kg)} kg</b>` : isBw(it.exId) ? " · Körpergewicht" : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
@@ -1740,7 +1778,7 @@ function evalActivity(w){
   }
   if (load === "hoch") {
     rec.push(["Beine schonen", "Gib den Beinen mindestens 24 Stunden bis zur nächsten harten Belastung. Morgen eher Oberkörper, lockeres Radfahren oder ein Spaziergang."]);
-    rec.push(["Schlaf", `Heute etwa ${fmt(sleepNeed(addDays(w.date, 1)), 1)} h Schlaf einplanen, das ist die wichtigste Regeneration.`]);
+    rec.push(["Schlaf", `Heute etwa ${fmtH(sleepNeed(addDays(w.date, 1)))} Schlaf einplanen, das ist die wichtigste Regeneration.`]);
     rec.push(["Kälte oder Faszienrolle", "Nach Ausdauer und Fußball darf es ein kaltes Bad (10–15 °C, 10 Min.) oder die Faszienrolle sein. Nach Krafttraining Kälte erst mit 6 Stunden Abstand."]);
   } else if (load === "mittel") {
     rec.push(["Morgen", "Normales Training ist okay. Eine sehr harte Beineinheit lieber mit 24 Stunden Abstand."]);
@@ -1779,7 +1817,7 @@ function evalStrength(w){
       <div><b>Eiweiß und Kohlenhydrate</b><div class="small ink2" style="margin-top:2px">In den nächsten 1–2 Stunden eine Mahlzeit mit mindestens 30 g Eiweiß und Kohlenhydraten, z. B. Skyr mit Haferflocken oder Reis mit Hähnchen.</div></div>
       <div><b>Gleiche Muskeln: 24–48 h Pause</b><div class="small ink2" style="margin-top:2px">${esc(gl.slice(0, 3).map(x => x[0]).join(", ") || "Die trainierten Muskeln")} brauchen mindestens 24 Stunden, bevor du sie wieder hart trainierst.</div></div>
       <div><b>Kälte erst später</b><div class="small ink2" style="margin-top:2px">Eisbad oder kalte Dusche nicht in den 6 Stunden nach dem Krafttraining, das kann den Muskelaufbau bremsen. Sauna oder warmes Bad sind okay.</div></div>
-      <div><b>Schlaf</b><div class="small ink2" style="margin-top:2px">Heute etwa ${fmt(sleepNeed(addDays(w.date, 1)), 1)} h Schlaf einplanen, dort wachsen die Muskeln.</div></div>
+      <div><b>Schlaf</b><div class="small ink2" style="margin-top:2px">Heute etwa ${fmtH(sleepNeed(addDays(w.date, 1)))} Schlaf einplanen, dort wachsen die Muskeln.</div></div>
     </div></section>`;
 }
 function openEval(id){
@@ -1940,7 +1978,7 @@ function footballCard(k){
       legsToday ? ["Kein hartes Beintraining heute", "Auf dem Plan steht Beintraining. Verschieb es lieber, damit die Beine morgen frisch sind."] : ["Heute nur locker", "Leichte Bewegung, etwas Technik oder ein Spaziergang. Nichts, was die Beine müde macht."],
       ["Mittag: Kohlenhydrate, leicht verdaulich", "Z. B. Vollkornnudeln oder Reis mit Hähnchen oder Fisch und Gemüse."],
       ["Abend: leichtes Fischgericht mit Nudeln", "Etwas mehr Eiweiß, Gemüse und gesunde Fette wie Olivenöl oder Avocado. Nicht zu fettig, nicht zu spät."],
-      ["Früh schlafen", `Ab 22 Uhr Bildschirme weg, dunkles ruhiges Zimmer, Ziel ${fmt(Math.max(8, sleepNeed(k)), 1)} h Schlaf.`]]],
+      ["Früh schlafen", `Ab 22 Uhr Bildschirme weg, dunkles ruhiges Zimmer, Ziel ${fmtH(Math.max(8, sleepNeed(k)))} Schlaf.`]]],
     match: ["⚽ Heute ist Spieltag", [
       ["Frühstück", "Eier, Vollkornbrot oder Haferflocken, Avocado und Obst wie Banane oder Beeren, dazu viel Wasser."],
       ["Etwa 3 h vorher essen", "Kohlenhydratreich, fettarm und leicht verdaulich, z. B. Reis mit Hähnchen und Gemüse. 30 Minuten vorher etwas Schnelles wie eine Banane."],
@@ -2090,7 +2128,7 @@ function plannerWarnings(){
     if (d.gym && legs(d.gym) && d.fb) out.push(`${WDN[dateOf(k).getDay()]}: Beintraining und Fußball am selben Tag. Das belastet die Beine doppelt.`);
     if (d.gym && d.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Krafttraining am Spieltag. Besser einen Tag früher oder später.`);
     else if (d.gym && d.fb) { const hm = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; }, a = hm(d.gymTime), b = hm(d.fbTime);
-      if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball nur ${fmt(Math.abs(a - b), 1)} h auseinander.${b < a ? " Wenn möglich Gym zuerst" : " Wenn möglich mehr Abstand"} (über 6 h), dann leidet der Muskelaufbau weniger.`);
+      if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball nur ${fmtH(Math.abs(a - b))} auseinander.${b < a ? " Wenn möglich Gym zuerst" : " Wenn möglich mehr Abstand"} (über 6 h), dann leidet der Muskelaufbau weniger.`);
       else if (a == null || b == null) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball am selben Tag. Am besten über 6 h Abstand und Krafttraining zuerst.`); }
   });
   const gymDays = Object.values(wp.days).filter(d => d.gym).length, goal = cfg().strengthPerWeek;
@@ -2259,20 +2297,20 @@ function openSleepDetail(k){
   const tot = stages ? stages.reduce((a, s) => a + s[1], 0) : 0;
   const stageAvg = name => { const xs = valid.filter(x => num(x.deep) + num(x.light) + num(x.rem) > 0).map(x => num(x[name]) / (num(x.deep) + num(x.light) + num(x.rem) + num(x.awake)) * 100); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
   const notes = [];
-  if (sl.h) notes.push(num(sl.h) >= need - 0.25 ? `Letzte Nacht ${fmt(num(sl.h), 1)} h, dein Bedarf heute liegt bei ${fmt(need, 1)} h. Passt.` : `Letzte Nacht ${fmt(num(sl.h), 1)} h, dein Bedarf heute liegt bei ${fmt(need, 1)} h. Geh heute etwa ${fmt((need - num(sl.h)) * 60)} Minuten früher ins Bett.`);
+  if (sl.h) notes.push(num(sl.h) >= need - 0.25 ? `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Passt.` : `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Geh heute etwa ${fmt((need - num(sl.h)) * 60)} Minuten früher ins Bett.`);
   if (stages) { const dp = num(sl.deep) / tot * 100, rp = num(sl.rem) / tot * 100;
     notes.push(dp >= 13 ? `Tiefschlaf ${Math.round(dp)} %: gut. Im Tiefschlaf erholen sich Muskeln und Körper am stärksten.` : `Tiefschlaf nur ${Math.round(dp)} %. Hilft: kein Alkohol, kein schweres Essen spät, kühles Zimmer (ca. 18 °C).`);
     notes.push(rp >= 20 ? `REM-Schlaf ${Math.round(rp)} %: gut für Kopf, Lernen und Stimmung.` : `REM-Schlaf ${Math.round(rp)} %, etwas wenig. REM kommt vor allem am Ende der Nacht, also nicht zu früh aufstehen und regelmäßig schlafen.`); }
   if (stages) notes.push("Farben bei den Schlafphasen: Grün heißt im gesunden Bereich, Orange knapp daneben, Rot deutlich daneben. Mehr Tief- und REM-Schlaf als der Bereich ist kein Problem.");
   if (bSd != null) notes.push(bSd <= 30 ? `Dein Rhythmus ist stabil: Du gehst meist um ${min2hm(bAvg % (24 * 60))} ins Bett (± ${Math.round(bSd)} Min.). Laut deiner Quelle verbessert ein fester Rhythmus HRV und Schlafwert.` : `Deine Einschlafzeit schwankt um ± ${Math.round(bSd)} Minuten (meist um ${min2hm(bAvg % (24 * 60))}). Ein festerer Rhythmus verbessert laut deiner Quelle HRV und Schlafwert.`);
-  if (debt >= 1) notes.push(`Schlafschuld der letzten 7 Tage: ${fmt(debt, 1)} h unter deinem Ziel von ${fmt(c.sleepGoal, 1)} h. Am besten über ein paar Tage je 30 Minuten früher schlafen.`);
+  if (debt >= 1) notes.push(`Schlafschuld der letzten 7 Tage: ${fmtH(debt)} unter deinem Ziel von ${fmtH(c.sleepGoal)}. Am besten über ein paar Tage je 30 Minuten früher schlafen.`);
   if (num(sl.stress) > 25) notes.push(`Dein Stress im Schlaf war mit ${fmt(num(sl.stress))} eher hoch. Abends runterfahren hilft: Licht dimmen, Atemübung 4-7-8, kein Handy im Bett.`);
   insights().filter(x => /Schlaf/.test(x[1])).forEach(x => notes.push(x[2]));
   const body = `<div class="kv" style="margin-bottom:12px">
       <div><span class="eyebrow">Letzte Nacht</span><div class="v">${sl.h ? fmtHours(num(sl.h)) : "–"}</div><div class="small muted">${sl.bed ? esc(sl.bed) + " – " + esc(sl.wake || "") : ""}</div></div>
       ${sl.score ? `<div><span class="eyebrow">Schlafwert</span><div class="v">${fmt(num(sl.score))}<span class="unit">/ 100</span></div></div>` : ""}
-      <div><span class="eyebrow">Bedarf heute</span><div class="v">${fmt(need, 1)}<span class="unit">h</span></div></div>
-      <div><span class="eyebrow">Ø 14 Nächte</span><div class="v">${avgH ? fmt(avgH, 1) : "–"}<span class="unit">h</span></div></div></div>
+      <div><span class="eyebrow">Bedarf heute</span><div class="v">${fmtHours(need)}</div></div>
+      <div><span class="eyebrow">Ø 14 Nächte</span><div class="v">${avgH ? fmtHours(avgH) : "–"}</div></div></div>
     ${stages ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schlafphasen letzte Nacht</div>
       <div style="display:flex;height:16px;border-radius:99px;overflow:hidden;gap:2px">${stages.filter(s => s[1] > 0).map(s => `<i title="${s[0]}: ${s[1]} Min." style="flex:${s[1]};background:${s[2]}"></i>`).join("")}</div>
       <div class="stack" style="gap:8px;margin-top:10px">${stages.map(s => { const p = tot ? s[1] / tot * 100 : 0, a = stageAvg(s[0] === "Tief" ? "deep" : s[0] === "REM" ? "rem" : s[0] === "Leicht" ? "light" : "awake"), rt = stageRate(s[0], p);
@@ -2280,8 +2318,8 @@ function openSleepDetail(k){
       ${sl.resp || sl.stress != null ? `<p class="small muted" style="margin:8px 0 0">${sl.resp ? "Atmung Ø " + fmt(num(sl.resp), 1) + " Atemzüge/Min." : ""}${sl.resp && sl.stress != null ? " · " : ""}${sl.stress != null ? "Stress im Schlaf " + fmt(num(sl.stress)) : ""}${sl.wakes != null ? " · " + sl.wakes + "× wach" : ""}</p>` : ""}</section>` : ""}
     ${notes.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was das bedeutet</div><div class="stack" style="gap:8px">${notes.map(n => `<div class="small ink2">• ${esc(n)}</div>`).join("")}</div></section>` : ""}
     <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Schlafdauer · 14 Nächte</div>
-      ${weekBars(hVals, {h: 110, label: "Schlafdauer 14 Nächte", goal: c.sleepGoal, fmt: v => fmt(v, 1) + " h", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 50%,var(--surface))"})}
-      <p class="small muted" style="margin:4px 0 0">Gestrichelt: dein Schlafziel ${fmt(c.sleepGoal, 1)} h.</p>
+      ${weekBars(hVals, {h: 110, label: "Schlafdauer 14 Nächte", goal: c.sleepGoal, fmt: v => fmtHs(v), labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 50%,var(--surface))"})}
+      <p class="small muted" style="margin:4px 0 0">Gestrichelt: dein Schlafziel ${fmtH(c.sleepGoal)}.</p>
       ${sVals.filter(Boolean).length >= 3 ? `<div class="eyebrow" style="margin:12px 0 4px">Schlafwert · 14 Nächte</div>${weekBars(sVals, {h: 90, label: "Schlafwert", fmt: v => v + " / 100", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= 80 ? "var(--good)" : v >= 60 ? "var(--warn)" : "var(--bad)"})}` : ""}</section>
     <section class="card"><div class="eyebrow" style="margin-bottom:8px">Für besseren Schlaf</div><div class="stack" style="gap:6px">
       ${["Gleiche Zeit ins Bett und aufstehen, auch am Wochenende.", "Morgens 10–30 Minuten Tageslicht, abends ab etwa 22 Uhr Licht dimmen.", "Schlafzimmer kühl (ca. 18 °C), dunkel und ruhig, eine Stunde vorher Handy weg.", "Nach 14 Uhr kein Koffein, abends keine großen, fettigen Mahlzeiten."].map(t => `<div class="small ink2">• ${t}</div>`).join("")}</div></section>`;
@@ -2482,12 +2520,12 @@ function tipPersonal(id){
   switch (id) {
     case "protein": if (avgP == null || !w) return null; return {note: `Ø ${fmt(avgP)} g Eiweiß in den letzten Tagen, das sind ${fmt(avgP / w, 1)} g/kg.`, hot: avgP / w < 1.6 ? 8 : 0, why: avgP / w < 1.6 ? `Du liegst mit ${fmt(avgP / w, 1)} g/kg unter 1,6 g/kg.` : ""};
     case "protein30": { let m = 0, ok = 0; eat.forEach(d => MEALS.forEach(([k]) => { const it = (d.meals || {})[k] || []; if (it.length) { m++; if (it.reduce((a, x) => a + (+x.p || 0), 0) >= 30) ok++; } })); if (!m) return null; return {note: `${ok} von ${m} Mahlzeiten hatten zuletzt mindestens 30 g Eiweiß.`, hot: ok / m < 0.5 ? 6 : 0, why: ok / m < 0.5 ? `Nur ${ok} von ${m} Mahlzeiten hatten 30 g Eiweiß.` : ""}; }
-    case "sleep": if (avgS == null) return null; return {note: `Ø ${fmt(avgS, 1)} h Schlaf in den letzten 7 Nächten, Ziel ${fmt(c.sleepGoal, 1)} h.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmt(avgS, 1)} h geschlafen.` : ""};
+    case "sleep": if (avgS == null) return null; return {note: `Ø ${fmtH(avgS)} Schlaf in den letzten 7 Nächten, Ziel ${fmtH(c.sleepGoal)}.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmtH(avgS)} geschlafen.` : ""};
     case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const n = hrvLowStreak(today); return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms${n === 1 ? ". Ein einzelner Morgen sagt wenig, erst ein Trend zählt" : ""}.`, hot: n >= 2 ? 9 : 0, why: n >= 2 ? `Deine HRV liegt seit ${n} Tagen deutlich unter deinem Schnitt.` : ""}; }
     case "fiber": { const g = fiberGoal(); return {note: `Dein Ziel: etwa ${g} g Ballaststoffe am Tag (bei ${fmt(cfg().kcal)} kcal).`, hot: 0}; }
     case "scale": { const ser = weightSeries(); if (!ser.length) return null; const last = ser[ser.length - 1], a = avgAt(ser, last.k), dv = last.v - a; return {note: `Letzte Messung ${fmt(last.v, 1)} kg, 7-Tage-Schnitt ${fmt(a, 1)} kg (${dv >= 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg).`, hot: Math.abs(dv) > 1 && last.k >= addDays(today, -1) ? 4 : 0, why: Math.abs(dv) > 1 ? `Deine letzte Messung liegt ${fmt(Math.abs(dv), 1)} kg ${dv > 0 ? "über" : "unter"} dem Schnitt, das ist meist Wasser.` : ""}; }
     case "neat": { const st = stepsTrend(); if (!st) return null; const drop = st.now < st.old * 0.85; return {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen, davor Ø ${fmt(st.old)}.`, hot: drop && paceAdj() < 0 ? 6 : 0, why: drop ? `Deine Schritte sind um ${Math.round((1 - st.now / st.old) * 100)} % gesunken.` : ""}; }
-    case "concurrent": { const nx = nextGymFootball(); return nx ? {note: `${WDN[dateOf(nx.k).getDay()]}, ${fmtShort(nx.k)}: Gym und Fußball am selben Tag${nx.gap != null ? ", " + fmt(nx.gap, 1) + " h Abstand" : ""}.`, hot: nx.gap != null && nx.gap < 6 ? 5 : 0, why: nx.gap != null && nx.gap < 6 ? `Am ${WDN[dateOf(nx.k).getDay()]} liegen Gym und Fußball nur ${fmt(nx.gap, 1)} h auseinander.` : ""} : null; }
+    case "concurrent": { const nx = nextGymFootball(); return nx ? {note: `${WDN[dateOf(nx.k).getDay()]}, ${fmtShort(nx.k)}: Gym und Fußball am selben Tag${nx.gap != null ? ", " + fmtH(nx.gap) + " Abstand" : ""}.`, hot: nx.gap != null && nx.gap < 6 ? 5 : 0, why: nx.gap != null && nx.gap < 6 ? `Am ${WDN[dateOf(nx.k).getDay()]} liegen Gym und Fußball nur ${fmtH(nx.gap)} auseinander.` : ""} : null; }
     case "deload": { const dl = deloadState(); return {note: dl.active ? `Entlastungswoche läuft bis ${fmtShort(dl.to)}.` : dl.since != null ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen seit deiner letzten leichteren Trainingswoche${dl.signals.length ? ". Signale: " + dl.signals.join(", ") : ""}.` : "Noch zu wenig Trainingsdaten.", hot: dl.suggest ? 6 : 0, why: dl.suggest ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche und ${dl.signals.length > 1 ? "mehrere Ermüdungs-Signale" : "ein Ermüdungs-Signal"}.` : ""}; }
     case "minvol": { const g = weekSummary(today).groups, low = MAIN_GROUPS.filter(x => (g[x] || 0) < 5); if (!Object.keys(g).length) return null; return {note: low.length ? `Diese Woche unter 5 Sätzen: ${low.join(", ")}.` : "Diese Woche alle Muskelgruppen mit mindestens 5 Sätzen.", hot: 0}; }
     case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
@@ -2811,8 +2849,8 @@ function openReview(mon){
       <div class="kv" style="margin-top:8px">${tile("Ø Protein", st.prot ? fmt(st.prot) : "–", "g", delta(st.prot, pv.prot, " g", 0, true))}${st.water ? tile("Ø Trinken", fmt(st.water, 1), "l", "") : ""}</div>`)}
     ${weekLine(wPts, {label: "Gewicht"}) ? card("Gewicht", weekLine(wPts, {label: "Gewicht"}) + `<div class="kv" style="margin-top:8px">${tile("Ø 7 Tage", st.wEnd ? fmt(st.wEnd, 1) : "–", "kg", delta(st.wEnd, pv.wEnd, " kg", 1, gt === "bulk" ? true : gt === "cut" ? false : null))}</div>`) : ""}
     ${card("Erholung", `${weekBars(recVals, {label: "Erholung pro Tag", fmt: v => v + " %", color: v => v >= 67 ? "var(--good)" : v >= 34 ? "var(--warn)" : "var(--bad)"})}
-      <div class="kv" style="margin-top:8px">${tile("Ø Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", delta(st.rec, pv.rec, " %", 0, true))}${tile("Ø Schlaf", st.sleepH ? fmt(st.sleepH, 1) : "–", "h", delta(st.sleepH, pv.sleepH, " h", 1, true))}</div>`)}
-    ${card("Schlaf pro Nacht", weekBars(sleepVals, {label: "Schlaf pro Nacht", goal: c.sleepGoal, fmt: v => fmt(v, 1) + " h", color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 55%,var(--surface))"}))}
+      <div class="kv" style="margin-top:8px">${tile("Ø Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", delta(st.rec, pv.rec, " %", 0, true))}${tile("Ø Schlaf", st.sleepH ? fmtHs(st.sleepH, true) : "–", "h", delta(st.sleepH, pv.sleepH, " h", 1, true))}</div>`)}
+    ${card("Schlaf pro Nacht", weekBars(sleepVals, {label: "Schlaf pro Nacht", goal: c.sleepGoal, fmt: v => fmtHs(v), color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 55%,var(--surface))"}))}
     ${card("Schritte", `${weekBars(stepVals, {label: "Schritte pro Tag", goal: 10000, fmt: v => fmt(v) + " Schritte", short: v => fmt(v / 1000, 1) + "k", color: v => v >= 10000 ? "var(--good)" : "var(--accent)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø Schritte", st.steps ? fmt(st.steps) : "–", "", delta(st.steps, pv.steps, "", 0, true))}${suppPct != null ? tile("Supplements", suppPct, "%", "eingenommen") : ""}</div>`)}`;
   openSheet("Dein Wochenrückblick", body, `<button class="btn primary" style="flex:1" data-act="planner" data-mon="${addDays(mon, 7)}">🗓️ Nächste Woche planen</button><button class="btn" data-act="sheet-close">Schließen</button>`, () => saveCfg({reviewSeen: mon}));
@@ -2832,8 +2870,9 @@ function nextSetLabel(){
 }
 /* Ton am Pausenende: AudioContext wird beim Abhaken (Antippen) entsperrt, sonst spielt iOS keinen Ton ab */
 let audioCtx = null;
-function unlockAudio(){ try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); const o = audioCtx.createOscillator(), g = audioCtx.createGain(); g.gain.value = 0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.02); } catch(e) {} }
+function unlockAudio(){ try { if (navigator.audioSession && navigator.audioSession.type === "auto") navigator.audioSession.type = "transient"; } catch(e) {} try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); if (audioCtx.state === "suspended") audioCtx.resume(); const o = audioCtx.createOscillator(), g = audioCtx.createGain(); g.gain.value = 0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime + 0.02); } catch(e) {} }
 function restBeep(){
+  try { if (navigator.audioSession) navigator.audioSession.type = "transient"; } catch(e) {}
   try { if (!audioCtx) return; if (audioCtx.state === "suspended") audioCtx.resume();
     [0, 0.25, 0.5].forEach((t, i) => { const o = audioCtx.createOscillator(), g = audioCtx.createGain(); o.type = "sine"; o.frequency.value = i === 2 ? 1175 : 880;
       const t0 = audioCtx.currentTime + t; g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.35, t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.2);
@@ -2847,10 +2886,13 @@ function startRest(ei){
   clearInterval(restTick); restTick = setInterval(updateRestBar, 500); updateRestBar();
   schedulePushRest(secs);
 }
+let restPushWarned = false;
 function schedulePushRest(secs){
-  if (pushState !== "on") return;
+  if (mode !== "db" || !sb) return;
   const nxt = nextSetLabel();
-  sb.rpc("start_rest_timer", {p_seconds: secs, p_title: "Pause vorbei 💪", p_body: nxt ? "Weiter mit " + nxt + "." : "Weiter geht's mit dem nächsten Satz."});
+  sb.rpc("start_rest_timer", {p_seconds: Math.round(secs), p_title: "Pause vorbei 💪", p_body: nxt ? "Weiter mit " + nxt + "." : "Weiter geht's mit dem nächsten Satz."})
+    .then(({data, error}) => { if ((error || !data) && !restPushWarned) { restPushWarned = true; toast(error ? "Die Pausen-Mitteilung konnte nicht geplant werden." : "Pausen-Mitteilung: Mitteilungen sind auf diesem Gerät noch nicht aktiv (Erholung → Supplements)."); } })
+    .catch(() => {});
 }
 function restAdjust(d){
   if (!rest) return; rest.end += d * 1000; updateRestBar();
@@ -3160,7 +3202,7 @@ function viewRoutine(){
   <div class="section-title">Schlaf</div>
   <section class="card">
     <div class="card-h"><h2>Letzte 14 Nächte</h2><button class="btn ghost" data-act="sleep-detail" style="min-height:30px">Details ›</button></div>
-    <div class="small muted" style="margin:-6px 0 8px">Ø ${avgSleep ? fmt(avgSleep, 1) + " h" : "–"} · Ziel ${fmt(c.sleepGoal, 1)} h</div>
+    <div class="small muted" style="margin:-6px 0 8px">Ø ${avgSleep ? fmtH(avgSleep) + "" : "–"} · Ziel ${fmtH(c.sleepGoal)}</div>
     <div class="chart" data-chart="sleep" style="height:170px"></div>
     <form class="stack" data-form="sleep" style="margin-top:14px">
       <div class="fields">
@@ -3296,10 +3338,10 @@ function drawSleep(el){
     if (i % 2 === 1 || bw > 30) s += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${WD[dateOf(n.k).getDay()]}</text>`;
     s += `<rect class="hb" data-i="${i}" x="${padL + i * bw}" y="0" width="${bw}" height="${H - padB}" fill="transparent"/>`;
   });
-  s += `<line x1="${padL}" x2="${W - padR}" y1="${Y(c.sleepGoal)}" y2="${Y(c.sleepGoal)}" stroke="var(--ink-2)" stroke-dasharray="4 4"/><text x="${W - padR}" y="${Y(c.sleepGoal) - 4}" text-anchor="end">Ziel ${fmt(c.sleepGoal, 1)} h</text></svg>`;
+  s += `<line x1="${padL}" x2="${W - padR}" y1="${Y(c.sleepGoal)}" y2="${Y(c.sleepGoal)}" stroke="var(--ink-2)" stroke-dasharray="4 4"/><text x="${W - padR}" y="${Y(c.sleepGoal) - 4}" text-anchor="end">Ziel ${fmtH(c.sleepGoal)}</text></svg>`;
   el.innerHTML = s + '<div class="tip" hidden></div>';
   const tip = el.querySelector(".tip"), svg = el.querySelector("svg");
-  el.querySelectorAll(".hb").forEach(r => { const show = () => { const n = nights[+r.dataset.i]; const rr = svg.getBoundingClientRect(); tip.innerHTML = `<b>${fmtMid(n.k)}</b><br>${n.s && n.s.h ? fmt(n.s.h, 1) + " h · " + esc(n.s.bed || "") + "–" + esc(n.s.wake || "") : "Kein Eintrag"}`; tip.hidden = false; tip.style.left = Math.min(Math.max((padL + (+r.dataset.i + .5) * bw) / W * rr.width, 60), rr.width - 60) + "px"; tip.style.top = (Y(n.s && n.s.h ? n.s.h : 0) / H * rr.height) + "px"; }; r.addEventListener("pointerenter", show); r.addEventListener("pointerdown", show); });
+  el.querySelectorAll(".hb").forEach(r => { const show = () => { const n = nights[+r.dataset.i]; const rr = svg.getBoundingClientRect(); tip.innerHTML = `<b>${fmtMid(n.k)}</b><br>${n.s && n.s.h ? fmtH(n.s.h) + " · " + esc(n.s.bed || "") + "–" + esc(n.s.wake || "") : "Kein Eintrag"}`; tip.hidden = false; tip.style.left = Math.min(Math.max((padL + (+r.dataset.i + .5) * bw) / W * rr.width, 60), rr.width - 60) + "px"; tip.style.top = (Y(n.s && n.s.h ? n.s.h : 0) / H * rr.height) + "px"; }; r.addEventListener("pointerenter", show); r.addEventListener("pointerdown", show); });
   svg.addEventListener("pointerleave", () => tip.hidden = true);
 }
 let resizeT; window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (!editing()) drawCharts(); if (!$("#scrim").hidden) $("#sheet").querySelectorAll("[data-chart]").forEach(el => drawEx(el)); }, 150); });
@@ -3563,13 +3605,13 @@ function renderWs(){
     const work = (e.sets || []).filter(q => q.type !== "warmup"), exDone = work.length > 0 && work.every(q => q.done);
     return `<div class="ex${exDone ? " exdone" : ""}"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
-      ${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}</div>
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets, isBw(e.exId)))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
+      <div class="row" style="gap:8px;margin-top:2px">${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}${done ? "" : `<button class="chip${isBw(e.exId) ? " acc" : ""}" data-act="ws-bw" data-id="${e.exId}" aria-pressed="${isBw(e.exId)}" style="cursor:pointer;border:0">🧍 Körpergewicht${isBw(e.exId) ? " ✓" : ""}</button>`}</div></div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
-      <div class="sets"><div class="setrow"><span class="h">Satz</span><span class="h" style="text-align:center">kg</span><span class="h" style="text-align:center">Wdh.</span><span></span></div>
+      <div class="sets"><div class="setrow"><span class="h">Satz</span><span class="h" style="text-align:center">${isBw(e.exId) ? "+kg" : "kg"}</span><span class="h" style="text-align:center">Wdh.</span><span></span></div>
       ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<div class="setrow${s.done ? " done" : ""}"><span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
-        <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
+        <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls && num(ls.w) ? esc(ls.w) : isBw(e.exId) ? "KG" : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
         <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
         <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button></div>`; }).join("")}</div>
       ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}</div>`;
@@ -3844,7 +3886,7 @@ document.addEventListener("click", async e => {
     case "workout-del": del("workouts", D.id); toast("Gelöscht."); break;
     case "ws-tick": { const s = ws.exercises[+D.ei].sets[+D.si]; s.done = !s.done;
       if (s.done) { const row = b.parentElement; const wi = row.querySelector(`[data-ws="w"][data-ei="${D.ei}"][data-si="${D.si}"]`), ri = row.querySelector(`[data-ws="r"][data-ei="${D.ei}"][data-si="${D.si}"]`);
-        if (s.w === "" && wi && wi.placeholder && wi.placeholder !== "kg") s.w = num(wi.placeholder);
+        if (s.w === "" && wi && wi.placeholder && wi.placeholder !== "kg" && wi.placeholder !== "KG") s.w = num(wi.placeholder);
         if (s.r === "" && ri && /^\d+$/.test(ri.placeholder)) s.r = +ri.placeholder;
         startRest(+D.ei); }
       saveWs(); renderWs(); break; }
@@ -3854,7 +3896,7 @@ document.addEventListener("click", async e => {
     case "ws-set-del": ws.exercises[+D.ei].sets.pop(); saveWs(); renderWs(); break;
     case "ws-ex-del": ws.exercises.splice(+D.ei, 1); saveWs(); renderWs(); break;
     case "ws-ex-add": { const v = $("#wsadd").value; if (!v) break; ws.exercises.push({exId: v, name: exName(v), sets: [{w: "", r: "", done: false}, {w: "", r: "", done: false}, {w: "", r: "", done: false}]}); saveWs(); renderWs(); break; }
-    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => { autoPlanSync(); openEval(fid); }, 300); break; }
+    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => { if (syncPlanFromWorkout(Object.assign({}, S.workouts[fid], {id: fid}))) toast("Training gespeichert. Deine Änderungen gelten ab jetzt auch im Plan."); autoPlanSync(); openEval(fid); }, 300); break; }
     case "eval": openEval(D.id); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
     case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -3879,6 +3921,7 @@ document.addEventListener("click", async e => {
     case "deload-start": { const t = todayKey(); saveCfg({deload: {from: t, to: addDays(t, 6)}}); if (autoOn()) autoPlanSync(); toast(autoOn() ? "Entlastungswoche gestartet. Deine Pläne haben jetzt etwa ⅓ weniger Sätze." : "Entlastungswoche gestartet. Mach 7 Tage etwa ⅓ weniger Sätze."); render(); break; }
     case "deload-stop": { const dl = cfgRaw().deload || {}; saveCfg({deload: Object.assign({}, dl, {to: addDays(todayKey(), -1)})}); if (autoOn()) autoPlanSync(); toast("Entlastungswoche beendet."); render(); break; }
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
+    case "ws-bw": { const ex = S.exercises[D.id]; if (ex) { put("exercises", D.id, Object.assign({}, ex, {bw: !isBw(D.id)})); toast(!isBw(D.id) ? "Wieder mit Gewicht." : "Körpergewicht: Trag nur Zusatzgewicht ein, sonst leer lassen."); } renderWs(); break; }
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "edit-template": openTemplateEdit(D.id); break;
@@ -3938,7 +3981,7 @@ document.addEventListener("submit", async e => {
       const d = getDay(k); d.sleep = {bed, wake, h: Math.round(mins / 6) / 10}; if (q) d.sleep.q = +q;
       [["sls","score"],["slh","hrv"],["slr","rhr"],["slbb","bb"]].forEach(([id, key]) => { const x = num(v(id)); if (x > 0) d.sleep[key] = Math.round(x); });
       saveDay(k, d);
-      document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmt(mins / 60, 1) + " h."); break;
+      document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmtH(mins / 60) + "."); break;
     }
     case "ai-food": runQuickFood(v("aiq")); break;
     case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
