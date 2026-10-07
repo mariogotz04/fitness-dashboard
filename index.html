@@ -233,6 +233,10 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .dial svg{width:100%;height:100%;transform:rotate(-90deg)}
 .dial .in{position:absolute;inset:0;display:flex;align-items:baseline;justify-content:center;padding-top:34%}
 .dial .dv{font-family:var(--display);font-size:clamp(28px,8.5vw,40px);font-weight:700;letter-spacing:0;line-height:1;font-variant-numeric:tabular-nums}
+.dial .in:has(.sm){padding-top:0;align-items:center}
+.dial .dv.sm{display:flex;flex-direction:column;align-items:center;gap:3px;white-space:nowrap}
+.dial .dv small{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px;font-family:var(--body)}
+.dial .dv .hm2{font-family:var(--body);font-size:14px;font-weight:600;color:var(--ink-2)}
 .dial .du{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px}
 .dl{font-family:var(--display);font-size:13px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;margin-top:4px}
 .ds{font-size:12px;color:var(--muted);line-height:1.25}
@@ -308,7 +312,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "07.10.2026 20:18";
+const APP_VERSION = "07.10.2026 20:22";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -924,7 +928,7 @@ function dial(frac, color, big, unit, label, sub){
   const r = 44, C = 2 * Math.PI * r, f = clamp(frac || 0, 0, 1);
   return `<div class="dialw"><div class="dial"><svg viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="${r}" fill="none" stroke="var(--surface-2)" stroke-width="10"/>
     ${f > 0 ? `<circle class="prog" cx="52" cy="52" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round" stroke-dasharray="${C} ${C}" stroke-dashoffset="${C * (1 - f)}" style="--c:${C}"/>` : ""}</svg>
-    <div class="in"><span class="dv">${big}</span>${unit ? `<span class="du">${unit}</span>` : ""}</div></div>
+    <div class="in"><span class="dv${/class="hm1"/.test(big) ? " sm" : ""}">${big}</span>${unit ? `<span class="du">${unit}</span>` : ""}</div></div>
     <div class="dl">${label}</div><div class="ds">${sub}</div></div>`;
 }
 const QUOTES = [
@@ -992,7 +996,7 @@ function recoverySection(k){
     <div class="dials">
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Erholung im Detail">${dial(r ? r.score / 100 : 0, zc, r ? r.score : "–", r ? "%" : "", "Erholung", `<span style="color:${zc}">${zoneTxt}</span>`)}</button>
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--strain)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
-      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? fmtHs(sl.h, true) : "–", sl && sl.h ? "h" : "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmtH(need)}`)}</button>
+      <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? dialHM(sl.h) : "–", "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmtH(need)}`)}</button>
     </div>
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
@@ -1533,7 +1537,10 @@ function waterGoal(k){
   return {base, sport, total: base + sport, parts, sweat, drunk: num(d.water) || 0};
 }
 /* Stunden als „6 h 48 min“ statt „6,8 h“ (kurz für Diagramme: „6:48“) */
-const fmtH = h => { const m = Math.round(num(h) * 60); if (!(m > 0)) return "0 min"; const hh = Math.floor(m / 60), mm = m % 60; return hh ? hh + " h" + (mm ? " " + mm + " min" : "") : mm + " min"; };
+const fmtH = h => { const m = Math.round(num(h) * 60); if (!(m > 0)) return "0\u00a0min"; const hh = Math.floor(m / 60), mm = m % 60; return hh ? hh + "\u00a0h" + (mm ? "\u00a0" + mm + "\u00a0min" : "") : mm + "\u00a0min"; };
+/* Minuten-Angaben: ab 60 als Stunden und Minuten („1 h 42 min“), sonst „45 Minuten“ */
+const fmtMin = m => { m = Math.round(Math.abs(num(m))); return m >= 60 ? fmtH(m / 60) : m + " Minuten"; };
+const dialHM = h => { const m = Math.round(num(h) * 60); return `<span class="hm1">${Math.floor(m / 60)}<small>h</small></span><span class="hm2">${m % 60}\u00a0min</span>`; };
 const fmtHs = (h, bare) => { const m = Math.round(num(h) * 60); return Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0") + (bare ? "" : " h"); };
 const fmtL = ml => fmt(ml / 1000, ml % 1000 === 0 ? 0 : ml % 100 === 0 ? 1 : 2) + " l";
 function waterTip(k, g){
@@ -1752,9 +1759,9 @@ function evalActivity(w){
   const good = [];
   if (kind === "fussball") good.push(["⚽ Spielsport", "Sprints, Richtungswechsel und Zweikämpfe trainieren Schnelligkeit, Koordination und Ausdauer im Wechsel. Belastet Beine und Gelenke spürbar."]);
   if (hasZ && m && (below + (z[0] || 0)) / m >= 0.6) good.push(["🌿 Aktive Erholung", "Sehr lockerer Puls: fördert die Durchblutung, lockert die Muskeln und hilft beim Regenerieren, ohne neue Belastung zu setzen."]);
-  if (share(1) >= 0.3 && z[1] >= 15) good.push(["❤️ Grundlagenausdauer (Zone 2)", `${fmt(z[1])} Minuten in Zone 2 stärken Herz und Mitochondrien und verbessern den Fettstoffwechsel. Laut deiner Quelle die Basis für Ausdauer, schnellere Erholung zwischen Sprints und ein langes Leben.`]);
-  if (share(2) >= 0.25 && z[2] >= 10) good.push(["🏃 Aerobe Leistung (Zone 3)", `${fmt(z[2])} Minuten in Zone 3 heben dein Ausdauer-Tempo. Das ist schon spürbar anstrengend.`]);
-  if (hard >= 5 || num(w.teAna) >= 2) good.push(["⚡ Intensive Reize (Zone 4–5)", `${fmt(hard)} Minuten im harten Bereich verbessern VO2max, Sprintfähigkeit und das Durchhalten bei hohem Tempo. Laut Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben.`]);
+  if (share(1) >= 0.3 && z[1] >= 15) good.push(["❤️ Grundlagenausdauer (Zone 2)", `${fmtMin(z[1])} in Zone 2 stärken Herz und Mitochondrien und verbessern den Fettstoffwechsel. Laut deiner Quelle die Basis für Ausdauer, schnellere Erholung zwischen Sprints und ein langes Leben.`]);
+  if (share(2) >= 0.25 && z[2] >= 10) good.push(["🏃 Aerobe Leistung (Zone 3)", `${fmtMin(z[2])} in Zone 3 heben dein Ausdauer-Tempo. Das ist schon spürbar anstrengend.`]);
+  if (hard >= 5 || num(w.teAna) >= 2) good.push(["⚡ Intensive Reize (Zone 4–5)", `${fmtMin(hard)} im harten Bereich verbessern VO2max, Sprintfähigkeit und das Durchhalten bei hohem Tempo. Laut Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben.`]);
   if (["gehen", "wandern", "rad"].includes(kind) && load !== "hoch") good.push(["🔥 Kalorien und Alltag", `Etwa ${fmt(num(w.kcal))} kcal verbrannt, gelenkschonend und ohne die Regeneration zu stören.${gt === "cut" ? " Im Cut besonders wertvoll, weil der Körper im Defizit sonst unbewusst weniger Bewegung macht." : ""}`]);
   if (w.teAer != null && num(w.teAer) < 1 && ["rad", "lauf", "schwimmen"].includes(kind)) good.push(["💡 Tipp für mehr Effekt", `Für einen echten Ausdauerreiz war es zu locker. Fahr oder lauf etwas länger (ab ca. 30–45 Min.) und so zügig, dass du dich gerade noch unterhalten kannst, also Zone 2${w.maxHR ? "" : ""}.`]);
   if (!good.length) good.push(["💪 Bewegung", `Etwa ${fmt(num(w.kcal))} kcal verbrannt und Herz-Kreislauf aktiviert.`]);
@@ -1924,7 +1931,7 @@ function insights(){
   // 1) Abendsport und Schlaf
   const evening = new Set(ws.filter(w => w.start && new Date(w.start).getHours() >= 18).map(w => w.date));
   const a1 = keys.filter(k => evening.has(k)).map(k => nextSleep(k).h).filter(Boolean), b1 = keys.filter(k => !evening.has(k)).map(k => nextSleep(k).h).filter(Boolean);
-  if (a1.length >= 4 && b1.length >= 4) { const d = (avg(a1) - avg(b1)) * 60; if (Math.abs(d) >= 15) out.push(["🌙", "Abendsport und Schlaf", `Nach Training am Abend (ab 18 Uhr) schläfst du im Schnitt ${fmt(Math.abs(d))} Minuten ${d < 0 ? "kürzer" : "länger"} als sonst.${d < 0 ? " Hilfreich: danach runterfahren, kühles Zimmer, kein Handy im Bett." : ""}`, `${a1.length} vs. ${b1.length} Nächte`, Math.abs(d) / 15]); }
+  if (a1.length >= 4 && b1.length >= 4) { const d = (avg(a1) - avg(b1)) * 60; if (Math.abs(d) >= 15) out.push(["🌙", "Abendsport und Schlaf", `Nach Training am Abend (ab 18 Uhr) schläfst du im Schnitt ${fmtMin(d)} ${d < 0 ? "kürzer" : "länger"} als sonst.${d < 0 ? " Hilfreich: danach runterfahren, kühles Zimmer, kein Handy im Bett." : ""}`, `${a1.length} vs. ${b1.length} Nächte`, Math.abs(d) / 15]); }
   // 2) Harte Tage und HRV am Folgetag
   const hrvNext = k => num(((S.days[addDays(k, 1)] || {}).sleep || {}).hrv);
   const hardK = keys.filter(k => strainOf(k) >= 14), easyK = keys.filter(k => strainOf(k) < 8);
@@ -2297,12 +2304,12 @@ function openSleepDetail(k){
   const tot = stages ? stages.reduce((a, s) => a + s[1], 0) : 0;
   const stageAvg = name => { const xs = valid.filter(x => num(x.deep) + num(x.light) + num(x.rem) > 0).map(x => num(x[name]) / (num(x.deep) + num(x.light) + num(x.rem) + num(x.awake)) * 100); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
   const notes = [];
-  if (sl.h) notes.push(num(sl.h) >= need - 0.25 ? `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Passt.` : `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Geh heute etwa ${fmt((need - num(sl.h)) * 60)} Minuten früher ins Bett.`);
+  if (sl.h) notes.push(num(sl.h) >= need - 0.25 ? `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Passt.` : `Letzte Nacht ${fmtH(num(sl.h))}, dein Bedarf heute liegt bei ${fmtH(need)}. Geh heute etwa ${fmtMin((need - num(sl.h)) * 60)} früher ins Bett.`);
   if (stages) { const dp = num(sl.deep) / tot * 100, rp = num(sl.rem) / tot * 100;
     notes.push(dp >= 13 ? `Tiefschlaf ${Math.round(dp)} %: gut. Im Tiefschlaf erholen sich Muskeln und Körper am stärksten.` : `Tiefschlaf nur ${Math.round(dp)} %. Hilft: kein Alkohol, kein schweres Essen spät, kühles Zimmer (ca. 18 °C).`);
     notes.push(rp >= 20 ? `REM-Schlaf ${Math.round(rp)} %: gut für Kopf, Lernen und Stimmung.` : `REM-Schlaf ${Math.round(rp)} %, etwas wenig. REM kommt vor allem am Ende der Nacht, also nicht zu früh aufstehen und regelmäßig schlafen.`); }
   if (stages) notes.push("Farben bei den Schlafphasen: Grün heißt im gesunden Bereich, Orange knapp daneben, Rot deutlich daneben. Mehr Tief- und REM-Schlaf als der Bereich ist kein Problem.");
-  if (bSd != null) notes.push(bSd <= 30 ? `Dein Rhythmus ist stabil: Du gehst meist um ${min2hm(bAvg % (24 * 60))} ins Bett (± ${Math.round(bSd)} Min.). Laut deiner Quelle verbessert ein fester Rhythmus HRV und Schlafwert.` : `Deine Einschlafzeit schwankt um ± ${Math.round(bSd)} Minuten (meist um ${min2hm(bAvg % (24 * 60))}). Ein festerer Rhythmus verbessert laut deiner Quelle HRV und Schlafwert.`);
+  if (bSd != null) notes.push(bSd <= 30 ? `Dein Rhythmus ist stabil: Du gehst meist um ${min2hm(bAvg % (24 * 60))} ins Bett (± ${Math.round(bSd)} Min.). Laut deiner Quelle verbessert ein fester Rhythmus HRV und Schlafwert.` : `Deine Einschlafzeit schwankt um ± ${fmtMin(bSd)} (meist um ${min2hm(bAvg % (24 * 60))}). Ein festerer Rhythmus verbessert laut deiner Quelle HRV und Schlafwert.`);
   if (debt >= 1) notes.push(`Schlafschuld der letzten 7 Tage: ${fmtH(debt)} unter deinem Ziel von ${fmtH(c.sleepGoal)}. Am besten über ein paar Tage je 30 Minuten früher schlafen.`);
   if (num(sl.stress) > 25) notes.push(`Dein Stress im Schlaf war mit ${fmt(num(sl.stress))} eher hoch. Abends runterfahren hilft: Licht dimmen, Atemübung 4-7-8, kein Handy im Bett.`);
   insights().filter(x => /Schlaf/.test(x[1])).forEach(x => notes.push(x[2]));
@@ -2531,7 +2538,7 @@ function tipPersonal(id){
     case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
     case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + n).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
-    case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmt(z2)} Minuten in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
+    case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmtMin(z2)} in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
     case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
     case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
     case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
