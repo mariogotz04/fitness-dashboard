@@ -308,7 +308,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "07.10.2026 19:02";
+const APP_VERSION = "07.10.2026 20:18";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1089,10 +1089,11 @@ function autoPlanSync(){
       }
       const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
       const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
-      const nv = {sets: x.userSets ? (deloadOn() ? Math.max(1, Math.round(x.userSets * 2 / 3)) : x.userSets) : r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
+      if (x.userSets) { delete x.userSets; changed = true; }
+      const nv = {sets: r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
       // Volumen langsam steigern: höchstens 1 Satz mehr pro Übung und Woche (ca. 5–10 %), außer direkt nach einer Entlastungswoche
       const dl = cfgRaw().deload || {}, after = dl.to && dl.to < today && diffDays(dl.to, today) <= 7;
-      if (!x.userSets && num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
+      if (num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
       if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
         if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
         Object.assign(x, nv); if (!nv.kg) delete x.kg; changed = true;
@@ -1110,8 +1111,7 @@ function autoPlanSync(){
 }
 /* Was du im Training an Übungen und Satzzahl änderst, übernimmt der Plan für die nächsten Male:
    Reihenfolge und Übungen wie im Training, entfernte Übungen fliegen raus, neue kommen dazu.
-   Änderst du bei einer Übung aus dem Plan die Satzzahl, gilt deine Zahl (die Automatik ändert sie dann nicht mehr).
-   Neue Übungen bekommen ihre Sätze von der Automatik. */
+   Die Satzzahl steuert danach wie gewohnt die Automatik (wenn sie an ist). */
 function syncPlanFromWorkout(w){
   if (!w || !w.templateId || w.status !== "done") return false;
   const t = S.templates[w.templateId]; if (!t) return false;
@@ -1121,7 +1121,7 @@ function syncPlanFromWorkout(w){
     const it = old.find(x => x.exId === e.exId);
     if (it) {
       const x = clone(it), tgt = num(e.target && e.target.sets) || num(it.sets);
-      if (n !== tgt) { x.userSets = n; x.sets = n; if (x.orig) x.orig.sets = n; }
+      if (n !== tgt) x.sets = n; // die Automatik passt die Satzzahl danach wie gewohnt weiter an
       items.push(x);
     } else {
       const rx = exRef(e.exId), r = rx && autoOn() ? dynRec(rx, e.exId) : null;
