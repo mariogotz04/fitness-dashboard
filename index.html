@@ -312,7 +312,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "07.10.2026 20:28";
+const APP_VERSION = "08.10.2026 21:42";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1147,8 +1147,8 @@ function syncRecentPlans(){
 }
 let autoPlanDay = null;
 function syncWaterGoal(){
-  const k = todayKey(), d = S.days[k], g = d ? waterGoal(k).total : 0;
-  if (g > 0 && num(d.waterGoal) !== g) put("days", k, Object.assign({}, d, {waterGoal: g}));
+  const k = todayKey(), d = S.days[k], wg = d ? waterGoal(k) : null, g = wg ? wg.total : 0;
+  if (g > 0 && (num(d.waterGoal) !== g || num(d.waterFood || 0) !== wg.food)) put("days", k, Object.assign({}, d, {waterGoal: g, waterFood: wg.food}));
 }
 function autoPlanDaily(){ if (!EXDB || !loaded || mode !== "db") return; const synced = syncRecentPlans(); const t = todayKey(); if (autoPlanDay === t && !synced) return; autoPlanDay = t; autoPlanSync(); }
 /* Vorschau eines Trainings: alle Übungen mit Sätzen, ohne es zu starten */
@@ -1517,6 +1517,14 @@ function workoutMinutes(w){
   if (w.start && w.end) { const m = (new Date(w.end) - new Date(w.start)) / 60000; if (m > 5 && m < 400) return Math.round(m); }
   return w.kind === "activity" ? 60 : 60;
 }
+/* Wasser aus Lebensmitteln (geschätzt): Menge minus Eiweiß, Kohlenhydrate, Fett und ca. 3 % Ballaststoffe/Mineralstoffe.
+   Passt gut bei Obst, Gemüse, Fleisch, Milch, gekochtem Reis oder Nudeln; trockene Lebensmittel bringen kaum Wasser.
+   DACH-Referenzwerte: Erwachsene nehmen etwa 0,8–0,9 l Wasser pro Tag über feste Nahrung auf. */
+function foodWater(d){
+  let ml = 0;
+  MEALS.forEach(([m]) => ((d && d.meals && d.meals[m]) || []).forEach(it => { const g = num(it.g); if (g > 0) ml += Math.max(0, g * 0.97 - num(it.p) - num(it.c) - num(it.f)); }));
+  return Math.round(ml / 10) * 10;
+}
 function waterGoal(k){
   const d = S.days[k] || {}, w = curWeight() || 75;
   const base = Math.round(w * 33 / 50) * 50;
@@ -1534,7 +1542,8 @@ function waterGoal(k){
   let sport = parts.reduce((a, p) => a + p.ml, 0);
   const sweat = num(d.sweatLoss) > 0 ? Math.round(num(d.sweatLoss) * 1500 / 50) * 50 : 0;
   if (sweat > sport) sport = sweat;
-  return {base, sport, total: base + sport, parts, sweat, drunk: num(d.water) || 0};
+  const drunk = num(d.water) || 0, food = foodWater(d);
+  return {base, sport, total: base + sport, parts, sweat, drunk, food, have: drunk + food};
 }
 /* Stunden als „6 h 48 min“ statt „6,8 h“ (kurz für Diagramme: „6:48“) */
 const fmtH = h => { const m = Math.round(num(h) * 60); if (!(m > 0)) return "0\u00a0min"; const hh = Math.floor(m / 60), mm = m % 60; return hh ? hh + "\u00a0h" + (mm ? "\u00a0" + mm + "\u00a0min" : "") : mm + "\u00a0min"; };
@@ -1560,17 +1569,18 @@ function waterTip(k, g){
 function pickN(n, arr){ return arr[n % arr.length]; }
 /* Kurzüberblick fürs „Heute“-Dashboard, gleiche Optik wie die Makro-Zeilen */
 function waterRow(k){
-  const g = waterGoal(k), pct = Math.min(100, g.drunk / g.total * 100);
+  const g = waterGoal(k), pct = Math.min(100, g.have / g.total * 100);
   return `<div class="macro m2" style="margin-top:4px;padding-top:12px;border-top:1px solid var(--line)"><span class="lbl"><span class="dot" style="background:#38BDF8"></span>Trinken</span>
-    <span class="num small"><b>${fmtL(g.drunk).replace(" l", "")}</b><span class="muted"> / ${fmtL(g.total)}</span></span>
-    <div class="bar" role="img" aria-label="Getrunken: ${fmtL(g.drunk)} von ${fmtL(g.total)}"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div></div>`;
+    <span class="num small"><b>${fmtL(g.have).replace(" l", "")}</b><span class="muted"> / ${fmtL(g.total)}</span></span>
+    <div class="bar" role="img" aria-label="Flüssigkeit: ${fmtL(g.have)} von ${fmtL(g.total)}, davon ${fmtL(g.food)} aus Lebensmitteln"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div></div>`;
 }
 function waterCard(k){
-  const g = waterGoal(k), pct = Math.min(100, g.drunk / g.total * 100), tip = waterTip(k, g);
-  const glasses = Math.ceil(g.total / 250), full = Math.floor(g.drunk / 250);
+  const g = waterGoal(k), pct = Math.min(100, g.have / g.total * 100), fpct = Math.min(pct, g.food / g.total * 100), tip = waterTip(k, g);
+  const glasses = Math.ceil(g.total / 250), full = Math.floor(g.have / 250);
   return `<section class="card" style="margin-top:12px">
-    <div class="spread" style="margin-bottom:8px"><span class="eyebrow">💧 Trinken</span><span class="num"><b style="font-size:20px">${fmtL(g.drunk)}</b><span class="muted"> / ${fmtL(g.total)}</span></span></div>
-    <div class="bar" style="height:12px"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div>
+    <div class="spread" style="margin-bottom:8px"><span class="eyebrow">💧 Trinken</span><span class="num"><b style="font-size:20px">${fmtL(g.have)}</b><span class="muted"> / ${fmtL(g.total)}</span></span></div>
+    <div class="bar" style="height:12px;position:relative"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i>${g.food ? `<i style="position:absolute;left:0;top:0;bottom:0;width:${fpct}%;background:#7DD3FC;border-radius:inherit"></i>` : ""}</div>
+    <div class="small num" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><span class="dot" style="background:#38BDF8"></span> Getrunken ${fmtL(g.drunk)}</span>${g.food ? `<span class="muted"><span class="dot" style="background:#7DD3FC"></span> 🥗 Aus Lebensmitteln ${fmtL(g.food)} (geschätzt)</span>` : ""}</div>
     <div class="row" style="gap:3px;margin-top:8px;flex-wrap:wrap" aria-hidden="true">${Array.from({length: Math.min(glasses, 24)}, (_, i) => `<span style="font-size:15px;opacity:${i < full ? 1 : .25}">💧</span>`).join("")}</div>
     <div class="small muted" style="margin-top:6px">Grundbedarf ${fmtL(g.base)}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : "geschätzt ca. " + fmt(g.parts.reduce((a, p) => a + p.sweat, 0), 1) + " l Schweiß × 1,5 aus " + g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : " · Sport kommt dazu, sobald eine Einheit erledigt ist"}</div>
     <div class="row" style="margin-top:10px;gap:6px">${WATER_STEPS.map(ml => `<button class="btn" data-act="water" data-ml="${ml}" data-date="${k}">+ ${ml} ml</button>`).join("")}<button class="btn ghost" data-act="water" data-ml="-250" data-date="${k}" ${g.drunk ? "" : "disabled"}>− 250</button></div>
@@ -2599,7 +2609,7 @@ function tipPersonal(id){
     case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
     case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
     case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
-    case "drink": { const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.drunk < g.total * 0.7; return {note: `Gestern ${fmtL(g.drunk)} von ${fmtL(g.total)} getrunken.`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
+    case "drink": { const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.have < g.total * 0.7; return {note: `Gestern ${fmtL(g.have)} von ${fmtL(g.total)} (davon ${fmtL(g.food)} aus Lebensmitteln).`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
     case "prematch": return footballDay(today) === "pre" ? {note: "Morgen ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Morgen ist Spieltag."} : null;
     case "matchday": return footballDay(today) === "match" ? {note: "Heute ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Heute ist Spieltag."} : null;
     case "watch": { const c2 = cfgRaw(); return (num(c2.burnShare) || 100) === 100 && goalType() === "cut" ? {note: "Du rechnest Trainingskalorien gerade zu 100 % an.", hot: 2, why: "Im Cut rechnest du Uhr-Kalorien voll an."} : null; }
@@ -3971,7 +3981,7 @@ document.addEventListener("click", async e => {
     case "exdb-open": openExdbItem(D.id); break;
     case "exdb-back": openExdb(); break;
     case "exdb-add": { const x = EXDBI[D.id]; if (!x) break; const id = uid("x"); put("exercises", id, {name: x.n, group: x.g, equipment: x.e, notes: "", ref: x.id}); toast("„" + x.n + "“ ist jetzt in deinen Übungen."); openExdbItem(D.id); break; }
-    case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && d.water >= g.total && d.water - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
+    case "water": { const k = D.date || curDate, d = getDay(k); d.water = Math.max(0, (num(d.water) || 0) + num(D.ml)); saveDay(k, d); const g = waterGoal(k); if (num(D.ml) > 0 && g.have >= g.total && g.have - num(D.ml) < g.total) toast("💧 Trinkziel geschafft!"); break; }
     case "review-open": openReview(reviewWeek() || mondayOf(addDays(todayKey(), -7))); break;
     case "planner": closeSheet(); openPlanner(D.mon || null); break;
     case "wp-week": if (wp) { const m = addDays(wp.mon, +D.d); closeSheet(); openPlanner(m); } break;
