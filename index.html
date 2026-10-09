@@ -209,6 +209,9 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
   .rotlock span{color:var(--ink-2);font-size:14px}
   .app{visibility:hidden}
 }
+[data-sort]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transition:box-shadow .15s}
+[data-sort] input,[data-sort] textarea{-webkit-user-select:text;user-select:text}
+.dragging{position:relative;z-index:5;box-shadow:0 12px 30px rgba(0,0,0,.55);outline:2px solid var(--accent);transition:none}
 .mk5{position:absolute;left:25%;top:-2px;bottom:-2px;width:2px;border-radius:1px;background:var(--ink-2);opacity:.55}
 .kbal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .kb{background:var(--surface-2);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
@@ -312,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "08.10.2026 21:42";
+const APP_VERSION = "09.10.2026 19:12";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -480,16 +483,25 @@ function groupTarget(g){
   return {v, notes, recAvg};
 }
 /* Was deine eigenen Pläne pro Woche für eine Muskelgruppe vorsehen */
+/* Indirekte Sätze: Grundübungen trainieren Hilfsmuskeln mit (Bankdrücken → Trizeps und Schultern, Rudern/Latzug → Bizeps).
+   Nach Pelland et al. 2024 (Meta-Regression zur Trainingsdosis) beschreibt „indirekter Satz = ½ Satz“ das Muskelwachstum am besten. */
+const SEC_GROUP = {"Schultern": "Schultern", "Trizeps": "Trizeps", "Bizeps": "Bizeps", "Latissimus": "Rücken", "oberer Rücken": "Rücken", "Brust": "Brust", "Po": "Beine", "Beinbeuger": "Beine", "Adduktoren": "Beine", "Waden": "Waden", "Bauch": "Bauch"};
+function secGroups(exId){
+  const x = exRef(exId), own = (S.exercises[exId] || {}).group || (x && x.g) || "";
+  if (!x || !x.sm) return [];
+  return [...new Set(x.sm.map(m => SEC_GROUP[m]).filter(g => g && g !== own))];
+}
 function plannedSets(g){
-  let sets = 0, n = 0;
-  templatesSorted().filter(t => !t.coach && !/reha/i.test(t.name || "")).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (e && (e.group || "") === g) { sets += num(it.sets) || 0; n++; } }));
-  return {sets, n};
+  let sets = 0, n = 0, ind = 0;
+  templatesSorted().filter(t => !t.coach && !/reha/i.test(t.name || "")).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (!e) return; if ((e.group || "") === g) { sets += num(it.sets) || 0; n++; } else if (secGroups(it.exId).includes(g)) ind += (num(it.sets) || 0) * 0.5; }));
+  return {sets: sets + ind, n, ind, direct: sets};
 }
 /* Empfehlung für eine Übung in deinem Plan (nur Info) */
 function dynRec(x, ownId){
   const gt = goalType(), xp = trainingXp(), sc = coachScheme(x, gt, xp), g = x.g;
   const tg = groupTarget(g), pl = plannedSets(g), small = g === "Bauch" || g === "Waden";
-  let sets = clamp(Math.round(tg.v / Math.max(pl.n, 1)), 2, small ? 3 : 4);
+  // Direkte Sätze = Wochenziel minus ½ der Sätze, die Grundübungen schon für diesen Muskel mitmachen
+  let sets = clamp(Math.round(Math.max(tg.v - pl.ind, pl.n * 2) / Math.max(pl.n, 1)), 2, small ? 3 : 4);
   if (deloadOn()) sets = Math.max(1, Math.round(sets * 2 / 3)); // Entlastungswoche: ca. ⅓ weniger Sätze
   const c = cfgRaw(), pace = paceAdj();
   const diet = gt === "cut" ? `Im Defizit (${pace ? pace + " kcal" : "Abnehmen"}): Gewichte halten ist wichtiger als mehr Sätze, schwer genug bleiben.`
@@ -619,13 +631,15 @@ function weekSummary(k){
   const ws = workoutsSorted().filter(w => w.status === "done" && w.date >= mon && w.date <= sun);
   const strength = ws.filter(w => w.kind !== "activity");
   const acts = ws.filter(w => w.kind === "activity");
-  const groups = {};
+  const groups = {}, direct = {}, indirect = {};
   strength.forEach(w => (w.exercises || []).forEach(e => {
     const g = (S.exercises[e.exId] || {}).group || "Sonstiges";
     const n = (e.sets || []).filter(s => s.type !== "warmup" && num(s.r) > 0).length;
-    if (n) groups[g] = (groups[g] || 0) + n;
+    if (!n) return;
+    direct[g] = (direct[g] || 0) + n; groups[g] = (groups[g] || 0) + n;
+    secGroups(e.exId).forEach(sg => { indirect[sg] = (indirect[sg] || 0) + n * 0.5; groups[sg] = (groups[sg] || 0) + n * 0.5; });
   }));
-  return {mon, sun, strength, acts, groups};
+  return {mon, sun, strength, acts, groups, direct, indirect};
 }
 
 /* ---------- Erholung & Belastung (angelehnt an Whoop) ---------- */
@@ -1065,7 +1079,7 @@ function water7(k){
 }
 function setsWeeks(k){
   const mons = Array.from({length: 8}, (_, i) => addDays(mondayOf(k), (i - 7) * 7));
-  const vals = mons.map(m => Object.values(weekSummary(m).groups).reduce((a, b) => a + b, 0));
+  const vals = mons.map(m => Object.values(weekSummary(m).direct).reduce((a, b) => a + b, 0));
   if (vals.filter(Boolean).length < 2) return "";
   return `<div class="eyebrow" style="margin:16px 0 4px">Sätze pro Woche · letzte 8 Wochen</div>${weekBars(vals, {h: 100, label: "Sätze pro Woche", fmt: v => fmt(v) + " Sätze", short: v => fmt(v), xlabels: mons.map(m => fmtShort(m).replace(/\.$/, "")), today: 7, color: (v, i) => i === 7 ? "var(--accent)" : "color-mix(in srgb,var(--accent) 45%,var(--surface))"})}`;
 }
@@ -1610,7 +1624,7 @@ function viewEssen(){
     const hasY = yd.meals && (yd.meals[m] || []).length;
     return `<div class="section-title spread"><span>${label}${items.length ? ` <span class="small num" style="font-weight:500;text-transform:none;letter-spacing:0;color:${pm >= 30 ? "var(--good)" : "var(--ink-2)"}">${pm >= 30 ? "✓ " : ""}${fmt(pm)} g Eiweiß</span>` : ""}</span><span class="num">${fmt(sum)} kcal</span></div>
     <section class="card" style="padding-block:8px">
-      <div class="list">${items.map((it, i) => `<div class="li"><div class="grow"><div class="title">${esc(it.name)}</div>
+      <div class="list">${items.map((it, i) => `<div class="li"><div class="grow" data-act="item-edit" data-meal="${m}" data-i="${i}" role="button" tabindex="0" style="cursor:pointer"><div class="title">${esc(it.name)}</div>
         <div class="sub num">${it.qty ? fmt(it.qty, it.qty % 1 ? 1 : 0) + " " + esc(it.qty <= 1 ? it.qu1 || it.qu : it.qu) + " (" + fmt(it.g) + " " + unitOfItem(it) + ") · " : it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
         <button class="x" data-act="item-del" data-meal="${m}" data-i="${i}" aria-label="${esc(it.name)} entfernen">×</button></div>`).join("") || '<div class="empty" style="padding:10px">Noch nichts eingetragen.</div>'}</div>
       <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="add-food" data-meal="${m}">+ Hinzufügen</button>${hasY && !items.length ? `<button class="btn ghost" data-act="copy-meal" data-meal="${m}">Wie gestern</button>` : ""}</div>
@@ -1671,7 +1685,7 @@ function viewCalendar(){
   <div class="section-title">Woche ${fmtShort(wk.mon)} – ${fmtShort(wk.sun)}</div>
   <section class="card">
     <div class="row" style="margin-bottom:${groups.length ? 12 : 0}px"><span class="chip ${wk.strength.length >= c.strengthPerWeek ? "good" : ""}">${wk.strength.length} / ${c.strengthPerWeek} Krafteinheiten</span>${wk.acts.map(a => `<span class="chip">${esc(a.title)}${a.minutes ? " · " + a.minutes + " min" : ""}</span>`).join("")}</div>
-    ${groups.length ? `<div class="eyebrow" style="margin-bottom:6px">Sätze pro Muskelgruppe · Ziel 10–20 pro Woche · Strich bei 5 = Erhalt</div><div class="stack" style="gap:7px">${groups.map(([g, n]) => { const col = g === "Sonstiges" ? "" : n > 20 ? "var(--warn)" : n >= 10 ? "var(--good)" : ""; return `<div class="macro" style="grid-template-columns:96px 1fr 34px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${col ? ";background:" + col : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right${col ? ";color:" + col : ""}"><b>${n}</b></span></div>`; }).join("")}</div>${setsHint(groups, wk)}` : '<p class="muted small" style="margin:0">In dieser Woche ist noch kein Krafttraining erledigt.</p>'}
+    ${groups.length ? `<div class="eyebrow" style="margin-bottom:6px">Sätze pro Muskelgruppe · Ziel 10–20 pro Woche · Strich bei 5 = Erhalt</div><div class="small muted" style="margin:-2px 0 8px">Inklusive ½ Satz für Hilfsmuskeln bei Grundübungen (z. B. Trizeps beim Bankdrücken).</div><div class="stack" style="gap:7px">${groups.map(([g, n]) => { const col = g === "Sonstiges" ? "" : n > 20 ? "var(--warn)" : n >= 10 ? "var(--good)" : ""; return `<div class="macro" style="grid-template-columns:96px 1fr 34px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${col ? ";background:" + col : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right${col ? ";color:" + col : ""}"><b>${fmt(n, n % 1 ? 1 : 0)}</b></span></div>`; }).join("")}</div>${setsHint(groups, wk)}` : '<p class="muted small" style="margin:0">In dieser Woche ist noch kein Krafttraining erledigt.</p>'}
     ${setsWeeks(calSel)}
   </section>`;
 }
@@ -2603,7 +2617,7 @@ function tipPersonal(id){
     case "deload": { const dl = deloadState(); return {note: dl.active ? `Entlastungswoche läuft bis ${fmtShort(dl.to)}.` : dl.since != null ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen seit deiner letzten leichteren Trainingswoche${dl.signals.length ? ". Signale: " + dl.signals.join(", ") : ""}.` : "Noch zu wenig Trainingsdaten.", hot: dl.suggest ? 6 : 0, why: dl.suggest ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche und ${dl.signals.length > 1 ? "mehrere Ermüdungs-Signale" : "ein Ermüdungs-Signal"}.` : ""}; }
     case "minvol": { const g = weekSummary(today).groups, low = MAIN_GROUPS.filter(x => (g[x] || 0) < 5); if (!Object.keys(g).length) return null; return {note: low.length ? `Diese Woche unter 5 Sätzen: ${low.join(", ")}.` : "Diese Woche alle Muskelgruppen mit mindestens 5 Sätzen.", hot: 0}; }
     case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
-    case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + n).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
+    case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + fmt(n, n % 1 ? 1 : 0)).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
     case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmtMin(z2)} in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
     case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
@@ -2647,7 +2661,7 @@ function deloadState(){
   const active = !!(dl.from && dl.to && dl.from <= t && dl.to >= t);
   // Letzte leichtere Woche aus deinen Trainings: höchstens 70 % der harten Sätze der 4 Wochen davor (oder gestartete Entlastungswoche)
   const mon0 = mondayOf(t), wsets = [];
-  for (let i = 1; i <= 20; i++) { const m = addDays(mon0, -7 * i); wsets.push({m, n: Object.values(weekSummary(m).groups).reduce((a, b) => a + b, 0)}); }
+  for (let i = 1; i <= 20; i++) { const m = addDays(mon0, -7 * i); wsets.push({m, n: Object.values(weekSummary(m).direct).reduce((a, b) => a + b, 0)}); }
   let light = null;
   for (let i = 0; i < wsets.length - 4 && !light; i++) { const prev = wsets.slice(i + 1, i + 5).filter(x => x.n > 0); if (prev.length >= 1 && wsets[i].n <= 0.7 * prev.reduce((a, x) => a + x.n, 0) / prev.length) light = addDays(wsets[i].m, 6); }
   if (dl.to && dl.to < t && (!light || dl.to > light)) light = dl.to;
@@ -2915,7 +2929,7 @@ function openReview(mon){
     ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>
       <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
       ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
-      ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${n}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
+      ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${fmt(n, n % 1 ? 1 : 0)}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
     ${card("Kalorien pro Tag", `${weekBars(kcalVals, {label: "Kalorien pro Tag", goal: i => kcalGoal(days[i]), fmt: v => fmt(v) + " kcal", short: v => fmt(v / 1000, 1) + "k", color: (v, i) => v > kcalGoal(days[i]) * 1.05 ? "var(--warn)" : "var(--accent)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø gegessen", st.kcal ? fmt(st.kcal) : "–", "kcal", delta(st.kcal, pv.kcal, " kcal", 0, null))}${tile("Eingetragen", st.tracked, "von 7", "")}</div>
       <p class="small muted" style="margin:6px 0 0">Gestrichelt: dein Tagesziel inkl. Sport. Orange: mehr als 5 % drüber.</p>`)}
@@ -3671,17 +3685,17 @@ function renderWs(){
   const done = ws.status === "done";
   const exOpts = Object.entries(S.exercises).sort((a, b) => a[1].name.localeCompare(b[1].name, "de")).map(([id, e]) => `<option value="${id}">${esc(e.name)}</option>`).join("");
   let b = `<div class="row small muted" style="margin-bottom:12px"><span>${fmtLong(ws.date)}</span>${done ? '<span class="chip good">Erledigt</span>' : '<span class="chip warn">Läuft</span>'}</div>` + dayFormHint(ws);
-  b += (ws.exercises || []).map((e, ei) => {
+  b += (done ? "" : `<p class="small muted" style="margin:0 0 8px">Tipp: Übung lange gedrückt halten und ziehen, um die Reihenfolge zu ändern.</p>`) + `<div class="sortlist">` + (ws.exercises || []).map((e, ei) => {
     const last = lastPerformance(e.exId, ws.date, ws.id);
     const hi = e.target ? repHi(e.target.reps) : null;
     let hint = "";
     if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all && done ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft.</div>` : ""; }
     const rx = exRef(e.exId), open = wsInfo[ei];
     const work = (e.sets || []).filter(q => q.type !== "warmup"), exDone = work.length > 0 && work.every(q => q.done);
-    return `<div class="ex${exDone ? " exdone" : ""}"><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
+    return `<div class="ex${exDone ? " exdone" : ""}" ${done ? "" : `data-sort="ws" data-i="${ei}"`}><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
       ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets, isBw(e.exId)))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
-      <div class="row" style="gap:8px;margin-top:2px">${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}${done ? "" : `<button class="chip${isBw(e.exId) ? " acc" : ""}" data-act="ws-bw" data-id="${e.exId}" aria-pressed="${isBw(e.exId)}" style="cursor:pointer;border:0">🧍 Körpergewicht${isBw(e.exId) ? " ✓" : ""}</button>`}</div></div>
+      <div class="row" style="gap:8px;margin-top:2px">${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}${done ? "" : `<button class="chip" data-act="swap-open" data-kind="ws" data-i="${ei}" style="cursor:pointer;border:0">⇄ Tauschen</button>`}${done ? "" : `<button class="chip${isBw(e.exId) ? " acc" : ""}" data-act="ws-bw" data-id="${e.exId}" aria-pressed="${isBw(e.exId)}" style="cursor:pointer;border:0">🧍 Körpergewicht${isBw(e.exId) ? " ✓" : ""}</button>`}</div></div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
       <div class="sets"><div class="setrow"><span class="h">Satz</span><span class="h" style="text-align:center">${isBw(e.exId) ? "+kg" : "kg"}</span><span class="h" style="text-align:center">Wdh.</span><span></span></div>
@@ -3689,8 +3703,8 @@ function renderWs(){
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls && num(ls.w) ? esc(ls.w) : isBw(e.exId) ? "KG" : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
         <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
         <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button></div>`; }).join("")}</div>
-      ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}</div>`;
-  }).join("");
+      ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}${swapFor && swapFor.kind === "ws" && swapFor.i === ei ? swapPanel(e.exId) : ""}</div>`;
+  }).join("") + `</div>`;
   if (!done) b += `<div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="wsadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="ws-ex-add">Hinzufügen</button></div>`;
   b += `<div class="field" style="margin-top:14px"><label for="wsn">Notiz</label><textarea class="inp" id="wsn" data-ws="note" ${done ? "readonly" : ""} placeholder="Wie lief's? Schmerzen, Energie, Technik …">${esc(ws.note || "")}</textarea></div>`;
   b += `<div class="row" style="margin-top:14px">${done ? `<button class="btn" data-act="ws-reopen">Bearbeiten</button>` : `<button class="btn primary" data-act="ws-finish">Training abschließen</button>`}<button class="btn ghost danger" data-act="ws-delete">Training löschen</button></div>`;
@@ -3738,10 +3752,119 @@ function renderTe(){
   const exOpts = Object.entries(S.exercises).sort((a, b) => a[1].name.localeCompare(b[1].name, "de")).map(([id, e]) => `<option value="${id}">${esc(e.name)}</option>`).join("");
   $("#sheet-b").innerHTML = `${autoOn() && autoTemplate(te) ? `<div class="hint small" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Pausen und Gewicht setzt die App selbst. Hier legst du die Übungen und ihre Reihenfolge fest.</div>` : ""}<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
     <div class="section-title">Übungen</div>
-    ${te.items.map((it, i) => `<div class="ex"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:2px;flex-wrap:nowrap"><button class="x" data-act="te-up" data-i="${i}" aria-label="Nach oben">↑</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>
+    <p class="small muted" style="margin:0 0 8px">Übung lange gedrückt halten und ziehen, um sie zu verschieben.</p><div class="sortlist">
+    ${te.items.map((it, i) => `<div class="ex" data-sort="te" data-i="${i}"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="chip" data-act="swap-open" data-kind="te" data-i="${i}" style="border:0;cursor:pointer">⇄ Tauschen</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>${swapFor && swapFor.kind === "te" && swapFor.i === i ? swapPanel(it.exId) : ""}
       <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 4 : 3},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
+    </div>
     <div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="teadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="te-add">Hinzufügen</button></div>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="te-save">Plan speichern</button>${te.id ? '<button class="btn ghost danger" data-act="te-remove">Plan löschen</button>' : ""}</div>`;
+}
+
+/* ---------- Verschieben per langem Drücken (Plan und laufendes Training) ---------- */
+let drag = null;
+function dragStart(el, x, y){
+  drag = {el, kind: el.dataset.sort, i: +el.dataset.i, y0: y, x0: x, to: +el.dataset.i, active: false};
+  drag.timer = setTimeout(() => { if (!drag) return; drag.active = true; el.classList.add("dragging"); try { navigator.vibrate && navigator.vibrate(15); } catch(_) {} }, 380);
+}
+function dragMove(x, y, ev){
+  if (!drag) return;
+  if (!drag.active) { if (Math.abs(y - drag.y0) > 8 || Math.abs(x - drag.x0) > 8) { clearTimeout(drag.timer); drag = null; } return; }
+  if (ev && ev.cancelable) ev.preventDefault();
+  drag.el.style.transform = `translateY(${y - drag.y0}px)`;
+  const sibs = [...drag.el.parentElement.querySelectorAll(":scope > [data-sort]")];
+  let to = 0; sibs.forEach((s2, j) => { if (s2 === drag.el) return; const r = s2.getBoundingClientRect(); if (y > r.top + r.height / 2) to = j < drag.i ? j + 1 : j; });
+  if (y < sibs[0].getBoundingClientRect().top) to = 0;
+  drag.to = Math.max(0, Math.min(sibs.length - 1, to));
+  sibs.forEach((s2, j) => { s2.style.borderTop = j === drag.to && j !== drag.i && drag.to < drag.i ? "3px solid var(--accent)" : ""; s2.style.borderBottom = j === drag.to && j !== drag.i && drag.to > drag.i ? "3px solid var(--accent)" : ""; });
+}
+function dragEnd(){
+  if (!drag) return;
+  clearTimeout(drag.timer);
+  const d = drag; drag = null;
+  if (!d.active) return;
+  swapFor = null;
+  d.el.classList.remove("dragging"); d.el.style.transform = "";
+  if (d.to === d.i) { if (d.kind === "ws") renderWs(); else renderTe(); return; }
+  const arr = d.kind === "ws" ? (ws && ws.exercises) : (te && te.items); if (!arr) return;
+  const [x] = arr.splice(d.i, 1); arr.splice(d.to, 0, x);
+  if (d.kind === "ws") { if (ws.exercises.length) { wsInfo = {}; } saveWs(); renderWs(); } else renderTe();
+}
+document.addEventListener("touchstart", e => { const el = e.target.closest && e.target.closest("[data-sort]"); if (!el || e.target.closest("input,select,textarea,button,a") || e.touches.length > 1) return; dragStart(el, e.touches[0].clientX, e.touches[0].clientY); }, {passive: true});
+document.addEventListener("touchmove", e => { if (drag) dragMove(e.touches[0].clientX, e.touches[0].clientY, e); }, {passive: false});
+document.addEventListener("touchend", dragEnd); document.addEventListener("touchcancel", dragEnd);
+document.addEventListener("mousedown", e => { const el = e.target.closest && e.target.closest("[data-sort]"); if (!el || e.button !== 0 || e.target.closest("input,select,textarea,button,a")) return; dragStart(el, e.clientX, e.clientY); });
+document.addEventListener("mousemove", e => { if (drag) dragMove(e.clientX, e.clientY, e); });
+document.addEventListener("mouseup", dragEnd);
+document.addEventListener("contextmenu", e => { if (drag) e.preventDefault(); });
+
+/* ---------- Übung tauschen: Alternativen für dieselbe Muskelgruppe ---------- */
+let swapFor = null;
+function swapOptions(exId){
+  const e = S.exercises[exId] || {}, x = exRef(exId), g = e.group || (x && x.g) || "";
+  const pm = x ? x.pm || [] : [], comp = x ? x.mc === "c" : null;
+  const usedRefs = new Set(Object.values(S.exercises).map(o => o.ref).filter(Boolean));
+  const uses = id => workoutsSorted().filter(w => (w.exercises || []).some(q => q.exId === id)).length;
+  const own = Object.entries(S.exercises).filter(([id, o]) => id !== exId && o.group === g).map(([id, o]) => ({key: id, name: o.name, own: true, score: 30 + Math.min(10, uses(id)) + (exRef(id) && pm.some(m => (exRef(id).pm || []).includes(m)) ? 20 : 0) + (comp != null && exRef(id) && (exRef(id).mc === "c") === comp ? 40 : 0)}));
+  const db = (EXDB || []).filter(y => y.g === g && !usedRefs.has(y.id) && (!x || y.id !== x.id)).map(y => ({key: "db:" + y.id, name: y.n, own: false, score: (pm.some(m => (y.pm || []).includes(m)) ? 20 : 0) + (comp != null && (y.mc === "c") === comp ? 40 : 0)}));
+  return own.concat(db).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "de")).slice(0, 12);
+}
+function swapPanel(exId){
+  const g = (S.exercises[exId] || {}).group || (exRef(exId) || {}).g || "";
+  const opts = swapOptions(exId);
+  return `<div class="hint" style="margin-top:10px"><div class="spread" style="margin-bottom:6px"><b>Tauschen gegen (${esc(g || "gleiche Muskelgruppe")})</b><button class="x" data-act="swap-close" aria-label="Schließen">×</button></div>
+    <div class="stack" style="gap:6px">${opts.map(o => `<button class="pick" data-act="swap-pick" data-ex="${esc(o.key)}" style="padding:8px 10px"><span style="flex:1;min-width:0;text-align:left">${esc(o.name)}</span><span class="chip">${o.own ? "Deine Übung" : "Neu"}</span></button>`).join("") || '<div class="small muted">Keine passende Übung gefunden.</div>'}</div></div>`;
+}
+function swapApply(key){
+  if (!swapFor) return;
+  let id = key;
+  if (key.startsWith("db:")) { const y = EXDBI[key.slice(3)]; if (!y) return; id = uid("x"); put("exercises", id, {name: y.n, group: y.g, equipment: y.e, notes: "", ref: y.id}); }
+  if (swapFor.kind === "ws" && ws) {
+    const e = ws.exercises[swapFor.i]; if (!e) return;
+    e.exId = id; e.name = exName(id);
+    if (e.target) { delete e.target.kg; }
+    e.sets = (e.sets || []).map(q => q.done ? q : {w: "", r: "", done: false});
+    swapFor = null; saveWs(); renderWs(); toast("Getauscht: " + exName(id));
+  } else if (swapFor.kind === "te" && te) {
+    const it = te.items[swapFor.i]; if (!it) return;
+    it.exId = id; delete it.kg; delete it.orig;
+    swapFor = null; renderTe(); toast("Getauscht. Speichern nicht vergessen.");
+  }
+}
+
+/* ---------- Eingetragene Lebensmittel bearbeiten ---------- */
+let ie = null;
+function openItemEdit(meal, i){
+  const d = S.days[curDate] || {}, it = ((d.meals || {})[meal] || [])[i]; if (!it) return;
+  ie = {meal, i, it: clone(it), qty: num(it.qty) || null, g: num(it.g) || null};
+  openSheet("Menge ändern", "", null, () => { ie = null; });
+  renderItemEdit();
+}
+function itemScaled(){
+  const it = ie.it, base = num(it.g) || null;
+  const newG = ie.qty && num(it.qty) ? num(it.g) / num(it.qty) * ie.qty : ie.g;
+  const k = base && newG ? newG / base : 1;
+  return {k, g: newG, kcal: Math.round(num(it.kcal) * k), p: +(num(it.p) * k).toFixed(1), c: +(num(it.c) * k).toFixed(1), f: +(num(it.f) * k).toFixed(1)};
+}
+function renderItemEdit(){
+  if (!ie) return;
+  const it = ie.it, sc = itemScaled(), u = unitOfItem(it);
+  const ctl = ie.qty != null && num(it.qty) ? `<div class="row" style="flex-wrap:nowrap;gap:10px;align-items:center;justify-content:center;margin:8px 0">
+      <button class="btn" data-act="ie-step" data-d="-${num(it.qty) % 1 ? 0.5 : 1}" style="min-width:52px">−</button>
+      <input class="inp num" id="ieq" inputmode="decimal" value="${esc(fmt(ie.qty, ie.qty % 1 ? 1 : 0))}" style="width:90px;text-align:center;font-size:20px">
+      <button class="btn" data-act="ie-step" data-d="${num(it.qty) % 1 ? 0.5 : 1}" style="min-width:52px">+</button></div>
+      <div class="small muted" style="text-align:center">${esc(ie.qty <= 1 ? it.qu1 || it.qu : it.qu)} · ${fmt(sc.g)} ${u}</div>`
+    : `<div class="field"><label for="ieg">Menge (${u})</label><input class="inp num" id="ieg" inputmode="decimal" value="${esc(fmt(ie.g || 0))}"></div>`;
+  $("#sheet-b").innerHTML = `<div style="font-weight:600;font-size:17px;margin-bottom:6px">${esc(it.name)}</div>${ctl}
+    <div class="kv" style="margin-top:14px"><div><span class="eyebrow">Kalorien</span><div class="v" style="font-size:24px">${fmt(sc.kcal)}<span class="unit">kcal</span></div></div><div><span class="eyebrow">Eiweiß</span><div class="v" style="font-size:24px">${fmt(sc.p)}<span class="unit">g</span></div></div><div><span class="eyebrow">Kohlenhydr.</span><div class="v" style="font-size:24px">${fmt(sc.c)}<span class="unit">g</span></div></div><div><span class="eyebrow">Fett</span><div class="v" style="font-size:24px">${fmt(sc.f)}<span class="unit">g</span></div></div></div>
+    <div class="row" style="margin-top:16px"><button class="btn primary" data-act="ie-save">Speichern</button><button class="btn ghost danger" data-act="item-del" data-meal="${ie.meal}" data-i="${ie.i}">Entfernen</button></div>`;
+}
+function saveItemEdit(){
+  if (!ie) return;
+  const sc = itemScaled(); if (!(sc.g > 0)) { toast("Bitte eine Menge eintragen."); return; }
+  const d = getDay(curDate), arr = (d.meals || {})[ie.meal]; if (!arr || !arr[ie.i]) return;
+  const n = Object.assign({}, arr[ie.i], {g: Math.round(sc.g), kcal: sc.kcal, p: sc.p, c: sc.c, f: sc.f});
+  if (ie.qty != null && num(arr[ie.i].qty)) n.qty = ie.qty;
+  arr[ie.i] = n; saveDay(curDate, d); ie = null; sheetClose = null; closeSheet(); toast("Menge geändert.");
 }
 
 /* ----- Tag planen ----- */
@@ -3882,7 +4005,13 @@ document.addEventListener("click", async e => {
     case "push-on": enablePush(); break;
     case "push-test": { const {data: r} = await sb.rpc("send_test_push"); toast(r === "queued" ? "Test-Mitteilung kommt in etwa einer Minute." : "Auf diesem Gerät sind Mitteilungen noch nicht aktiv."); break; }
     case "supp-del": saveCfg({supplements: (cfg().supplements || []).filter(s => s.id !== D.id)}); break;
-    case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); break; }
+    case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); if (ie) { ie = null; sheetClose = null; closeSheet(); } break; }
+    case "item-edit": openItemEdit(D.meal, +D.i); break;
+    case "ie-step": if (ie) { ie.qty = Math.max(0.5, Math.round((num(ie.qty) + num(D.d)) * 2) / 2); renderItemEdit(); } break;
+    case "ie-save": saveItemEdit(); break;
+    case "swap-open": swapFor = {kind: D.kind, i: +D.i}; if (D.kind === "ws") renderWs(); else renderTe(); break;
+    case "swap-close": { const k = swapFor && swapFor.kind; swapFor = null; if (k === "ws") renderWs(); else if (k === "te") renderTe(); break; }
+    case "swap-pick": swapApply(D.ex); break;
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
     case "add-food": openAddFood(D.meal); break;
     case "af-mode": stopScan(); if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
@@ -4016,6 +4145,7 @@ document.addEventListener("click", async e => {
 });
 
 document.addEventListener("input", e => {
+  if (ie && (e.target.id === "ieq" || e.target.id === "ieg")) { const v = num(e.target.value); if (e.target.id === "ieq") ie.qty = v > 0 ? v : ie.qty; else ie.g = v > 0 ? v : ie.g; const sc = itemScaled(); const kv = $("#sheet-b .kv"); if (kv) kv.querySelectorAll(".v").forEach((el, j) => { el.firstChild.nodeValue = fmt([sc.kcal, sc.p, sc.c, sc.f][j]); }); return; }
   const t = e.target;
   if (t.closest && t.closest('form[data-form="calc"]')) { const r = calcRead(); if (t.id === "cg") { const p = Object.assign({}, cfgRaw().calc || {}, r.p, {pace: null, pkg: null}); $("#sheet-b").innerHTML = calcForm(p, r.goal); return; } $("#calcres").innerHTML = calcExplain(calcTargets(r.p, r.goal), r.goal); return; }
   if (t.id === "exdbq") { exdbQ = t.value; $("#exdbres").innerHTML = exdbList(); return; }
