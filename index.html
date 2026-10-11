@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "11.10.2026 20:37";
+const APP_VERSION = "11.10.2026 20:47";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -4143,8 +4143,8 @@ document.addEventListener("click", async e => {
     case "cal-prev": case "cal-next": { const [y, m] = calMonth.split("-").map(Number); const d = new Date(y, m - 1 + (a === "cal-next" ? 1 : -1), 1); calMonth = keyOf(d).slice(0, 7); render(); break; }
     case "cal-sel": calSel = D.date; if (calSel.slice(0, 7) !== calMonth) calMonth = calSel.slice(0, 7); render(); break;
     case "plan-day": openPlanDay(D.date); break;
-    case "plan-template": { const w = newWorkoutFromTemplate(D.id, D.date); put("workouts", uid("w"), w); closeSheet(); toast(w.title + " für " + fmtShort(D.date) + " geplant."); break; }
-    case "start-template": { const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
+    case "plan-template": { if (autoOn()) autoPlanSync(); const w = newWorkoutFromTemplate(D.id, D.date); put("workouts", uid("w"), w); closeSheet(); toast(w.title + " für " + fmtShort(D.date) + " geplant."); break; }
+    case "start-template": { if (autoOn()) autoPlanSync(); const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
     case "open-workout": closeSheet(); openWorkout(D.id); break;
     case "wk-preview": openWorkoutPreview(D.id); break;
     case "workout-del": del("workouts", D.id); toast("Gelöscht."); break;
@@ -4194,7 +4194,7 @@ document.addEventListener("click", async e => {
     case "te-add": { const v = $("#teadd").value; if (!v) break; te.items.push({exId: v, sets: 3, reps: "8–12", rir: "1–2", rest: "2 min"}); renderTe(); break; }
     case "te-del": te.items.splice(+D.i, 1); renderTe(); break;
     case "te-up": { const i = +D.i; if (i > 0) { const t = te.items[i]; te.items[i] = te.items[i - 1]; te.items[i - 1] = t; } renderTe(); break; }
-    case "te-save": { if (!te.name.trim()) { toast("Gib dem Plan einen Namen."); break; } const {id, ...data} = te; put("templates", id || uid("t"), data); te = null; sheetClose = null; closeSheet(); toast("Plan gespeichert."); break; }
+    case "te-save": { if (!te.name.trim()) { toast("Gib dem Plan einen Namen."); break; } const {id, ...data} = te; put("templates", id || uid("t"), data); te = null; sheetClose = null; closeSheet(); const n = autoOn() ? autoPlanSync() : 0; toast(n ? "Plan gespeichert. Die Automatik hat Sätze, Wiederholungen und Gewicht eingetragen." : "Plan gespeichert."); break; }
     case "te-remove": if (b.dataset.confirm) { del("templates", te.id); te = null; sheetClose = null; closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "w-range": weightRange = +D.r; render(); break;
     case "weight-del": { const d = getDay(D.date); delete d.weight; delete d.waist; saveDay(D.date, d); break; }
