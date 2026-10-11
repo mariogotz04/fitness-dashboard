@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "11.10.2026 17:15";
+const APP_VERSION = "11.10.2026 17:17";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -995,7 +995,7 @@ const QUOTES = [
 function quoteOf(k){ const d = dateOf(k); const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5) + d.getFullYear() * 7; return QUOTES[n % QUOTES.length]; }
 let tipsAI = {}, tipsBusy = false, ciSel = {}, garminBusy = false, isOwner = false, hasGarmin = false, garminSt = {};
 async function loadGarminStatus(){ const {data} = await sb.rpc("garmin_status"); garminSt = data || {}; hasGarmin = !!garminSt.linked; scheduleRender(); return garminSt; }
-const garminErrMsg = e => e === "login_expired" ? "Die Garmin-Anmeldung muss erneuert werden. Das macht dein Mac automatisch, sobald er an ist und mit dem Internet verbunden. Klapp ihn kurz auf und versuch es danach noch einmal." : "Garmin hat gerade nicht geantwortet. Versuch es in ein paar Minuten noch einmal.";
+const garminErrMsg = e => e === "login_expired" ? "Die Garmin-Anmeldung muss erneuert werden. Das macht dein Mac automatisch, sobald er an ist und mit dem Internet verbunden. Klapp ihn kurz auf: Er holt die fehlenden Daten danach von selbst nach." :"Garmin hat gerade nicht geantwortet. Versuch es in ein paar Minuten noch einmal.";
 function recoverySection(k){
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), z = r ? zoneOf(r.score) : "none";
   const zc = {good: "var(--good)", warn: "var(--warn)", bad: "var(--bad)", none: "var(--muted)"}[z];
