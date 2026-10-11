@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "09.10.2026 19:12";
+const APP_VERSION = "11.10.2026 17:15";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -427,7 +427,7 @@ async function initStore(){
   if (!session) { mode = "auth"; render(); return; }
   user = session.user; mode = "db";
   sb.rpc("am_owner").then(({data}) => { isOwner = !!data; scheduleRender(); });
-  loadGarminStatus();
+  loadGarminStatus().then(st => { if (st && st.linked) sb.rpc("garmin_auto_sync").then(({data}) => { if (data === "started") setTimeout(() => loadAll(), 90000); }); });
   try { const raw = localStorage.getItem("fd-cache"); if (raw) { const o = JSON.parse(raw); COLS.forEach(c => S[c] = o[c] || {}); loaded = true; render(); } } catch(e) {}
   await loadAll();
   initPush();
@@ -922,6 +922,7 @@ function viewHeute(){
   <section class="card">
     <div class="card-h"><h2>Training</h2><button class="btn ghost" data-act="tab" data-tab="training">Kalender</button></div>
     ${trainHtml}
+    ${cardioCard(curDate)}
     <div class="row">${tpls.map(tp => `<button class="btn" data-act="start-template" data-id="${tp.id}" data-date="${curDate}">${esc(tp.short || tp.name)} starten</button>`).join("") || '<span class="muted small">Noch keine Trainingspläne angelegt.</span>'}</div>
     ${fuelBox(curDate)}
     <div class="row" style="margin-top:12px"><span class="chip ${wk.strength.length >= c.strengthPerWeek ? "good" : ""}">${wk.strength.length} / ${c.strengthPerWeek} Krafteinheiten diese Woche</span>${wk.acts.length ? `<span class="chip">${wk.acts.length}× ${esc([...new Set(wk.acts.map(a => a.title))].join(", "))}</span>` : ""}</div>
@@ -1671,7 +1672,7 @@ function viewCalendar(){
   const sel = byDate[calSel] || [];
   const wk = weekSummary(calSel);
   const groups = Object.entries(wk.groups).sort((a, b) => b[1] - a[1]);
-  const fbSel = (weekPlanOf(mondayOf(calSel)) || {})[calSel], fbTxt = fbSel && fbSel.fb ? (fbSel.fb === "match" ? "🏆 Fußballspiel geplant" : "⚽ Fußballtraining geplant") : "";
+  const fbSel = (weekPlanOf(mondayOf(calSel)) || {})[calSel], fbTxt = (fbSel && fbSel.fb ? (fbSel.fb === "match" ? "🏆 Fußballspiel geplant" : "⚽ Fußballtraining geplant") : "") + (fbSel && fbSel.cardio ? (fbSel.fb ? " · " : "") + CARDIO[fbSel.cardio].icon + " " + CARDIO[fbSel.cardio].name + " geplant" : "");
   return `<button class="btn block" data-act="planner" style="margin-bottom:12px">🗓️ Woche planen${weekPlanOf(plannerDefaultWeek()) ? " (geplant ✓)" : ""}</button><section class="card">
     <div class="spread" style="margin-bottom:10px"><button class="iconbtn" data-act="cal-prev" aria-label="Vorheriger Monat">${ICON.left}</button><h2 style="font-size:22px">${MON[m - 1]} ${y}</h2><button class="iconbtn" data-act="cal-next" aria-label="Nächster Monat">${ICON.right}</button></div>
     <div class="cal">${cells}</div>
@@ -2144,11 +2145,45 @@ function openPlanner(mon){
   const draft = {};
   days.forEach((k, i) => {
     const s = saved && saved[k], p = prev && prev[addDays(mon, i - 7)], wd = dateOf(k).getDay();
-    draft[k] = s ? {fb: s.fb || "", fbTime: s.fbTime || "", gym: plannedGym(k) || (k < todayKey() ? s.gym || "" : ""), gymTime: s.gymTime || ""} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", fbTime: p ? p.fbTime || "" : "", gym: plannedGym(k) || (p ? p.gym || "" : ""), gymTime: p ? p.gymTime || "" : ""};
+    draft[k] = s ? {fb: s.fb || "", fbTime: s.fbTime || "", gym: plannedGym(k) || (k < todayKey() ? s.gym || "" : ""), gymTime: s.gymTime || "", cardio: s.cardio || "", cardioTime: s.cardioTime || "", cardioMin: s.cardioMin || ""} : {fb: p ? p.fb || "" : sch.train.includes(wd) ? "train" : sch.match === wd ? "match" : "", fbTime: p ? p.fbTime || "" : "", gym: plannedGym(k) || (p ? p.gym || "" : ""), gymTime: p ? p.gymTime || "" : "", cardio: p ? p.cardio || "" : "", cardioTime: p ? p.cardioTime || "" : "", cardioMin: p ? p.cardioMin || "" : ""};
   });
   wp = {mon, days: draft, saved: !!saved};
   openSheet("Woche planen", "", null, () => { wp = null; });
   renderPlanner();
+}
+/* ---------- Cardio: Zone 2 (Grundlagenausdauer) und VO2max-Intervalle ----------
+   Quellen: NotebookLM-Zusammenfassung (Zone 2 + 1× pro Woche richtig hart), Garmin-Pulszonen nach % der maximalen Herzfrequenz
+   (Zone 2 = 60–70 %), Norwegisches 4×4-Intervalltraining (Helgerud et al. 2007: 4 × 4 min bei 90–95 % HFmax, 3 min locker dazwischen). */
+function hrMax(){
+  const since = addDays(todayKey(), -180);
+  const seen = workoutsSorted().filter(w => w.date >= since && num(w.maxHR) > 0).map(w => num(w.maxHR));
+  const est = Math.round(208 - 0.7 * (ageOf(cfgRaw().calc || {}) || 30));
+  const obs = seen.length ? Math.max(...seen) : 0;
+  return obs >= est * 0.95 && obs <= 225 ? {v: obs, src: "dein höchster gemessener Puls"} : {v: est, src: "geschätzt aus deinem Alter"};
+}
+const hrPct = (a, b) => { const m = hrMax().v; return `${Math.round(m * a)}–${Math.round(m * b)}`; };
+const CARDIO = {z2: {name: "Zone-2-Lauf", icon: "🫁"}, vo2: {name: "VO2max-Intervalle", icon: "⚡"}};
+function cardioPlanOf(k){ const p = weekPlanOf(mondayOf(k)), d = p && p[k]; return d && d.cardio ? {type: d.cardio, time: d.cardioTime || "", min: num(d.cardioMin) || (d.cardio === "vo2" ? 35 : 40)} : null; }
+function cardioDone(k){
+  return workoutsSorted().filter(w => w.date === k && w.kind === "activity" && /run|lauf|jog|treadmill|trail|cycl|rad|bike|elliptical|stair|row/i.test((w.garminType || "") + " " + (w.title || "")));
+}
+function cardioWeekHint(){
+  const fb = wp ? Object.values(wp.days).filter(d => d.fb).length : 0, match = wp ? Object.values(wp.days).some(d => d.fb === "match") : false;
+  return fb >= 2 ? `Bei ${fb}× Fußball reichen 1–2 lockere Zone-2-Läufe à 30–45 min. VO2max-Intervalle höchstens 1× pro Woche${match ? " und mit 2 Tagen Abstand zum Spiel" : ""}, Fußball ist schon ein harter Reiz.`
+    : "Gut sind 2–3 Zone-2-Einheiten à 30–60 min und 1× pro Woche VO2max-Intervalle (4 × 4 min).";
+}
+function cardioCard(k){
+  const c = cardioPlanOf(k), done = cardioDone(k); if (!c) return "";
+  const info = CARDIO[c.type], hm = hrMax();
+  const how = c.type === "z2" ? `${c.min} min locker laufen, Puls ${hrPct(0.6, 0.7)} (60–70 % deines Maximalpulses ${hm.v}). Du solltest dich noch in ganzen Sätzen unterhalten können. Lieber langsamer laufen oder gehen, als über die Zone zu kommen.`
+    : `10 min einlaufen, dann 4 × 4 min hart (Puls ${hrPct(0.9, 0.95)}, 90–95 %), dazwischen je 3 min locker traben, zum Schluss 5–10 min auslaufen. Die letzten Wiederholungen sollen richtig anstrengend sein.`;
+  let st = "";
+  if (done.length) {
+    const z = done.reduce((a, w) => (w.zones || []).map((v, i) => (a[i] || 0) + num(v)), []), min = done.reduce((a, w) => a + (num(w.minutes) || 0), 0);
+    st = c.type === "z2" ? `✓ Erledigt: ${fmtMin(min)}${z.length ? `, davon ${fmtMin((z[1] || 0))} in Zone 2${(z[3] || 0) + (z[4] || 0) > 5 ? ` und ${fmtMin((z[3] || 0) + (z[4] || 0))} zu hart (Zone 4–5)` : ""}` : ""}.`
+      : `✓ Erledigt: ${fmtMin(min)}${z.length ? `, davon ${fmtMin((z[3] || 0) + (z[4] || 0))} im harten Bereich (Zone 4–5)` : ""}.`;
+  }
+  return `<div class="hint" style="margin:10px 0"><b>${info.icon} Heute: ${info.name}${c.time ? " um " + esc(c.time) : ""}</b><div class="small ink2" style="margin-top:4px">${esc(how)}</div>${st ? `<div class="small" style="margin-top:6px;color:var(--good);font-weight:600">${esc(st)}</div>` : ""}</div>`;
 }
 function plannerWarnings(){
   const out = [], tp = id => S.templates[id];
@@ -2162,6 +2197,16 @@ function plannerWarnings(){
       if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball nur ${fmtH(Math.abs(a - b))} auseinander.${b < a ? " Wenn möglich Gym zuerst" : " Wenn möglich mehr Abstand"} (über 6 h), dann leidet der Muskelaufbau weniger.`);
       else if (a == null || b == null) out.push(`${WDN[dateOf(k).getDay()]}: Gym und Fußball am selben Tag. Am besten über 6 h Abstand und Krafttraining zuerst.`); }
   });
+  const hmh = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; };
+  Object.keys(wp.days).sort().forEach((k, i, ks) => {
+    const d = wp.days[k], next = wp.days[ks[i + 1]] || {}, wd = WDN[dateOf(k).getDay()];
+    if (d.cardio === "vo2" && (d.fb === "match" || next.fb === "match")) out.push(`${wd}: VO2max-Intervalle ${d.fb === "match" ? "am Spieltag" : "am Tag vor dem Spiel"}. Lieber mindestens 2 Tage Abstand zum Spiel.`);
+    if (d.cardio === "vo2" && d.gym && legs(d.gym)) out.push(`${wd}: VO2max-Intervalle und Beintraining am selben Tag. Besser auf zwei Tage verteilen.`);
+    if (d.cardio && d.gym) { const a = hmh(d.gymTime), b = hmh(d.cardioTime); if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${wd}: Gym und ${d.cardio === "vo2" ? "Intervalle" : "Zone-2-Lauf"} nur ${fmtH(Math.abs(a - b))} auseinander. Wenn möglich zuerst Gym oder mehr Abstand.`); }
+  });
+  const vo2n = Object.values(wp.days).filter(d => d.cardio === "vo2").length, hardFb = Object.values(wp.days).filter(d => d.fb).length;
+  if (vo2n > 1) out.push(`${vo2n}× VO2max-Intervalle geplant. 1× pro Woche reicht, die anderen lieber als Zone-2-Lauf.`);
+  else if (vo2n && hardFb >= 3) out.push(`Mit ${hardFb}× Fußball ist die Woche schon intensiv. Überleg, die Intervalle diese Woche durch einen lockeren Zone-2-Lauf zu ersetzen.`);
   const gymDays = Object.values(wp.days).filter(d => d.gym).length, goal = cfg().strengthPerWeek;
   if (gymDays && gymDays < goal) out.push(`${gymDays} von ${goal} geplanten Krafteinheiten.`);
   return out;
@@ -2178,7 +2223,10 @@ function renderPlanner(){
         <div class="filt" style="margin:0 0 8px">${[["", "Kein Fußball"], ["train", "⚽ Training"], ["match", "🏆 Spiel"]].map(([v, l]) => `<button data-act="wp-fb" data-date="${k}" data-v="${v}" aria-pressed="${(d.fb || "") === v}">${l}</button>`).join("")}</div>
         ${d.fb ? `<label class="row small" style="margin:0 0 8px;flex-wrap:nowrap">${d.fb === "match" ? "Anpfiff" : "Trainingsbeginn"} <input class="inp num" type="time" data-wptime="${k}" data-f="fbTime" value="${esc(d.fbTime || "")}" style="width:120px;min-height:36px;padding:4px 8px"></label>` : ""}
         <div class="row" style="flex-wrap:nowrap;gap:6px"><select class="inp" data-wpgym="${k}" aria-label="Gym am ${WDN[dateOf(k).getDay()]}" style="min-height:38px;padding:6px 10px;flex:1;min-width:0"><option value="">🏋️ Kein Gym</option>${tpls.map(t => `<option value="${t.id}" ${d.gym === t.id ? "selected" : ""}>🏋️ ${esc(t.name)}</option>`).join("")}</select>
-        ${d.gym ? `<input class="inp num" type="time" data-wptime="${k}" data-f="gymTime" value="${esc(d.gymTime || "")}" aria-label="Uhrzeit Gym" style="width:110px;min-height:38px;padding:4px 8px">` : ""}</div></div>`; }).join("")}</div>
+        ${d.gym ? `<input class="inp num" type="time" data-wptime="${k}" data-f="gymTime" value="${esc(d.gymTime || "")}" aria-label="Uhrzeit Gym" style="width:110px;min-height:38px;padding:4px 8px">` : ""}</div>
+        <div class="filt" style="margin:8px 0 0">${[["", "Kein Cardio"], ["z2", "🫁 Zone 2"], ["vo2", "⚡ VO2max"]].map(([v, l]) => `<button data-act="wp-cardio" data-date="${k}" data-v="${v}" aria-pressed="${(d.cardio || "") === v}">${l}</button>`).join("")}</div>
+        ${d.cardio ? `<div class="row small" style="margin-top:8px;flex-wrap:nowrap;gap:8px"><input class="inp num" type="time" data-wptime="${k}" data-f="cardioTime" value="${esc(d.cardioTime || "")}" aria-label="Uhrzeit Cardio" style="width:110px;min-height:36px;padding:4px 8px"><input class="inp num" inputmode="numeric" data-wptime="${k}" data-f="cardioMin" value="${esc(d.cardioMin || (d.cardio === "vo2" ? 35 : 40))}" aria-label="Dauer in Minuten" style="width:70px;min-height:36px;padding:4px 8px"><span class="muted">min</span></div>` : ""}</div>`; }).join("")}</div>
+    <p class="small muted" style="margin:10px 0 0">Cardio: ${esc(cardioWeekHint())}</p>
     <p class="small muted" style="margin:10px 0 0">Mit Uhrzeit bekommst du am Tag einen Essensplan mit Zeiten: was du wann vor und nach dem Spiel, Training oder Gym essen solltest.</p>
     ${warn.length ? `<div class="hint" style="margin-top:12px;border:1.5px solid var(--warn)">${warn.map(w => `<div class="small">⚠︎ ${esc(w)}</div>`).join("")}</div>` : ""}
     <div class="row" style="margin-top:14px"><button class="btn primary" data-act="wp-save">Woche speichern</button>${wp.saved ? `<button class="btn ghost danger" data-act="wp-clear">Plan löschen</button>` : ""}</div>`;
@@ -2333,7 +2381,7 @@ function sleepTips(){
   const bAvg = bed.length ? bed.reduce((a, b) => a + b, 0) / bed.length : null, bSd = bed.length >= 4 ? Math.sqrt(bed.reduce((a, b) => a + (b - bAvg) ** 2, 0) / bed.length) : null;
   const deepP = nights.slice(0, 7).map(x => { const tot = num(x.deep) + num(x.light) + num(x.rem); return tot > 0 ? num(x.deep) / tot * 100 : null; }).filter(v => v != null);
   const deepAvg = deepP.length ? deepP.reduce((a, b) => a + b, 0) / deepP.length : null;
-  const lateTrain = workoutsSorted().some(w => w.date === t && w.status !== "skipped" && w.start && new Date(w.start).getHours() >= 18) || ["train", "match"].includes(((weekPlanOf(mondayOf(t)) || {}).days || {})[t]?.fb || "") && hm2min((((weekPlanOf(mondayOf(t)) || {}).days || {})[t] || {}).fbTime) >= 18 * 60;
+  const lateTrain = workoutsSorted().some(w => w.date === t && w.status !== "skipped" && w.start && new Date(w.start).getHours() >= 18) || ["train", "match"].includes(((weekPlanOf(mondayOf(t)) || {})[t] || {}).fb || "") && hm2min(((weekPlanOf(mondayOf(t)) || {})[t] || {}).fbTime) >= 18 * 60;
   if (avg3 != null && avg3 < c.sleepGoal - 0.5) out.push(["😴", "Schlafschuld abbauen", `Die letzten Nächte waren es im Schnitt nur ${fmtH(avg3)}. Lieber ein paar Abende je 30 Minuten früher ins Bett als am Wochenende lange ausschlafen.`]);
   if (bSd != null && bSd > 40) out.push(["⏰", "Fester Rhythmus", `Deine Einschlafzeit schwankt um ± ${fmtMin(bSd)}. Jeden Tag etwa zur gleichen Zeit ins Bett und aufstehen, auch am Wochenende, verbessert HRV und Schlafwert.`]);
   if (lateTrain) out.push(["🏃", "Nach spätem Training runterfahren", "Nach Training am Abend braucht der Körper Zeit: warm duschen, gedimmtes Licht, leichtes Essen mit Kohlenhydraten und Eiweiß, und erst ins Bett, wenn der Puls unten ist."]);
@@ -2579,6 +2627,7 @@ const KB = [
   {id: "deload", cat: "training", icon: "🪫", title: "Entlastungswoche", short: "Alle 4–6 Wochen eine Woche mit etwa ⅓ weniger Sätzen, wenn der Körper Signale sendet.", why: "Ermüdung baut sich über Wochen auf, oft schneller als die Fitness. Eine leichtere Woche lässt sie abklingen, schützt vor Überlastung und Verletzungen, und danach geht es oft stärker weiter. Gewichte bleiben dabei gleich, nur die Satzzahl sinkt.", how: ["Etwa ⅓ weniger Sätze, z. B. 3 → 2, Gewichte gleich lassen.", "Nicht nach Kalender, sondern bei Signalen: HRV mehrere Tage niedrig, mehrere Übungen stagnieren, oft starker Muskelkater.", "Volumen danach höchstens um etwa 5–10 % pro Woche steigern.", "Die App schlägt sie dir unter Training vor, du startest sie selbst."], src: "C"},
   {id: "minvol", cat: "training", icon: "🛡️", title: "Muskeln halten mit wenig Zeit", short: "Etwa 5 harte Sätze pro Muskel und Woche reichen zum Erhalten, wenn die Gewichte schwer bleiben.", why: "Zum Aufbauen braucht es 10–20 harte Sätze pro Woche, zum Erhalten deutlich weniger. Wichtig ist, dass die Intensität bleibt: schwere Gewichte, nah am Versagen. Das hilft in vollen Fußballwochen, im Urlaub und im Cut.", how: ["Pro Muskelgruppe mindestens 5 harte Sätze in der Woche.", "Gewichte nicht reduzieren, lieber Sätze kürzen.", "Im Sätze-Diagramm unter Training zeigt der Strich bei 5 die Erhalt-Grenze."], src: "C"},
   {id: "zone2", cat: "training", icon: "❤️", title: "Zone 2 plus einmal pro Woche richtig hart", short: "Lockere Ausdauer, bei der du dich noch unterhalten kannst, plus ein intensiver Reiz.", why: "Zone 2 stärkt Herz und Mitochondrien und hilft der Erholung zwischen Sprints. Intensive Einheiten wie Sprints oder Fußball verbessern die VO2max.", how: ["2–3 × 30–60 Min. locker laufen, radeln oder zügig gehen.", "1 × pro Woche Intervalle oder ein Spiel.", "Die Auswertung jeder Einheit zeigt dir deine Pulszonen."], src: "N"},
+  {id: "vo2int", cat: "training", icon: "⚡", title: "VO2max-Intervalle (4 × 4 min)", short: "Der stärkste Reiz für die VO2max: 4 × 4 Minuten bei 90–95 % des Maximalpulses.", why: "Lange, harte Intervalle halten das Herz mehrere Minuten nah am Maximum. Genau das verbessert die maximale Sauerstoffaufnahme am stärksten. In der bekannten norwegischen Studie stieg die VO2max mit 4 × 4 min deutlich mehr als mit lockerem Dauerlauf.", how: ["10 min einlaufen.", "4 × 4 min hart (90–95 % HFmax), dazwischen 3 min locker traben.", "5–10 min auslaufen.", "Höchstens 1× pro Woche, mit Fußball zählt das Spiel schon als harter Reiz.", "Nicht am Tag vor einem Spiel und nicht am selben Tag wie Beintraining."], src: "C"},
   {id: "vo2", cat: "training", icon: "🫁", title: "VO2max: der wichtigste Langlebigkeits-Wert", short: "Wie viel Sauerstoff dein Körper maximal verwerten kann.", why: "Laut deiner Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben. Sie lässt sich in jedem Alter verbessern.", how: ["Zone-2-Grundlage plus intensive Intervalle.", "Die Uhr misst sie bei Läufen oder zügigen Gehrunden mit GPS.", "Verlauf unter Körper → Fitness-Werte."], src: "N"},
   {id: "stretch", cat: "erholung", icon: "🧘", title: "Statisch dehnen nach dem Sport", short: "30–60 Sekunden pro Dehnung, mindestens 5 Minuten pro Muskelgruppe und Woche.", why: "So verbessert sich die Beweglichkeit am stärksten. Vor Krafttraining, Sprints und Fußball dagegen dynamisch aufwärmen, weil statisches Dehnen kurzfristig Kraft kostet.", how: ["Nach dem Training Waden, Oberschenkel, Hüfte und Brust dehnen.", "Vorher: Beinschwingen, Ausfallschritte, lockere Sprints."], src: "N"},
   {id: "mobility", cat: "erholung", icon: "🦵", title: "Mobility-Routine Unterkörper (10 Min.)", short: "Fünf Übungen für Hüfte, Knie und Oberschenkel, ideal nach Fußball.", why: "Fußball macht Hüftbeuger und Oberschenkel kurz und fest. Diese kurze Routine hält Hüfte und Knie beweglich und lässt sich nach dem Training oder abends machen.", how: ["Tiefe Hocke halten, Fersen am Boden (30–60 s).", "Hüftrotation im Sitzen (90/90), beide Seiten (30–60 s).", "Tauben-Dehnung, je Seite 30–60 s.", "Kniende Hüftbeuger-Dehnung, je Seite 30–60 s.", "Couch Stretch an der Wand, je Seite 30–60 s.", "Bei Knie- oder Schulterbeschwerden nur bis zu leichtem Ziehen."], src: "C"},
@@ -2619,7 +2668,8 @@ function tipPersonal(id){
     case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
     case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + fmt(n, n % 1 ? 1 : 0)).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
-    case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmtMin(z2)} in Zone 2.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
+    case "vo2int": { const v = (Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort().slice(-1)[0]); return {note: `Dein Puls für die harten Abschnitte: ${hrPct(0.9, 0.95)} (Maximalpuls ${hrMax().v}, ${hrMax().src})${v ? `. VO2max zuletzt ${fmt(num(S.days[v].vo2), 1)}` : ""}.`, hot: 0}; }
+    case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmtMin(z2)} in Zone 2. Dein Zone-2-Puls: ${hrPct(0.6, 0.7)}.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
     case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
     case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
     case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
@@ -2650,8 +2700,8 @@ function hrvLowStreak(k){
 function nextGymFootball(){
   const t = todayKey(), hm = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; };
   for (const mon of [mondayOf(t), addDays(mondayOf(t), 7)]) {
-    const wpl = weekPlanOf(mon); if (!wpl || !wpl.days) continue;
-    for (const k of Object.keys(wpl.days).sort()) { const d = wpl.days[k]; if (k < t || !d.gym || !d.fb) continue; const a = hm(d.gymTime), b = hm(d.fbTime); return {k, gap: a != null && b != null ? Math.abs(a - b) : null, fbFirst: a != null && b != null && b < a}; }
+    const wpl = weekPlanOf(mon); if (!wpl) continue;
+    for (const k of Object.keys(wpl).sort()) { const d = wpl[k]; if (k < t || !d.gym || !d.fb) continue; const a = hm(d.gymTime), b = hm(d.fbTime); return {k, gap: a != null && b != null ? Math.abs(a - b) : null, fbFirst: a != null && b != null && b < a}; }
   }
   return null;
 }
@@ -2825,7 +2875,7 @@ function pushCard(){
     unsupported: "Dein Gerät unterstützt keine Mitteilungen für Web-Apps. Am iPhone braucht es iOS 16.4 oder neuer.",
     denied: "Mitteilungen sind blockiert. Erlaube sie in den iPhone-Einstellungen unter Mitteilungen → Fitness.",
   }[pushState];
-  if (pushState === "on") return `<div class="hint good spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Erinnerungen sind aktiv. Du bekommst zur eingestellten Uhrzeit eine Mitteilung, wenn das Supplement noch nicht abgehakt ist.</span><button class="btn ghost" data-act="push-test">Test senden</button></div>`;
+  if (pushState === "on") return `<div class="hint good spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Erinnerungen sind aktiv. Du bekommst zur eingestellten Uhrzeit eine Mitteilung, wenn das Supplement noch nicht abgehakt ist. Kommt beim Test nichts an, tippe auf „Neu verbinden“.</span><span class="row" style="gap:6px"><button class="btn ghost" data-act="push-test">Test senden</button><button class="btn ghost" data-act="push-reconnect">Neu verbinden</button></span></div>`;
   if (pushState === "off") return `<div class="hint spread" style="margin-bottom:10px;flex-wrap:wrap"><span>Stell bei jedem Supplement eine Uhrzeit ein und aktiviere Mitteilungen, dann erinnert dich die App.</span><button class="btn primary" data-act="push-on">Mitteilungen aktivieren</button></div>`;
   return txt ? `<div class="hint" style="margin-bottom:10px">${txt}</div>` : "";
 }
@@ -4003,6 +4053,16 @@ document.addEventListener("click", async e => {
     case "sheet-close": closeSheet(); break;
     case "supp-toggle": { const d = getDay(D.date); d.supps = d.supps || {}; if (d.supps[D.id]) delete d.supps[D.id]; else d.supps[D.id] = new Date().toTimeString().slice(0, 5); saveDay(D.date, d); break; }
     case "push-on": enablePush(); break;
+    case "push-reconnect": {
+      try {
+        const reg = await navigator.serviceWorker.ready, old = await reg.pushManager.getSubscription();
+        if (old) await old.unsubscribe().catch(() => {});
+        await sb.rpc("reset_my_push_subs");
+        await enablePush();
+        if (pushState === "on") { await sb.rpc("send_test_push"); toast("Neu verbunden. Eine Test-Mitteilung kommt in etwa einer Minute."); }
+      } catch (err) { toast("Das hat nicht geklappt. Öffne die App über den Home-Bildschirm und versuch es noch einmal."); }
+      break;
+    }
     case "push-test": { const {data: r} = await sb.rpc("send_test_push"); toast(r === "queued" ? "Test-Mitteilung kommt in etwa einer Minute." : "Auf diesem Gerät sind Mitteilungen noch nicht aktiv."); break; }
     case "supp-del": saveCfg({supplements: (cfg().supplements || []).filter(s => s.id !== D.id)}); break;
     case "item-del": { const d = getDay(curDate); d.meals[D.meal].splice(+D.i, 1); saveDay(curDate, d); if (ie) { ie = null; sheetClose = null; closeSheet(); } break; }
@@ -4100,7 +4160,7 @@ document.addEventListener("click", async e => {
     case "ws-set-del": ws.exercises[+D.ei].sets.pop(); saveWs(); renderWs(); break;
     case "ws-ex-del": ws.exercises.splice(+D.ei, 1); saveWs(); renderWs(); break;
     case "ws-ex-add": { const v = $("#wsadd").value; if (!v) break; ws.exercises.push({exId: v, name: exName(v), sets: [{w: "", r: "", done: false}, {w: "", r: "", done: false}, {w: "", r: "", done: false}]}); saveWs(); renderWs(); break; }
-    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => { if (syncPlanFromWorkout(Object.assign({}, S.workouts[fid], {id: fid}))) toast("Training gespeichert. Deine Änderungen gelten ab jetzt auch im Plan."); autoPlanSync(); openEval(fid); }, 300); break; }
+    case "ws-finish": { stopRest(true); ws.status = "done"; ws.end = new Date().toISOString(); const fid = ws.id; saveWs(true); workoutsSorted().filter(w => w.date === ws.date && w.source === "garmin" && /strength|indoor_cardio|hiit/.test(w.garminType || "")).forEach(w => del("workouts", w.id)); toast("Training gespeichert. Stark!"); closeSheet(); setTimeout(() => { if (syncPlanFromWorkout(Object.assign({}, S.workouts[fid], {id: fid}))) toast("Training gespeichert. Deine Änderungen gelten ab jetzt auch im Plan."); autoPlanSync(); openEval(fid); }, 300); break; }
     case "eval": openEval(D.id); break;
     case "ws-reopen": ws.status = "active"; saveWs(true); renderWs(); break;
     case "ws-delete": if (b.dataset.confirm) { stopRest(true); const id = ws.id; ws = null; clearTimeout(wsTimer); wsTimer = null; sheetClose = null; del("workouts", id); closeSheet(); toast("Training gelöscht."); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
@@ -4115,6 +4175,7 @@ document.addEventListener("click", async e => {
     case "planner": closeSheet(); openPlanner(D.mon || null); break;
     case "wp-week": if (wp) { const m = addDays(wp.mon, +D.d); closeSheet(); openPlanner(m); } break;
     case "wp-fb": if (wp) { wp.days[D.date].fb = D.v; renderPlanner(); } break;
+    case "wp-cardio": if (wp) { wp.days[D.date].cardio = D.v; if (D.v && !wp.days[D.date].cardioMin) wp.days[D.date].cardioMin = D.v === "vo2" ? 35 : 40; renderPlanner(); } break;
     case "wp-save": if (wp) { savePlanner(); toast("Woche gespeichert. Die Tipps richten sich jetzt nach deinem Plan."); closeSheet(); } break;
     case "wp-clear": if (wp) { if (b.dataset.confirm) { const all = Object.assign({}, weekPlans()); delete all[wp.mon]; saveCfg({weekPlan: all}); workoutsSorted().filter(w => w.planner && w.status === "planned" && w.date >= wp.mon && w.date <= addDays(wp.mon, 6)).forEach(w => del("workouts", w.id)); toast("Plan gelöscht."); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } } break;
     case "sb-export": await runExport(); break;
