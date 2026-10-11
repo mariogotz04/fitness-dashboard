@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "11.10.2026 17:17";
+const APP_VERSION = "11.10.2026 20:37";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -493,7 +493,7 @@ function secGroups(exId){
 }
 function plannedSets(g){
   let sets = 0, n = 0, ind = 0;
-  templatesSorted().filter(t => !t.coach && !/reha/i.test(t.name || "")).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (!e) return; if ((e.group || "") === g) { sets += num(it.sets) || 0; n++; } else if (secGroups(it.exId).includes(g)) ind += (num(it.sets) || 0) * 0.5; }));
+  templatesSorted().filter(t => !t.coach && !t.inactive && !/reha/i.test(t.name || "")).forEach(t => (t.items || []).forEach(it => { const e = S.exercises[it.exId]; if (!e) return; if ((e.group || "") === g) { sets += num(it.sets) || 0; n++; } else if (secGroups(it.exId).includes(g)) ind += (num(it.sets) || 0) * 0.5; }));
   return {sets: sets + ind, n, ind, direct: sets};
 }
 /* Empfehlung für eine Übung in deinem Plan (nur Info) */
@@ -1094,11 +1094,11 @@ function suggestKg(exId, reps){
   const all = hi && last.sets.filter(q => (num(q.w) || 0) >= top).every(q => num(q.r) >= hi);
   return all ? Math.round((top + (comp ? 2.5 : 1.25)) * 4) / 4 : top;
 }
-const autoTemplate = t => t && !t.coach;
+const autoTemplate = t => t && !t.coach && !t.inactive;
 function autoPlanSync(){
   if (!loaded || mode !== "db" || !EXDB) return 0;
   const on = autoOn(), today = todayKey(); let n = 0;
-  templatesSorted().forEach(t => {
+  templatesSorted().filter(t => !t.inactive).forEach(t => {
     let changed = false;
     const items = (t.items || []).map(it => {
       const x = clone(it);
@@ -1693,9 +1693,9 @@ function viewCalendar(){
 function viewTemplates(){
   const tpls = templatesSorted();
   return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
-    <div class="card-h"><h2>${esc(t.name)}</h2><span class="chip">${(t.items || []).length} Übungen</span></div>
+    <div class="card-h"><h2>${esc(t.name)}</h2><span class="row" style="gap:6px">${t.inactive ? '<span class="chip warn">Pausiert</span>' : ""}<span class="chip">${(t.items || []).length} Übungen</span></span></div>
     <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${isBw(it.exId) ? "KG + " : ""}${fmtKg(it.kg)} kg</b>` : isBw(it.exId) ? " · Körpergewicht" : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
-    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button><button class="btn ghost" data-act="te-toggle" data-id="${t.id}">${t.inactive ? "Aktivieren" : "Pausieren"}</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
 }
@@ -4190,6 +4190,7 @@ document.addEventListener("click", async e => {
     case "edit-ex": openExEdit(D.id); break;
     case "ex-del": if (b.dataset.confirm) { del("exercises", D.id); closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "edit-template": openTemplateEdit(D.id); break;
+    case "te-toggle": { const t = S.templates[D.id]; if (!t) break; const n = Object.assign(clone(t), {inactive: !t.inactive}); if (!n.inactive) delete n.inactive; put("templates", D.id, n); setTimeout(() => { autoPlanSync(); render(); }, 50); toast(t.inactive ? `„${t.name}“ ist aktiv und zählt für Automatik und Wochenziele.` : `„${t.name}“ pausiert. Er zählt nicht mehr für Automatik und Wochenziele.`); break; }
     case "te-add": { const v = $("#teadd").value; if (!v) break; te.items.push({exId: v, sets: 3, reps: "8–12", rir: "1–2", rest: "2 min"}); renderTe(); break; }
     case "te-del": te.items.splice(+D.i, 1); renderTe(); break;
     case "te-up": { const i = +D.i; if (i > 0) { const t = te.items[i]; te.items[i] = te.items[i - 1]; te.items[i - 1] = t; } renderTe(); break; }
