@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "11.10.2026 20:47";
+const APP_VERSION = "12.10.2026 20:57";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1599,6 +1599,7 @@ function waterCard(k){
     <div class="row" style="gap:3px;margin-top:8px;flex-wrap:wrap" aria-hidden="true">${Array.from({length: Math.min(glasses, 24)}, (_, i) => `<span style="font-size:15px;opacity:${i < full ? 1 : .25}">💧</span>`).join("")}</div>
     <div class="small muted" style="margin-top:6px">Grundbedarf ${fmtL(g.base)}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : "geschätzt ca. " + fmt(g.parts.reduce((a, p) => a + p.sweat, 0), 1) + " l Schweiß × 1,5 aus " + g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : " · Sport kommt dazu, sobald eine Einheit erledigt ist"}</div>
     <div class="row" style="margin-top:10px;gap:6px">${WATER_STEPS.map(ml => `<button class="btn" data-act="water" data-ml="${ml}" data-date="${k}">+ ${ml} ml</button>`).join("")}<button class="btn ghost" data-act="water" data-ml="-250" data-date="${k}" ${g.drunk ? "" : "disabled"}>− 250</button></div>
+    <form class="row" data-form="water-ml" data-date="${k}" style="margin-top:8px;flex-wrap:nowrap;gap:6px"><input class="inp num" id="wml" inputmode="numeric" placeholder="z. B. 770" aria-label="Eigene Menge in ml" style="width:110px;min-height:38px;padding:5px 10px"><span class="small muted">ml</span><button class="btn" type="submit" style="min-height:38px">Eintragen</button></form>
     ${water7(k)}
     <div class="hint" style="margin-top:10px"><b>${esc(tip[0])}:</b> ${esc(tip[1])}</div>
   </section>`;
@@ -4292,6 +4293,7 @@ document.addEventListener("submit", async e => {
       toast(error ? "Das hat nicht geklappt." : (m[r] || "Ihr seid schon befreundet.")); if (!error && r !== "invalid") f.reset(); loadFriends(true); break;
     }
     case "drink": { const a = num(v("dv")), b2 = num(v("dn")); if (!(a > 30 && b2 > 30)) { toast("Trag beide Gewichte in kg ein."); return; } const l = Math.max(0, (a - b2) * 1.5); { const dd = getDay(curDate); dd.sweatLoss = Math.max(0, Math.round((a - b2) * 10) / 10); saveDay(curDate, dd); } drinkRes = l > 0 ? "Trink noch etwa " + fmt(l, 1) + " l, am besten Wasser oder Saftschorle." : "Kein Gewichtsverlust, normal weitertrinken."; render(); break; }
+    case "water-ml": { const ml = Math.round(num(v("wml"))); if (!ml || Math.abs(ml) > 5000) { toast("Bitte eine Menge in ml eintragen, z. B. 770."); return; } const k = f.dataset.date || curDate, d = getDay(k), before = waterGoal(k).have; d.water = Math.max(0, (num(d.water) || 0) + ml); saveDay(k, d); const g = waterGoal(k); toast(ml > 0 ? `💧 ${fmtL(ml)} eingetragen.` + (g.have >= g.total && before < g.total ? " Trinkziel geschafft!" : "") : `${fmtL(-ml)} abgezogen.`); break; }
     case "burn": { const add = Math.round(num(v("burnin"))); if (!(add > 0)) return; const k = f.dataset.date; const d = getDay(k); d.burnManual = (num(d.burnManual) || 0) + add; saveDay(k, d); toast("🔥 " + add + " kcal hinzugefügt."); break; }
     case "checkin": { const k = f.dataset.date; const s = ciSel[k] || {}; if (!s.energy || !s.soreness) { toast("Wähle Energie und Muskelkater aus."); return; } const d = getDay(k); d.checkin = {energy: s.energy, soreness: s.soreness, at: new Date().toTimeString().slice(0, 5)}; delete ciSel[k]; saveDay(k, d); toast("Check-in gespeichert."); break; }
     case "settings": { const auto = cfgRaw().calc && cfgRaw().calc.on, raw = cfgRaw(); saveCfg({kcal: auto ? raw.kcal : num(v("gk")) || DEFAULTS.kcal, p: auto ? raw.p : num(v("gp")) || DEFAULTS.p, c: auto ? raw.c : num(v("gc")) || DEFAULTS.c, f: auto ? raw.f : num(v("gf")) || DEFAULTS.f, goalType: v("gt") || "maintain", goalLo: num(v("gl")) || DEFAULTS.goalLo, goalHi: num(v("gl")) || DEFAULTS.goalLo, strengthPerWeek: num(v("gs")) || DEFAULTS.strengthPerWeek, sleepGoal: num(v("gsl")) || DEFAULTS.sleepGoal, burnMode: v("gbm") || "workouts", burnShare: num(v("gbs")) || 100, morningTime: v("gm") || "", planTime: v("gpt") || "", pushFriends: !!(f.querySelector("#gpf") || {}).checked, drinkRem: {on: !!(f.querySelector("#gdr") || {}).checked, mode: v("gdm") === "fixed" ? "fixed" : "smart", every: num(v("gdi")) || 60, from: v("gdf") || "08:00", to: v("gdt") || "21:00"}, experience: v("gxp") || "auto"});
