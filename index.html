@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "12.10.2026 20:57";
+const APP_VERSION = "13.10.2026 16:55";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -919,6 +919,7 @@ function viewHeute(){
     </form>
   </section>
 
+  ${cutChecks()}
   <section class="card">
     <div class="card-h"><h2>Training</h2><button class="btn ghost" data-act="tab" data-tab="training">Kalender</button></div>
     ${trainHtml}
@@ -1345,6 +1346,8 @@ function autoPace(p, goal, w, base){
     adj = -Math.max(250, Math.round(-adj / 10) * 10); rate = -adj * 7 / 7700;
     // Diätpause: nach je 10 Wochen Cut 1 Woche auf Erhaltungskalorien (hilft Kopf, Hormonen und Training)
     const cw = p.cutStart ? Math.floor(diffDays(p.cutStart, today) / 7) : 0;
+    const early = p.breakFrom && p.breakTo && p.breakFrom <= today && p.breakTo >= today;
+    if (early) { why.unshift(`Diätpause bis ${fmtShort(p.breakTo)}: Erhaltungskalorien, danach geht der Cut mit neuem 10-Wochen-Rhythmus weiter`); return Object.assign({adj: 0, rate: 0, pct: 0, why, target, bmi, dietBreak: true}, paceEta(w, target, w * pct / 100, true)); }
     if (cw >= 10 && cw % 11 === 10) { why.unshift("Diese Woche ist Diätpause: Erhaltungskalorien, danach geht der Cut weiter"); return Object.assign({adj: 0, rate: 0, pct: 0, why, target, bmi, dietBreak: true}, paceEta(w, target, w * pct / 100, true)); }
     if (real != null && real < -w * 0.01) why.push(`du nimmst gerade schneller ab als geplant (${fmt(real, 2)} kg/Woche): der Rechner hebt dein Ziel über den gelernten Verbrauch automatisch an`);
     return Object.assign({adj, rate, pct: rate / w * 100, why, target, bmi}, paceEta(w, target, rate, true));
@@ -2356,6 +2359,44 @@ function openRecoveryDetail(k){
     ${bb.length >= 5 ? `<section class="card"><div class="eyebrow" style="margin-bottom:4px">Body Battery am Morgen · 30 Tage</div>${trendSvg(bb, {label: "Body Battery", unit: "", color: "var(--accent-2)", pad: 5})}</section>` : ""}`;
   openSheet("Erholung & Belastung", body);
 }
+/* ---------- Cut-Checks (Quelle: Briefing Körperfettreduktion) ----------
+   1) Diät-Müdigkeit: mind. 2 von 3 Signalen über ca. 2 Wochen (Kraft sinkt, Schlaf < 6,5 h, Energie im Check-in meist niedrig)
+      → Angebot, 2–4 Wochen auf „Gewicht halten“ zu wechseln. Das Ziel ändert sich nur per Tippen.
+   2) Plateau: Wochenschnitt seit 3 Wochen still, Kalorienziel meist getroffen, Defizit an der Obergrenze → 1 Woche Diätpause anbieten. */
+function cutFatigue(){
+  const t = todayKey(), sig = [];
+  const mc = muscleCheck(); if (mc.down >= 2) sig.push(`Kraft sinkt bei ${mc.down} Übungen`);
+  const sl = Array.from({length: 14}, (_, i) => num(((S.days[addDays(t, -i)] || {}).sleep || {}).h)).filter(h => h >= 3);
+  const sAvg = sl.length >= 7 ? sl.reduce((a, b) => a + b, 0) / sl.length : null; if (sAvg != null && sAvg < 6.5) sig.push(`Schlaf im Schnitt nur ${fmtH(sAvg)}`);
+  const ci = Array.from({length: 14}, (_, i) => (S.days[addDays(t, -i)] || {}).checkin).filter(Boolean);
+  if (ci.length >= 5 && ci.filter(x => num(x.energy) <= 2).length > ci.length / 2) sig.push("Energie im Check-in meist niedrig");
+  return sig;
+}
+function cutPlateau(){
+  const c = cfgRaw(), t = todayKey(), at = autoTargets(); if (!at || !at.auto || at.auto.dietBreak) return null;
+  const ser = weightSeries(), inWin = ser.filter(x => x.k >= addDays(t, -24)); if (inWin.length < 8) return null;
+  const a0 = avgAt(ser, addDays(t, -21)), a1 = avgAt(ser, t); if (a0 == null || a1 == null || Math.abs(a1 - a0) > 0.3) return null;
+  const days = Array.from({length: 21}, (_, i) => addDays(t, -i - 1)).filter(k => dayTotals(S.days[k]).kcal >= 1000);
+  if (days.length < 12) return null;
+  const hit = days.filter(k => Math.abs(dayTotals(S.days[k]).kcal - kcalGoal(k)) <= kcalGoal(k) * 0.1).length;
+  if (hit < days.length * 0.7) return null;
+  const cap = Math.min(750, at.base * 0.25);
+  if (-at.adj < cap - 20 && !(at.learned && at.share > 0.3)) return null; // noch Luft: zuerst greift der Hinweis „150–200 kcal weniger“
+  return {weeks: 3, diff: a1 - a0, hit, n: days.length};
+}
+function cutChecks(){
+  if (goalType() !== "cut") return "";
+  const c = cfgRaw(), t = todayKey(), out = [];
+  if (!(c.cutFatigueSnooze && c.cutFatigueSnooze >= t)) { const sig = cutFatigue(); if (sig.length >= 2) out.push(`<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><div class="card-h"><h2>🧭 Zeit für eine Pause vom Cut?</h2></div>
+    <p class="small ink2" style="margin:0 0 6px">Dein Körper zeigt Diät-Müdigkeit: ${esc(sig.join(", "))}. Eine Erhaltungsphase von 2–4 Wochen schützt Muskeln und Kopf. Danach geht der Cut leichter weiter.</p>
+    <div class="row"><button class="btn primary" data-act="cut-pause">Auf Gewicht halten wechseln</button><button class="btn ghost" data-act="cut-continue">Weiter im Cut</button></div></section>`); }
+  const pl = !(c.plateauSnooze && c.plateauSnooze >= t) && autoOn() && (c.calc || {}).pace === "auto" ? cutPlateau() : null;
+  if (pl) out.push(`<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>⏸️ Plateau: Diätpause vorziehen?</h2></div>
+    <p class="small ink2" style="margin:0 0 6px">Dein Gewicht steht seit 3 Wochen still (${pl.diff >= 0 ? "+" : "−"}${fmt(Math.abs(pl.diff), 1)} kg), obwohl du dein Kalorienziel an ${pl.hit} von ${pl.n} Tagen getroffen hast und dein Defizit schon an der Obergrenze ist. Statt weiter zu kürzen: 1 Woche auf Erhaltungskalorien. Das hilft beim Durchhalten und beim Muskelerhalt, danach startet der Cut neu.</p>
+    <div class="row"><button class="btn primary" data-act="break-now">Diätpause jetzt starten</button><button class="btn ghost" data-act="plateau-snooze">Noch nicht</button></div></section>`);
+  return out.join("");
+}
+
 /* ---------- Schlafenszeit-Rechner ----------
    Du trägst ein, wann du morgen aufstehst. Bettzeit = Aufstehen − Schlafbedarf heute (Ziel + Belastung + Schlafschuld) − ca. 15 Min. zum Einschlafen.
    Dazu der Abend-Fahrplan (Koffein ca. 8 h, letzte große Mahlzeit ca. 3 h, Bildschirme 1 h vorher) und Tipps aus deinen Schlafdaten. */
@@ -2603,7 +2644,7 @@ async function runExport(){
 /* ---------- Tipps: Informationscenter ----------
    Wissen aus deinen Quellen (H = Hessmann „Sporternährung für jeden Tag“, N = Zusammenfassung NotebookLM,
    S = Spieltagsvorbereitung Fußball), plus „Für dich heute“ aus deinen Daten. Jeder Tipp hat einen Deep Dive. */
-const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)"};
+const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)", K: "Briefing Körperfettreduktion"};
 const TIP_CATS = [["", "Alle"], ["ernaehrung", "🍽️ Ernährung"], ["training", "🏋️ Training"], ["erholung", "🌿 Erholung"], ["schlaf", "😴 Schlaf"], ["trinken", "💧 Trinken"], ["fussball", "⚽ Fußball"], ["supps", "💊 Supplements"]];
 const KB = [
   {id: "protein", cat: "ernaehrung", icon: "🥩", title: "1,6–2,2 g Eiweiß pro kg Körpergewicht", short: "Die wichtigste Stellschraube für Muskelaufbau und -erhalt, egal ob Aufbau, Diät oder Halten.", why: "Muskeln bestehen aus Eiweiß. Bekommt der Körper zu wenig, kann er nach dem Training kaum neue Muskelmasse aufbauen, und im Kaloriendefizit baut er sie sogar ab. Eiweiß sättigt außerdem am stärksten.", how: ["Rechne dein Ziel: Körpergewicht × 1,6 bis 2,2.", "Verteile es auf 3–4 Mahlzeiten.", "Gute Quellen: Skyr, Magerquark, Hähnchen, Pute, Eier, Thunfisch, körniger Frischkäse, Linsen."], src: "N"},
@@ -2617,6 +2658,8 @@ const KB = [
   {id: "scale", cat: "ernaehrung", icon: "⚖️", title: "Warum die Waage springt", short: "Schnelle Sprünge nach oben oder unten sind fast immer Wasser, kein Fett.", why: "Kohlenhydrate und Salz binden Wasser im Körper. Nach einem salzigen oder kohlenhydratreichen Abend zeigt die Waage schnell ein Kilo mehr, ohne dass Fett dazugekommen ist. Fett ändert sich nur langsam, deshalb zählt der Schnitt über eine Woche.", how: ["Morgens nach der Toilette und vor dem Frühstück wiegen.", "Auf den 7-Tage-Schnitt schauen, nicht auf den einzelnen Tag.", "Nach Pizza, Restaurant oder Kohlenhydrat-Tagen 2–3 Tage abwarten."], src: "C"},
   {id: "neat", cat: "ernaehrung", icon: "🚶", title: "Alltagsbewegung zählt", short: "Im Defizit bewegt man sich unbewusst weniger. Schritte halten bremst das nicht aus.", why: "Ein großer Teil des Verbrauchs kommt aus Alltagsbewegung (NEAT): Gehen, Stehen, Treppen. Im Defizit spart der Körper hier unbemerkt Energie, laut Quelle bei 10 % weniger Körpergewicht bis zu 500 kcal am Tag. Das ist oft der Grund, warum das Abnehmen stockt.", how: ["Ein festes Schrittziel halten, auch im Cut.", "Kurze Spaziergänge nach dem Essen.", "Treppe statt Aufzug, beim Telefonieren gehen."], src: "C"},
   {id: "nova", cat: "ernaehrung", icon: "🏭", title: "Stark verarbeitete Lebensmittel begrenzen", short: "NOVA 4 (z. B. Chips, Softdrinks, Fertigsnacks) machen es leicht, zu viel zu essen.", why: "Hochverarbeitete Produkte sind oft energiedicht und wenig sättigend. Beim Suchen markiert die App solche Produkte als „stark verarbeitet“.", how: ["Grundlage aus unverarbeiteten Lebensmitteln.", "Verarbeitete Produkte bewusst und eingeplant essen."], src: "N"},
+  {id: "walkmeal", cat: "ernaehrung", icon: "🚶", title: "Kurzer Spaziergang nach dem Essen", short: "10–15 Minuten gehen nach den Hauptmahlzeiten.", why: "Schon ein kurzer Spaziergang nach dem Essen senkt den Blutzuckeranstieg, weil die Muskeln den Zucker direkt verbrauchen. Er hilft der Verdauung und bringt nebenbei Schritte, die im Defizit sonst gern unbemerkt weniger werden.", how: ["Nach Mittag- und Abendessen 10–15 Minuten locker gehen.", "Zügig, aber ohne außer Atem zu kommen.", "Geht auch drinnen: Treppen, Haushalt, telefonieren im Gehen."], src: "K"},
+  {id: "satiety", cat: "ernaehrung", icon: "🥗", title: "Satt bleiben im Defizit und auswärts essen", short: "Viel Volumen und Eiweiß machen satt, im Restaurant hilft ein kleiner Plan.", why: "Eiweiß sättigt am stärksten, und Gemüse, Salat oder Salsa bringen viel Menge für wenige Kalorien. Im Restaurant stecken die meisten versteckten Kalorien in Öl, Butter und Soßen.", how: ["Jede Mahlzeit mit einer Eiweißquelle und einer großen Portion Gemüse oder Salat.", "Vor dem Restaurant etwas Eiweiß essen, z. B. Skyr oder einen Shake, dann ist der Hunger kleiner.", "Im Restaurant Gegrilltes mit Gemüse bestellen, Soße und Öl separat.", "Brot vorab und Dessert bewusst einplanen statt nebenbei essen."], src: "K"},
   {id: "fatloss", cat: "ernaehrung", icon: "🔥", title: "So verlässt Fett den Körper", short: "Abgebautes Fett wird größtenteils als CO₂ ausgeatmet. Entscheidend ist die Kalorienbilanz.", why: "Ob nüchtern oder nicht, mit Fettverbrennungspuls oder ohne: Über den Tag zählt nur die Bilanz. Nüchterntraining bringt keinen zusätzlichen Fettverlust.", how: ["Konstantes, moderates Defizit.", "Viel Eiweiß und Krafttraining, damit die Muskeln bleiben."], src: "N"},
   {id: "watch", cat: "ernaehrung", icon: "⌚", title: "Uhren überschätzen Trainingskalorien", short: "Fitness-Uhren liegen laut Quelle 28–93 % zu hoch.", why: "Wer die angezeigten Trainingskalorien komplett zurückisst, landet schnell ohne Defizit. Deshalb kannst du in den Einstellungen nur 50 oder 75 % anrechnen lassen.", how: ["Zahnrad → „Davon anrechnen“ auf 75 % oder 50 %.", "Den Erfolg am Gewichtstrend über 2–3 Wochen prüfen."], src: "N"},
   {id: "volume", cat: "training", icon: "📊", title: "10–20 harte Sätze pro Muskel und Woche", short: "Der beste Bereich für Muskelaufbau. Weniger bringt wenig, deutlich mehr kaum noch etwas.", why: "Muskeln wachsen durch genug harte Reize. Unter etwa 10 Sätzen pro Woche fehlt der Reiz, über 20 überwiegt meist die Ermüdung.", how: ["Aufwärmsätze zählen nicht.", "Lieber auf 2–3 Einheiten pro Woche verteilen.", "Die Wochenübersicht unter Training zeigt deine Sätze pro Muskelgruppe."], src: "N"},
@@ -2660,6 +2703,8 @@ function tipPersonal(id){
     case "protein30": { let m = 0, ok = 0; eat.forEach(d => MEALS.forEach(([k]) => { const it = (d.meals || {})[k] || []; if (it.length) { m++; if (it.reduce((a, x) => a + (+x.p || 0), 0) >= 30) ok++; } })); if (!m) return null; return {note: `${ok} von ${m} Mahlzeiten hatten zuletzt mindestens 30 g Eiweiß.`, hot: ok / m < 0.5 ? 6 : 0, why: ok / m < 0.5 ? `Nur ${ok} von ${m} Mahlzeiten hatten 30 g Eiweiß.` : ""}; }
     case "sleep": if (avgS == null) return null; return {note: `Ø ${fmtH(avgS)} Schlaf in den letzten 7 Nächten, Ziel ${fmtH(c.sleepGoal)}.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmtH(avgS)} geschlafen.` : ""};
     case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const n = hrvLowStreak(today); return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms${n === 1 ? ". Ein einzelner Morgen sagt wenig, erst ein Trend zählt" : ""}.`, hot: n >= 2 ? 9 : 0, why: n >= 2 ? `Deine HRV liegt seit ${n} Tagen deutlich unter deinem Schnitt.` : ""}; }
+    case "walkmeal": { const st = stepsTrend(); return st ? {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen.`, hot: 0} : null; }
+    case "satiety": { const pt = dayTotals(S.days[today] || {}).p; return {note: `Eiweiß heute: ${fmt(pt)} von ${fmt(cfg().p)} g.`, hot: 0}; }
     case "fiber": { const g = fiberGoal(); return {note: `Dein Ziel: etwa ${g} g Ballaststoffe am Tag (bei ${fmt(cfg().kcal)} kcal).`, hot: 0}; }
     case "scale": { const ser = weightSeries(); if (!ser.length) return null; const last = ser[ser.length - 1], a = avgAt(ser, last.k), dv = last.v - a; return {note: `Letzte Messung ${fmt(last.v, 1)} kg, 7-Tage-Schnitt ${fmt(a, 1)} kg (${dv >= 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg).`, hot: Math.abs(dv) > 1 && last.k >= addDays(today, -1) ? 4 : 0, why: Math.abs(dv) > 1 ? `Deine letzte Messung liegt ${fmt(Math.abs(dv), 1)} kg ${dv > 0 ? "über" : "unter"} dem Schnitt, das ist meist Wasser.` : ""}; }
     case "neat": { const st = stepsTrend(); if (!st) return null; const drop = st.now < st.old * 0.85; return {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen, davor Ø ${fmt(st.old)}.`, hot: drop && paceAdj() < 0 ? 6 : 0, why: drop ? `Deine Schritte sind um ${Math.round((1 - st.now / st.old) * 100)} % gesunken.` : ""}; }
@@ -4184,6 +4229,10 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "cut-pause": { saveCfg({goalType: "maintain", cutPausedAt: todayKey(), calc: Object.assign({}, cfgRaw().calc, {pace: 0})}); toast("Ziel: Gewicht halten. Wechsle in 2–4 Wochen im Kalorienrechner wieder auf Cut."); render(); break; }
+    case "cut-continue": saveCfg({cutFatigueSnooze: addDays(todayKey(), 7)}); render(); break;
+    case "break-now": { const t = todayKey(), to = addDays(t, 6); saveCfg({calc: Object.assign({}, cfgRaw().calc, {breakFrom: t, breakTo: to, cutStart: addDays(t, 7)})}); toast(`Diätpause bis ${fmtShort(to)}: diese Woche Erhaltungskalorien.`); render(); break; }
+    case "plateau-snooze": saveCfg({plateauSnooze: addDays(todayKey(), 7)}); render(); break;
     case "deload-start": { const t = todayKey(); saveCfg({deload: {from: t, to: addDays(t, 6)}}); if (autoOn()) autoPlanSync(); toast(autoOn() ? "Entlastungswoche gestartet. Deine Pläne haben jetzt etwa ⅓ weniger Sätze." : "Entlastungswoche gestartet. Mach 7 Tage etwa ⅓ weniger Sätze."); render(); break; }
     case "deload-stop": { const dl = cfgRaw().deload || {}; saveCfg({deload: Object.assign({}, dl, {to: addDays(todayKey(), -1)})}); if (autoOn()) autoPlanSync(); toast("Entlastungswoche beendet."); render(); break; }
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
@@ -4283,7 +4332,7 @@ document.addEventListener("submit", async e => {
     case "calc": { const r = calcRead(); if (!(r.p.birthDate && r.p.birth > 1920 && r.p.birth < 2015) || !(r.p.height > 120 && r.p.height < 230)) { toast("Bitte Geburtstag und Größe eintragen."); return; }
       const patch = {goalType: r.goal, calc: Object.assign({}, r.p, {on: true})};
       if (r.p.target > 30 && r.goal !== "maintain") Object.assign(patch, {goalLo: r.p.target, goalHi: r.p.target});
-      if (r.goal === "cut") patch.calc.cutStart = goalType() === "cut" && (cfgRaw().calc || {}).cutStart || todayKey();
+      if (r.goal === "cut") { const oc = cfgRaw().calc || {}; patch.calc.cutStart = goalType() === "cut" && oc.cutStart || todayKey(); if (goalType() === "cut" && oc.breakTo) { patch.calc.breakFrom = oc.breakFrom; patch.calc.breakTo = oc.breakTo; } }
       if (r.goal === "cut" && r.p.pace !== "auto") Object.assign(patch, r.p.pace <= -750 ? {rateLo: 0.6, rateHi: 0.9} : r.p.pace >= -300 ? {rateLo: 0.2, rateHi: 0.4} : {rateLo: 0.4, rateHi: 0.6});
       saveCfg(patch); toast("Kalorienrechner aktiv. Dein Ziel passt sich ab jetzt automatisch an."); closeSheet(); break; }
     case "myname": { const n = v("mn").trim(); if (!n) return; await sb.rpc("set_my_name", {p_name: n}); FR.name = n; FR.editProfile = false; toast("Gespeichert."); loadFriends(true); break; }
