@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 20:17";
+const APP_VERSION = "15.10.2026 20:32";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -689,22 +689,70 @@ function baseline(k, field, days = 14){
   for (let i = 1; i <= days; i++) { const s = (S.days[addDays(k, -i)] || {}).sleep; if (s && num(s[field]) > 0) xs.push(num(s[field])); }
   return xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
+/* Erholung wie bei WHOOP nur aus Messwerten der Nacht: HRV (am stärksten), Ruhepuls, Schlaf und Atemfrequenz,
+   jeweils verglichen mit deinem eigenen Schnitt. Gefühl und Verhalten gehen ins Journal, nicht in die Zahl. */
 function recoveryOf(k){
-  const c = cfg(), d = S.days[k] || {}, sl = d.sleep, ci = d.checkin;
+  const c = cfg(), d = S.days[k] || {}, sl = d.sleep;
   const parts = [];
-  if (sl && num(sl.score) > 0) parts.push({key: "sleep", label: "Schlafwert", disp: fmt(num(sl.score)), score: clamp(num(sl.score), 0, 100), w: 0.4});
-  else if (sl && sl.h) { let s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; if (sl.q) s *= 0.85 + 0.03 * sl.q; parts.push({key: "sleep", label: "Schlaf", disp: fmtH(sl.h) + "", score: clamp(s, 0, 100), w: 0.4}); }
-  if (sl && num(sl.bb) > 0) parts.push({key: "bb", label: "Body Battery", disp: fmt(num(sl.bb)), score: clamp(num(sl.bb), 0, 100), w: 0.25});
-  const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr");
-  if (sl && num(sl.hrv) > 0 && hrvB) parts.push({key: "hrv", label: "HRV", disp: fmt(num(sl.hrv)) + " ms (Ø " + fmt(hrvB) + ")", score: clamp(50 + (num(sl.hrv) / hrvB - 1) * 150, 0, 100), w: 0.3});
-  if (sl && num(sl.rhr) > 0 && rhrB) parts.push({key: "rhr", label: "Ruhepuls", disp: fmt(num(sl.rhr)) + " (Ø " + fmt(rhrB) + ")", score: clamp(50 + (1 - num(sl.rhr) / rhrB) * 300, 0, 100), w: 0.15});
-  if (ci) parts.push({key: "feel", label: "Gefühl", disp: "Energie " + ci.energy + " · Kater " + ci.soreness, score: ((ci.energy - 1) / 4 * 0.6 + (5 - ci.soreness) / 4 * 0.4) * 100, w: 0.3});
+  const hrvB = baseline(k, "hrv"), rhrB = baseline(k, "rhr"), respB = baseline(k, "resp");
+  if (sl && num(sl.hrv) > 0 && hrvB) parts.push({key: "hrv", label: "HRV", disp: fmt(num(sl.hrv)) + " ms (Ø " + fmt(hrvB) + ")", score: clamp(50 + (num(sl.hrv) / hrvB - 1) * 150, 0, 100), w: 0.45});
+  if (sl && num(sl.rhr) > 0 && rhrB) parts.push({key: "rhr", label: "Ruhepuls", disp: fmt(num(sl.rhr)) + " (Ø " + fmt(rhrB) + ")", score: clamp(50 + (1 - num(sl.rhr) / rhrB) * 300, 0, 100), w: 0.2});
+  if (sl && num(sl.score) > 0) parts.push({key: "sleep", label: "Schlafwert", disp: fmt(num(sl.score)), score: clamp(num(sl.score), 0, 100), w: 0.3});
+  else if (sl && sl.h) { const s = clamp(sl.h / c.sleepGoal, 0, 1.05) * 100; parts.push({key: "sleep", label: "Schlaf", disp: fmtH(sl.h) + "", score: clamp(s, 0, 100), w: 0.3}); }
+  if (sl && num(sl.resp) > 0 && respB) parts.push({key: "resp", label: "Atmung", disp: fmt(num(sl.resp), 1) + " (Ø " + fmt(respB, 1) + ")", score: clamp(70 - (num(sl.resp) - respB) * 25, 0, 100), w: 0.05});
   if (!parts.length) return null;
   const ys = strainOf(addDays(k, -1));
-  parts.push({key: "load", label: "Belastung gestern", disp: fmt(ys, 1) + " / 21", score: clamp(100 - Math.max(0, ys - 8) * 7, 0, 100), w: 0.15});
   const wsum = parts.reduce((a, p) => a + p.w, 0);
   const score = Math.round(parts.reduce((a, p) => a + p.score * p.w, 0) / wsum);
   return {score, parts, yStrain: ys};
+}
+/* Journal wie bei WHOOP: jeden Morgen Ja/Nein-Fragen zum Vortag (Fragen selbst wählbar).
+   Nach einigen Wochen zeigt die Auswertung, wie sich jedes Verhalten auf deine Erholung auswirkt. */
+const JQ = [
+  ["alk", "🍷", "Gestern Alkohol getrunken?"], ["caf", "☕", "Koffein nach 14 Uhr?"], ["screen", "📱", "Handy oder Bildschirm im Bett?"],
+  ["late", "🍽️", "Spät gegessen (weniger als 2 h vor dem Schlafen)?"], ["stress", "😤", "Gestern viel Stress?"], ["sore", "💥", "Heute starker Muskelkater?"],
+  ["lowen", "🥱", "Heute müde oder ohne Energie?"], ["nap", "😴", "Gestern Mittagsschlaf?"], ["read", "📖", "Vor dem Schlafen gelesen?"],
+  ["light", "☀️", "Gestern Morgenlicht (draußen in der ersten Stunde)?"], ["sweet", "🍫", "Abends Süßes gegessen?"], ["sauna", "🧖", "Sauna?"],
+  ["cold", "🧊", "Kälte (Eisbad oder kalt duschen)?"], ["mag", "💊", "Magnesium genommen?"], ["travel", "✈️", "Gereist oder woanders geschlafen?"], ["sickq", "🤧", "Angeschlagen oder krank gefühlt?"]
+];
+const JQ_DEFAULT = ["alk", "caf", "screen", "late", "stress", "sore", "lowen", "nap"];
+const journalQs = () => { const q = cfgRaw().journalQs; return (Array.isArray(q) && q.length ? q : JQ_DEFAULT).map(id => JQ.find(x => x[0] === id)).filter(Boolean); };
+function journalCard(k){
+  if (k !== todayKey()) return "";
+  const d = S.days[k] || {}, j = d.journal || {}, qs = journalQs(), done = qs.filter(q => j[q[0]] != null).length;
+  if (done === qs.length && !journalEdit) return `<div class="small muted" style="margin-top:10px;text-align:center">📓 Journal erledigt (${done} Fragen) · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-edit">ändern</button> · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-insights">Auswertung</button></div>`;
+  return `<div class="checkin" style="margin-top:12px"><div class="spread" style="margin-bottom:8px"><span class="eyebrow">📓 Journal · ${done}/${qs.length}</span><button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-qs">Fragen wählen</button></div>
+    <div class="stack" style="gap:6px">${qs.map(([id, ic, q]) => `<div class="spread" style="gap:8px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${ic} ${esc(q)}</span><div class="seg" role="group" style="flex:none">${[[true, "Ja"], [false, "Nein"]].map(([v, l]) => `<button type="button" data-act="journal-a" data-q="${id}" data-v="${v}" aria-pressed="${j[id] === v}" style="min-height:30px;padding:2px 12px">${l}</button>`).join("")}</div></div>`).join("")}</div>
+    <p class="small muted" style="margin:8px 0 0">Deine Erholung kommt nur aus den Messwerten der Nacht. Das Journal zeigt dir nach ein paar Wochen, was sie besser oder schlechter macht.</p></div>`;
+}
+let journalEdit = false;
+/* Auswertung: Erholung an Tagen mit „Ja“ vs. „Nein“ (mind. 3× je Antwort in 90 Tagen) */
+function journalInsights(){
+  const t = todayKey(), out = [];
+  JQ.forEach(([id, ic, q]) => {
+    const yes = [], no = [];
+    for (let i = 0; i < 90; i++) { const k = addDays(t, -i), j = (S.days[k] || {}).journal; if (!j || j[id] == null) continue; const r = recoveryOf(k); if (!r) continue; (j[id] ? yes : no).push(r.score); }
+    if (yes.length >= 3 && no.length >= 3) { const a = yes.reduce((x, y) => x + y, 0) / yes.length, b = no.reduce((x, y) => x + y, 0) / no.length; out.push({id, ic, q, diff: a - b, yes: yes.length, no: no.length}); }
+    else if (yes.length + no.length) out.push({id, ic, q, diff: null, yes: yes.length, no: no.length});
+  });
+  return out.sort((a, b) => (b.diff == null ? -1 : Math.abs(b.diff)) - (a.diff == null ? -1 : Math.abs(a.diff)));
+}
+function openJournalInsights(){
+  const ins = journalInsights();
+  openSheet("Journal-Auswertung", `<p class="small muted" style="margin:0 0 12px">So unterscheidet sich deine Erholung an Tagen mit „Ja“ von Tagen mit „Nein“ (letzte 90 Tage). Ab 3 Antworten je Seite zeigt die App einen Wert, je mehr Tage, desto verlässlicher.</p>
+    ${ins.length ? `<div class="stack" style="gap:8px">${ins.map(x => `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${x.ic} ${esc(x.q)}<span class="muted" style="display:block;font-size:12px">${x.yes}× Ja · ${x.no}× Nein</span></span>${x.diff == null ? `<span class="small muted">noch zu wenig</span>` : `<b class="num" style="color:${x.diff >= 0 ? "var(--good)" : "var(--bad)"}">${x.diff >= 0 ? "+" : "−"}${fmt(Math.abs(x.diff))} %</b>`}</div>`).join("")}</div>` : `<div class="empty">Beantworte ein paar Tage dein Journal, dann siehst du hier, was deine Erholung beeinflusst.</div>`}
+    <p class="small muted" style="margin:12px 0 0">Das sind Zusammenhänge aus deinen eigenen Tagen, keine Beweise. Ein großer Unterschied mit vielen Tagen ist aber ein guter Hinweis.</p>`);
+}
+function openJournalQs(){
+  const sel = new Set(journalQs().map(q => q[0]));
+  openSheet("Journal-Fragen", `<p class="small muted" style="margin:0 0 10px">Wähle die Fragen, die du jeden Morgen beantworten willst. Weniger ist oft besser.</p>
+    <div class="stack" style="gap:4px">${JQ.map(([id, ic, q]) => `<label class="row small" style="gap:8px;min-height:34px"><input type="checkbox" data-jq="${id}" ${sel.has(id) ? "checked" : ""}> ${ic} ${esc(q)}</label>`).join("")}</div>
+    <div class="row" style="margin-top:12px"><button class="btn primary" data-act="journal-qs-save">Speichern</button></div>`);
+}
+function feelOf(k){
+  const d = S.days[k] || {}; if (d.checkin) return d.checkin;
+  const j = d.journal || {}; if (j.sore == null && j.lowen == null) return null;
+  return {energy: j.lowen ? 2 : 4, soreness: j.sore ? 4 : 2, fromJournal: true};
 }
 const zoneOf = s => s == null ? "none" : s >= 67 ? "good" : s >= 34 ? "warn" : "bad";
 const zoneTarget = z => z === "good" ? [14, 18] : z === "warn" ? [10, 14] : [0, 10];
@@ -728,7 +776,7 @@ function sickRecoveryPlan(){
 }
 function recoveryPlan(k){
   if (k === todayKey() && sickNow()) return sickRecoveryPlan();
-  const c = cfg(), d = S.days[k] || {}, sl = d.sleep || {}, ci = d.checkin || {}, y = addDays(k, -1);
+  const c = cfg(), d = S.days[k] || {}, sl = d.sleep || {}, ci = feelOf(k) || {}, y = addDays(k, -1);
   const out = [], add = (cat, key, title, text, prio) => { const ex = out.find(x => x.key === key); if (ex) { if (prio > ex.prio) Object.assign(ex, {cat, title, text, prio}); } else out.push({cat, key, title, text, prio}); };
   const sessions = workoutsSorted().filter(w => (w.date === k && (w.status === "done" || w.status === "active")) || (w.date === y && w.status === "done"));
   const ev = sessions.map(w => {
@@ -784,7 +832,7 @@ function sleepNeed(k){
 }
 function recoveryTips(k){
   if (k === todayKey() && sickNow()) return [["Krank: Erholung hat Vorrang", "Hoher Ruhepuls und niedrige HRV sind während eines Infekts erwartbar. Schlaf, Trinken und Ruhe helfen am meisten, Training wartet."]];
-  const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), sl = d.sleep, ci = d.checkin;
+  const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), sl = d.sleep, ci = feelOf(k);
   const y = S.days[addDays(k, -1)] || {}, yt = dayTotals(y);
   const tips = [];
   const z = r ? zoneOf(r.score) : null;
@@ -1078,21 +1126,13 @@ function recoverySection(k){
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}" title="Wirkt mit ${Math.round(p.score)} von 100 Punkten auf deine Erholung">${p.label} ${p.disp}</span>`).join("")}</div>` : ""}
-    ${ci ? "" : `<form class="checkin" data-form="checkin" data-date="${k}">
-      <div class="eyebrow" style="margin-bottom:8px">Morgen-Check-in</div>
-      <div class="fields">
-        <div class="field"><label>Energie</label><div class="seg" role="radiogroup" aria-label="Energie">${[1,2,3,4,5].map(n => `<button type="button" data-act="ci-pick" data-k="energy" data-v="${n}" aria-pressed="${(ciSel[k] || {}).energy === n}">${n}</button>`).join("")}</div><span class="small muted">1 = platt, 5 = topfit</span></div>
-        <div class="field"><label>Muskelkater</label><div class="seg" role="radiogroup" aria-label="Muskelkater">${[1,2,3,4,5].map(n => `<button type="button" data-act="ci-pick" data-k="soreness" data-v="${n}" aria-pressed="${(ciSel[k] || {}).soreness === n}">${n}</button>`).join("")}</div><span class="small muted">1 = keiner, 5 = stark</span></div>
-      </div>
-      <div class="row" style="margin-top:10px"><button class="btn primary" type="submit">Check-in speichern</button>${sl && sl.h ? "" : `<button class="btn" type="button" data-act="tab" data-tab="routine">Schlaf eintragen</button>`}</div>
-    </form>`}
+    ${journalCard(k)}
     <div class="tips">
       <div class="spread"><div class="eyebrow">Regeneration heute</div>${sampleFn ? `<button class="btn ghost" data-act="tips-ai" data-date="${k}" ${tipsBusy ? "disabled" : ""}>${tipsBusy ? "Claude denkt nach …" : ai ? "Neu schreiben" : "Persönliche Tipps von Claude"}</button>` : ""}</div>
       ${ai ? `<div class="hint" style="margin:6px 0 10px;white-space:pre-wrap">${esc(ai)}</div>` : ""}
       <div class="list">${tips.map(([t, x]) => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="title" style="font-weight:600">${esc(t)}</div><div class="small ink2">${esc(x)}</div></div></div>`).join("")}</div>
       ${(() => { const pl = recoveryPlan(k); const cats = [...new Set(pl.map(x => x.cat))];
         return `<div class="eyebrow" style="margin:14px 0 4px">${k === todayKey() && sickNow() ? "Schneller gesund werden" : "Deine Regeneration nach deinem Training"}</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<div class="recinfo"><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></div>`).join("")).join(""); })()}
-      ${ci ? `<div class="small muted" style="margin-top:6px">Check-in: Energie ${ci.energy}/5 · Muskelkater ${ci.soreness}/5 <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="ci-reset" data-date="${k}">ändern</button></div>` : ""}
     </div>
   </section>`;
 }
@@ -1106,7 +1146,7 @@ async function runTipsAI(k){
     `Ziel: ${GOALS[goalType()]}, Zielgewicht ${c.goalLo} kg, ${c.kcal} kcal und ${c.p} g Protein pro Tag, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
     `Erholung heute: ${r ? r.score + " % (" + r.parts.map(p => p.label + " " + Math.round(p.score)).join(", ") + ")" : "unbekannt"}.`,
     `Schlaf letzte Nacht: ${d.sleep && d.sleep.h ? fmtH(d.sleep.h) + "" + (d.sleep.q ? ", Qualität " + d.sleep.q + "/5" : "") + (d.sleep.hrv ? ", HRV " + d.sleep.hrv + " ms" : "") + (d.sleep.rhr ? ", Ruhepuls " + d.sleep.rhr : "") : "nicht eingetragen"}. Bedarf heute Nacht etwa ${fmtH(sleepNeed(k))}.`,
-    `Check-in: ${d.checkin ? "Energie " + d.checkin.energy + "/5, Muskelkater " + d.checkin.soreness + "/5" : "keiner"}.`,
+    `Journal: ${d.journal ? Object.entries(d.journal).map(([q, v]) => q + "=" + (v ? "ja" : "nein")).join(", ") : "keins"}.`,
     `Belastung gestern: ${fmt(strainOf(y), 1)} von 21${wsY.length ? " durch " + wsY.join("; ") : ""}.`,
     `Heute im Kalender: ${wsT.join("; ") || "nichts"}.`,
     `Gestern gegessen: ${fmt(yt.kcal)} kcal, ${fmt(yt.p)} g Protein.`,
@@ -2440,7 +2480,7 @@ function cutFatigue(){
   const mc = muscleCheck(); if (mc.down >= 2) sig.push(`Kraft sinkt bei ${mc.down} Übungen`);
   const sl = Array.from({length: 14}, (_, i) => num(((S.days[addDays(t, -i)] || {}).sleep || {}).h)).filter(h => h >= 3);
   const sAvg = sl.length >= 7 ? sl.reduce((a, b) => a + b, 0) / sl.length : null; if (sAvg != null && sAvg < 6.5) sig.push(`Schlaf im Schnitt nur ${fmtH(sAvg)}`);
-  const ci = Array.from({length: 14}, (_, i) => (S.days[addDays(t, -i)] || {}).checkin).filter(Boolean);
+  const ci = Array.from({length: 14}, (_, i) => feelOf(addDays(t, -i))).filter(Boolean);
   if (ci.length >= 5 && ci.filter(x => num(x.energy) <= 2).length > ci.length / 2) sig.push("Energie im Check-in meist niedrig");
   return sig;
 }
@@ -2827,7 +2867,7 @@ function tipPersonal(id){
     case "concurrent": { const nx = nextGymFootball(); return nx ? {note: `${WDN[dateOf(nx.k).getDay()]}, ${fmtShort(nx.k)}: Gym und Fußball am selben Tag${nx.gap != null ? ", " + fmtH(nx.gap) + " Abstand" : ""}.`, hot: nx.gap != null && nx.gap < 6 ? 5 : 0, why: nx.gap != null && nx.gap < 6 ? `Am ${WDN[dateOf(nx.k).getDay()]} liegen Gym und Fußball nur ${fmtH(nx.gap)} auseinander.` : ""} : null; }
     case "deload": { const dl = deloadState(); return {note: dl.active ? `Entlastungswoche läuft bis ${fmtShort(dl.to)}.` : dl.since != null ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen seit deiner letzten leichteren Trainingswoche${dl.signals.length ? ". Signale: " + dl.signals.join(", ") : ""}.` : "Noch zu wenig Trainingsdaten.", hot: dl.suggest ? 6 : 0, why: dl.suggest ? `${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche und ${dl.signals.length > 1 ? "mehrere Ermüdungs-Signale" : "ein Ermüdungs-Signal"}.` : ""}; }
     case "minvol": { const g = weekSummary(today).groups, low = MAIN_GROUPS.filter(x => (g[x] || 0) < 5); if (!Object.keys(g).length) return null; return {note: low.length ? `Diese Woche unter 5 Sätzen: ${low.join(", ")}.` : "Diese Woche alle Muskelgruppen mit mindestens 5 Sätzen.", hot: 0}; }
-    case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => (S.days[k] || {}).checkin).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
+    case "ortho": { const ks = Array.from({length: 7}, (_, i) => addDays(today, -i)), ci = ks.map(k => feelOf(k)).filter(Boolean), sc = ks.map(k => num(((S.days[k] || {}).sleep || {}).score)).filter(v => v > 0); if (!ci.length || !sc.length) return null; return {note: `Letzte 7 Tage: Energie im Check-in Ø ${fmt(ci.reduce((a, x) => a + num(x.energy), 0) / ci.length, 1)} von 5, Schlafwert der Uhr Ø ${fmt(sc.reduce((a, b) => a + b, 0) / sc.length)}.`, hot: 0}; }
     case "volume": { const g = weekSummary(addDays(today, -7)).groups, low = Object.entries(g).filter(([k, n]) => !["Sonstiges", "Bauch", "Waden"].includes(k) && n < 10).map(([k]) => k); if (!Object.keys(g).length) return null; return {note: `Letzte Woche: ${Object.entries(g).filter(([k]) => k !== "Sonstiges").map(([k, n]) => k + " " + fmt(n, n % 1 ? 1 : 0)).join(", ")}.`, hot: low.length >= 2 ? 5 : 0, why: low.length ? `Letzte Woche unter 10 Sätzen: ${low.join(", ")}.` : ""}; }
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
     case "vo2int": { const v = (Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort().slice(-1)[0]); return {note: `Dein Puls für die harten Abschnitte: ${hrPct(0.9, 0.95)} (Maximalpuls ${hrMax().v}, ${hrMax().src})${v ? `. VO2max zuletzt ${fmt(num(S.days[v].vo2), 1)}` : ""}.`, hot: 0}; }
@@ -2889,7 +2929,7 @@ function deloadState(){
   const lowDays = Array.from({length: 7}, (_, i) => addDays(t, -i)).filter(k => { const h = num(((S.days[k] || {}).sleep || {}).hrv), b = baseline(k, "hrv"); return h > 0 && b && h < b * 0.9; }).length;
   if (lowDays >= 3) signals.push(`HRV an ${lowDays} von 7 Tagen niedrig`);
   const pl = plateaus().length; if (pl >= 2) signals.push(`${pl} Übungen stagnieren`);
-  const sore = Array.from({length: 14}, (_, i) => (S.days[addDays(t, -i)] || {}).checkin).filter(x => x && x.soreness >= 4).length;
+  const sore = Array.from({length: 14}, (_, i) => feelOf(addDays(t, -i))).filter(x => x && x.soreness >= 4).length;
   if (sore >= 3) signals.push(`${sore}× starker Muskelkater in 2 Wochen`);
   return {active, from: dl.from, to: dl.to, last: !!dl.to, since, signals, suggest: !active && since != null && since >= 5 && signals.length >= 1};
 }
@@ -3766,6 +3806,7 @@ function viewRoutine(){
       <button class="btn" type="submit">Supplement hinzufügen</button>
     </form>
   </section>
+  <button class="btn block" data-act="journal-insights" style="margin-top:12px">📓 Journal-Auswertung: was deine Erholung beeinflusst</button>
   <div class="section-title">Schlaf</div>
   ${bedtimeCard()}
   <section class="card">
@@ -4385,7 +4426,7 @@ function openSettings(){
     <div class="eyebrow" style="margin-top:6px">Fußball</div>
     <div class="hint small">Spieltags-Tipps und der Essensplan richten sich nur nach deinem Wochenplan. Trag Training, Spiele und Uhrzeiten unter Training → „Woche planen“ ein. <button class="btn ghost" type="button" data-act="planner" style="min-height:30px">Woche planen</button></div>
     <div class="eyebrow" style="margin-top:6px">Mitteilungen</div>
-    <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Check-in</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
+    <div class="fields"><div class="field"><label for="gm">Morgen-Erinnerung zum Journal</label><input class="inp num" type="time" id="gm" value="${esc(c.morningTime == null ? "08:00" : c.morningTime)}"><span class="small muted">Leer lassen = aus</span></div>
     <div class="field"><label for="gpf">Freunde</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gpf" ${c.pushFriends === false ? "" : "checked"}> Neue Aktivitäten und Respekt melden</label></div></div>
     <div class="field"><label for="gpt">Sonntags: Woche planen</label><input class="inp num" type="time" id="gpt" value="${esc(c.planTime == null ? "19:00" : c.planTime)}"><span class="small muted">Erinnerung, falls die nächste Woche noch nicht geplant ist. Leer lassen = aus.</span></div>
     ${(() => { const dr = c.drinkRem || {}; return `<div class="field"><label for="gdr">💧 Trink-Erinnerungen</label><label class="row small" style="min-height:42px"><input type="checkbox" id="gdr" ${dr.on ? "checked" : ""}> „Vergiss nicht zu trinken“ aufs Handy</label></div>
@@ -4621,6 +4662,11 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "journal-a": { const k = todayKey(), d = getDay(k) || {}; d.journal = Object.assign({}, d.journal || {}, {[D.q]: D.v === "true"}); saveDay(k, d); if (journalQs().every(q => d.journal[q[0]] != null)) { journalEdit = false; toast("Journal gespeichert."); } break; }
+    case "journal-edit": journalEdit = true; render(); break;
+    case "journal-insights": openJournalInsights(); break;
+    case "journal-qs": openJournalQs(); break;
+    case "journal-qs-save": { const ids = [...document.querySelectorAll("[data-jq]")].filter(x => x.checked).map(x => x.dataset.jq); if (!ids.length) { toast("Wähle mindestens eine Frage."); break; } saveCfg({journalQs: ids}); closeSheet(); toast(ids.length + " Fragen gespeichert."); render(); break; }
     case "health-set": { if (D.v === "sick") { closeSheet(); setTimeout(() => openHealthSheet("start"), 80); } else { const h = healthCfg(); if (h.state === "sick") { const ranges = (h.ranges || []).concat([{from: h.since, to: addDays(todayKey(), -1) >= h.since ? addDays(todayKey(), -1) : h.since}]); saveCfg({health: {state: "ok", checkTime: h.checkTime, ranges}}); toast("Gesund eingetragen. Keine Abfragen mehr."); } closeSheet(); render(); } break; }
     case "health-check": closeSheet(); setTimeout(() => openHealthSheet(healthCfg().state === "sick" ? "check" : "start"), 80); break;
     case "hs-feel": if (hs) { hs.feel = D.v; renderHealthSheet(); } break;
