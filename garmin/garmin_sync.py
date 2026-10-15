@@ -71,6 +71,8 @@ def day(api, d):
             out["sleep"]["resp"] = round(float(sl["averageRespirationValue"]), 1)
         if sl.get("avgSleepStress") is not None:
             out["sleep"]["stress"] = round(float(sl["avgSleepStress"]))
+        if sl.get("averageSpO2Value"):
+            out["sleep"]["spo2"] = round(float(sl["averageSpO2Value"]))
         if sl.get("awakeCount") is not None:
             out["sleep"]["wakes"] = int(sl["awakeCount"])
         score = ((sl.get("sleepScores") or {}).get("overall") or {}).get("value")

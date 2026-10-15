@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 20:51";
+const APP_VERSION = "15.10.2026 20:55";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -746,6 +746,27 @@ function openJournalBackfill(){
 }
 let journalBf = false;
 /* Auswertung: Erholung an Tagen mit „Ja“ vs. „Nein“ (mind. 3× je Antwort in 90 Tagen) */
+/* Automatisch aus deinen Daten (zum Vortag, beim Morgen-Datum k). Fehlen Daten, zählt der Tag nicht (null). */
+const JAUTO = [
+  ["a_str", "🏋️", "Krafttraining gestern"], ["a_fb", "⚽", "Fußball oder Spiel gestern"], ["a_late", "🌙", "Training nach 19 Uhr beendet"],
+  ["a_strain", "🔥", "Hohe Belastung gestern (ab 14)"], ["a_prot", "🥩", "Eiweißziel erreicht"], ["a_kcal", "🍕", "Über dem Kalorienbudget (über 110 %)"],
+  ["a_water", "💧", "Trinkziel erreicht"], ["a_steps", "👟", "Schrittziel erreicht"], ["a_mid", "🕛", "Nach Mitternacht eingeschlafen"]
+];
+function autoJournal(k){
+  const y = addDays(k, -1), dy = S.days[y], ws = workoutsSorted().filter(w => w.date === y && w.status === "done"), out = {};
+  const anyData = !!dy || ws.length > 0;
+  if (anyData) {
+    out.a_str = ws.some(w => w.kind !== "activity" || /strength/.test(w.garminType || ""));
+    out.a_fb = ws.some(w => w.kind === "activity" && /fu(ss|ß)ball|soccer/i.test((w.title || "") + " " + (w.garminType || ""))) || !!(((weekPlanOf(mondayOf(y)) || {})[y] || {}).fb && ws.some(w => w.kind === "activity"));
+    out.a_late = ws.some(w => { const st = w.start ? new Date(w.start) : null; if (!st || isNaN(st)) return false; const end = w.end ? new Date(w.end) : new Date(st.getTime() + (num(w.minutes) || 60) * 60000); return end.getHours() >= 19 || end.getDate() !== st.getDate(); });
+    out.a_strain = strainOf(y) >= 14;
+  }
+  const t = dayTotals(dy);
+  if (t.kcal >= 1000) { out.a_prot = t.p >= cfg().p * 0.9; out.a_kcal = t.kcal > kcalGoal(y) * 1.1; }
+  if (dy) { const g = waterGoal(y); if (g.have > 0) out.a_water = g.have >= g.total; if (num(dy.steps) > 0) out.a_steps = num(dy.steps) >= stepGoal(); }
+  const bed = hm2min(((S.days[k] || {}).sleep || {}).bed); if (bed != null) out.a_mid = bed < 12 * 60;
+  return out;
+}
 const JMIN = 5; // wie WHOOP: erst ab 5× Ja und 5× Nein
 function journalInsights(){
   const t = todayKey(), out = [];
@@ -757,10 +778,22 @@ function journalInsights(){
   });
   return out.sort((a, b) => (b.diff == null ? -1 : Math.abs(b.diff)) - (a.diff == null ? -1 : Math.abs(a.diff)));
 }
+function journalAutoInsights(){
+  const t = todayKey(), out = [];
+  const days = Array.from({length: 90}, (_, i) => addDays(t, -i)).filter(k => !isSickDay(k)).map(k => ({k, r: recoveryOf(k), a: autoJournal(k)})).filter(x => x.r);
+  JAUTO.forEach(([id, ic, q]) => {
+    const yes = days.filter(x => x.a[id] === true).map(x => x.r.score), no = days.filter(x => x.a[id] === false).map(x => x.r.score);
+    if (!yes.length && !no.length) return;
+    const avg = a => a.reduce((x, y) => x + y, 0) / a.length;
+    out.push({id, ic, q, yes: yes.length, no: no.length, diff: yes.length >= JMIN && no.length >= JMIN ? avg(yes) - avg(no) : null});
+  });
+  return out.sort((a, b) => (b.diff == null ? -1 : Math.abs(b.diff)) - (a.diff == null ? -1 : Math.abs(a.diff)));
+}
 function openJournalInsights(){
   const ins = journalInsights();
   const need = x => [x.yes < JMIN ? `${JMIN - x.yes}× Ja` : "", x.no < JMIN ? `${JMIN - x.no}× Nein` : ""].filter(Boolean).join(" und ");
   openSheet("Journal-Auswertung", `<p class="small muted" style="margin:0 0 12px">So unterscheidet sich deine Erholung an Tagen mit „Ja“ von Tagen mit „Nein“ (letzte 90 Tage, ohne Krankheitstage). Ab 5 Antworten je Seite zeigt die App einen Wert, je mehr Tage, desto verlässlicher.</p>
+    ${(() => { const row = x => `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${x.ic} ${esc(x.q)}<span class="muted" style="display:block;font-size:12px">${x.yes}× Ja · ${x.no}× Nein</span></span>${x.diff == null ? `<span class="small muted" style="text-align:right">noch ${need(x)} nötig</span>` : Math.abs(x.diff) < 3 ? `<span class="small muted">kaum Unterschied</span>` : `<b class="num" style="color:${x.diff >= 0 ? "var(--good)" : "var(--bad)"}">${x.diff >= 0 ? "+" : "−"}${fmt(Math.abs(x.diff))} Punkte</b>`}</div>`; const au = journalAutoInsights(); return au.length ? `<div class="eyebrow" style="margin:0 0 8px">Automatisch aus deinen Daten</div><div class="stack" style="gap:8px;margin-bottom:16px">${au.map(row).join("")}</div><div class="eyebrow" style="margin:0 0 8px">Deine Journal-Fragen</div>` : ""; })()}
     ${ins.length ? `<div class="stack" style="gap:8px">${ins.map(x => `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${x.ic} ${esc(x.q)}<span class="muted" style="display:block;font-size:12px">${x.yes}× Ja · ${x.no}× Nein</span></span>${x.diff == null ? `<span class="small muted" style="text-align:right">noch ${need(x)} nötig</span>` : Math.abs(x.diff) < 3 ? `<span class="small muted">kaum Unterschied</span>` : `<b class="num" style="color:${x.diff >= 0 ? "var(--good)" : "var(--bad)"}">${x.diff >= 0 ? "+" : "−"}${fmt(Math.abs(x.diff))} Punkte</b>`}</div>`).join("")}</div>` : `<div class="empty">Beantworte ein paar Tage dein Journal, dann siehst du hier, was deine Erholung beeinflusst.</div>`}
     <p class="small muted" style="margin:12px 0 0">Das sind Zusammenhänge aus deinen eigenen Tagen, keine Beweise. Achtung bei Gewohnheiten, die meist zusammen vorkommen (z. B. Alkohol und spät ins Bett). Dann lässt sich nicht trennen, was wirkt. <span class="chip" data-act="tip" data-id="journal" style="cursor:pointer">📓 Journal richtig lesen ›</span></p>`);
 }
@@ -2014,11 +2047,11 @@ function trendSvg(pts, o){
   const vs = pts.map(p => p.v), lo = Math.min(...vs) - (o.pad || 1), hi = Math.max(...vs) + (o.pad || 1);
   const X = k => l + (W - l - r) * ((dateOf(k).getTime() - t0) / Math.max(1, t1 - t0)), Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo));
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
-  [lo + (o.pad || 1), hi - (o.pad || 1)].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${fmt(v, o.dec || 0)}</text>`);
+  [lo + (o.pad || 1), hi - (o.pad || 1)].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${o.fv ? o.fv(v) : fmt(v, o.dec || 0)}</text>`);
   if (o.ref > 0 && o.ref > lo && o.ref < hi) svg += `<line x1="${l}" x2="${W - r}" y1="${Y(o.ref)}" y2="${Y(o.ref)}" stroke="var(--ink-2)" stroke-dasharray="4 4" opacity=".6"/><text x="${W - r}" y="${Y(o.ref) - 4}" text-anchor="end" font-size="9.5" fill="var(--muted)">${esc(o.refLabel || "")} ${fmt(o.ref, o.dec || 0)}</text>`;
   const line = o.smooth ? pts.map((p, i) => ({k: p.k, v: pts.slice(Math.max(0, i - 6), i + 1).reduce((a, x) => a + x.v, 0) / Math.min(i + 1, 7)})) : pts;
   svg += `<path d="${line.map((p, i) => (i ? "L" : "M") + X(p.k).toFixed(1) + " " + Y(p.v).toFixed(1)).join("")}" fill="none" stroke="${o.color || "var(--accent)"}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-  if (!o.smooth || pts.length < 40) pts.forEach(p => svg += `<g><title>${fmtShort(p.k)}: ${fmt(p.v, o.dec || 0)} ${o.unit || ""}</title><circle cx="${X(p.k)}" cy="${Y(p.v)}" r="${o.smooth ? 2.5 : 4}" fill="${o.color || "var(--accent)"}" stroke="var(--surface)" stroke-width="1.5"/></g>`);
+  if (!o.smooth || pts.length < 40) pts.forEach(p => svg += `<g><title>${fmtShort(p.k)}: ${o.fv ? o.fv(p.v) : fmt(p.v, o.dec || 0)} ${o.unit || ""}</title><circle cx="${X(p.k)}" cy="${Y(p.v)}" r="${o.smooth ? 2.5 : 4}" fill="${o.color || "var(--accent)"}" stroke="var(--surface)" stroke-width="1.5"/></g>`);
   svg += `<text x="${l}" y="${H - 5}" font-size="10" fill="var(--muted)">${fmtShort(pts[0].k)}</text><text x="${W - r}" y="${H - 5}" text-anchor="end" font-size="10" fill="var(--muted)">${fmtShort(pts[pts.length - 1].k)}</text>`;
   return svg + `</svg>`;
 }
@@ -2453,6 +2486,58 @@ function mealPlanCard(k){
    (Schlaf 7,5–9 h, fester Rhythmus verbessert HRV und Schlafwert; HRV unter Schnitt = lieber locker; 24 h Pause für gleiche Muskeln). */
 function seriesOf(days, f){ return days.map(k => ({k, v: f(k)})).filter(p => p.v != null && !isNaN(p.v) && p.v > 0); }
 const avgOfP = ps => ps.length ? ps.reduce((a, p) => a + p.v, 0) / ps.length : null;
+/* Vitalwerte der Nacht im Vergleich zu deinem Normalbereich (letzte 30 Nächte ohne Krankheitstage, ca. 10.–90. Perzentil) */
+function vitalsCard(k){
+  const sl = (S.days[k] || {}).sleep || {};
+  const V = [["rhr", "❤️", "Ruhepuls", "", 0], ["hrv", "📈", "HRV", " ms", 0], ["resp", "🌬️", "Atemfrequenz", " /min", 1], ["stress", "😤", "Stress im Schlaf", "", 0], ["spo2", "🩸", "Sauerstoffsättigung", " %", 0]];
+  const hist = Array.from({length: 30}, (_, i) => addDays(k, -i - 1)).filter(x => !isSickDay(x)).map(x => (S.days[x] || {}).sleep || {});
+  const pct = (a, q) => { const b = a.slice().sort((x, y) => x - y), i = (b.length - 1) * q, lo = Math.floor(i); return b[lo] + (b[Math.min(b.length - 1, lo + 1)] - b[lo]) * (i - lo); };
+  let far = 0;
+  const rows = V.map(([key, ic, lbl, unit, dec]) => {
+    const v = num(sl[key]); if (!(v > 0)) return "";
+    const h = hist.map(x => num(x[key])).filter(x => x > 0); if (h.length < 7) return "";
+    const lo = pct(h, 0.1), hi = pct(h, 0.9), w = Math.max(hi - lo, key === "resp" ? 0.5 : 2);
+    const out = v < lo ? (lo - v) / w : v > hi ? (v - hi) / w : 0, st = out === 0 ? "normal" : out <= 0.5 ? "etwas außerhalb" : "deutlich außerhalb";
+    if (out > 0.5) far++;
+    return `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${ic} <b>${lbl}</b><span class="muted" style="display:block;font-size:12px">normal: ${fmt(lo, dec)}–${fmt(hi, dec)}${unit}</span></span><span class="num" style="text-align:right"><b>${fmt(v, dec)}${unit}</b><span class="small" style="display:block;color:${out === 0 ? "var(--good)" : out <= 0.5 ? "var(--warn)" : "var(--bad)"}">${st}</span></span></div>`;
+  }).filter(Boolean);
+  if (!rows.length) return "";
+  return `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Vitalwerte heute Nacht</div><div class="stack" style="gap:8px">${rows.join("")}</div>
+    ${far >= 2 && !sickNow() ? `<div class="hint" style="margin-top:10px;border:1.5px solid var(--warn)">Dein Körper ist heute im Ausnahmezustand, z. B. nach viel Belastung, Alkohol oder bei einem beginnenden Infekt. <b>Fühlst du dich krank?</b> <button class="btn" data-act="health-set" data-v="sick" style="margin-top:6px">Krank eintragen</button></div>` : ""}
+    <p class="small muted" style="margin:8px 0 0">Normalbereich: deine letzten 30 Nächte ohne Krankheitstage. Keine Diagnose.</p></section>`;
+}
+const TRENDS = [
+  ["rec", "Erholung", "%", 0, k => { const r = recoveryOf(k); return r ? r.score : null; }],
+  ["strain", "Belastung", "", 1, k => S.days[k] || workoutsSorted().some(w => w.date === k) ? strainOf(k) : null],
+  ["sleep", "Schlafdauer", "h", 2, k => { const h = num(((S.days[k] || {}).sleep || {}).h); return h >= 3 ? h : null; }],
+  ["hrv", "HRV", "ms", 0, k => num(((S.days[k] || {}).sleep || {}).hrv) || null],
+  ["rhr", "Ruhepuls", "", 0, k => num(((S.days[k] || {}).sleep || {}).rhr) || null],
+  ["steps", "Schritte", "", 0, k => num((S.days[k] || {}).steps) || null],
+  ["weight", "Gewicht", "kg", 1, k => { const p = weightSeries().find(x => x.k === k); return p ? p.v : null; }],
+  ["fat", "Körperfett", "%", 1, k => num(((S.days[k] || {}).body || {}).fat) || null],
+  ["vo2", "VO2max", "", 1, k => num((S.days[k] || {}).vo2) || null],
+  ["fa", "Fitnessalter", "Jahre", 1, k => { const x = fitnessAgeAt(k); return x.ok ? x.age : null; }],
+  ["kcal", "Kalorien", "kcal", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.kcal : null; }],
+  ["prot", "Eiweiß", "g", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.p : null; }]
+];
+let trendSel = {m: "rec", d: 30};
+function openTrends(){ openSheet("Trends", ""); renderTrends(); }
+function renderTrends(){
+  const [id, lbl, unit, dec, fn] = TRENDS.find(x => x[0] === trendSel.m), n = trendSel.d, t = todayKey();
+  const days = Array.from({length: n}, (_, i) => addDays(t, i - n + 1)), prevDays = Array.from({length: n}, (_, i) => addDays(t, i - 2 * n + 1));
+  const pts = days.map(k => ({k, v: fn(k)})).filter(p => p.v != null && isFinite(p.v));
+  const pv = prevDays.map(fn).filter(v => v != null && isFinite(v));
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null, a1 = avg(pts.map(p => p.v)), a0 = avg(pv);
+  const sick = days.filter(isSickDay).length, isH = id === "sleep", fv = v => isH ? fmtHs(v, true) : fmt(v, dec);
+  const better = {rhr: -1, fa: -1, strain: 0, kcal: 0, weight: 0, fat: -1}[id] ?? 1;
+  const ch = a1 != null && a0 != null ? a1 - a0 : null;
+  $("#sheet-b").innerHTML = `<div class="filt" style="margin:0 0 8px">${TRENDS.map(x => `<button data-act="trend-m" data-m="${x[0]}" aria-pressed="${x[0] === id}">${x[1]}</button>`).join("")}</div>
+    <div class="seg" role="group" style="margin-bottom:12px">${[7, 30, 90, 180].map(d => `<button data-act="trend-d" data-d="${d}" aria-pressed="${d === n}">${d} Tage</button>`).join("")}</div>
+    <section class="card" style="margin-bottom:12px">${pts.length >= 2 ? trendSvg(pts, {label: lbl, unit, dec, smooth: n > 7, pad: id === "rec" || id === "fa" ? 2 : isH ? 0.3 : dec ? 0.5 : 1, fv: isH ? (v => fmtHs(v, true)) : null}) : `<div class="empty">Zu wenig Daten in diesem Zeitraum.</div>`}
+      <p class="small muted" style="margin:6px 0 0">${n > 7 ? "Linie: Schnitt über 7 Tage, Punkte: einzelne Tage." : "Punkte: einzelne Tage."}${sick ? ` 🤒 ${sick} Krankheitstag${sick > 1 ? "e" : ""} im Zeitraum.` : ""}</p></section>
+    <div class="kv"><div><span class="eyebrow">Ø ${n} Tage</span><div class="v">${a1 == null ? "–" : isH ? fmtHours(a1) : fmt(a1, dec) + `<span class="unit">${unit}</span>`}</div></div>
+      <div><span class="eyebrow">Zu den ${n} Tagen davor</span><div class="v" style="color:${ch == null || Math.abs(ch) < 1e-9 || !better ? "inherit" : (ch > 0) === (better > 0) ? "var(--good)" : "var(--warn)"}">${ch == null ? "–" : (ch > 0 ? "+" : ch < 0 ? "−" : "±") + (isH ? fmtH(Math.abs(ch)) : fmt(Math.abs(ch), dec) + `<span class="unit">${unit}</span>`)}</div></div></div>`;
+}
 function openRecoveryDetail(k){
   k = k || todayKey();
   const days30 = Array.from({length: 30}, (_, i) => addDays(k, i - 29)), days14 = days30.slice(-14);
@@ -2494,7 +2579,7 @@ function openRecoveryDetail(k){
     ${hrv.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">HRV · 30 Tage</div>${trendSvg(hrv, {label: "HRV 30 Tage", unit: "ms", smooth: true, pad: 3, ref: baseline(k, "hrv", 30), refLabel: "Ø 30 T"})}<p class="small muted" style="margin:6px 0 0">Höher ist besser. Die Linie zeigt den Schnitt über 7 Tage, die Punkte die einzelnen Nächte, gestrichelt dein 30-Tage-Schnitt. Vergleiche die HRV nur mit dir selbst: Ein einzelner Morgen sagt wenig, erst mehrere niedrige Tage in Folge sind ein Signal.</p></section>` : ""}
     ${rhr.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Ruhepuls · 30 Tage</div>${trendSvg(rhr, {label: "Ruhepuls 30 Tage", unit: "bpm", smooth: true, color: "var(--p)", pad: 2})}<p class="small muted" style="margin:6px 0 0">Niedriger ist besser. Steigt er mehrere Tage, braucht dein Körper mehr Erholung.</p></section>` : ""}
     ${bb.length >= 5 ? `<section class="card"><div class="eyebrow" style="margin-bottom:4px">Body Battery am Morgen · 30 Tage</div>${trendSvg(bb, {label: "Body Battery", unit: "", color: "var(--accent-2)", pad: 5})}</section>` : ""}`;
-  openSheet("Erholung & Belastung", body);
+  openSheet("Erholung & Belastung", vitalsCard(k) + body);
 }
 /* ---------- Cut-Checks (Quelle: Briefing Körperfettreduktion) ----------
    1) Diät-Müdigkeit: mind. 2 von 3 Signalen über ca. 2 Wochen (Kraft sinkt, Schlaf < 6,5 h, Energie im Check-in meist niedrig)
@@ -2616,6 +2701,25 @@ function saveBedPlan(){
   saveDay(t, d);
   toast(remind ? `Bettzeit ${plan.bed} Uhr. Ich erinnere dich um ${min2hm(((plan.bedMin - 30) % 1440 + 1440) % 1440)} Uhr.` : `Bettzeit ${plan.bed} Uhr.`);
 }
+/* Schlafleistung in 4 Teilen: Dauer, Regelmäßigkeit, Effizienz, Ruhe (die Garmin-Schlafzahl in der Erholung bleibt) */
+function sleepPerf(k){
+  const sl = (S.days[k] || {}).sleep || {}; if (!(num(sl.h) >= 2)) return "";
+  const need = sleepNeed(k), b = hm2min(sl.bed), w = hm2min(sl.wake);
+  const mid = (q) => { const bb = hm2min(q.bed); return bb == null || !(num(q.h) > 0) ? null : (bb < 12 * 60 ? bb + 1440 : bb) + num(q.h) * 30; };
+  const prev = [1, 2, 3, 4].map(i => (S.days[addDays(k, -i)] || {}).sleep || {}).map(mid).filter(v => v != null);
+  const m = mid(sl), dm = m != null && prev.length >= 2 ? Math.abs(m - prev.reduce((a, x) => a + x, 0) / prev.length) : null;
+  const span = b != null && w != null ? ((w - b + 1440) % 1440) : null;
+  const parts = [
+    ["Dauer", Math.min(100, num(sl.h) / need * 100), `${fmtH(num(sl.h))} von ${fmtH(need)} Bedarf`, "Geh früher ins Bett: Der Bettzeit-Rechner unter Erholung sagt dir, wann."],
+    ["Regelmäßigkeit", dm == null ? null : dm <= 30 ? 100 : Math.max(0, 100 - (dm - 30) * 0.8), dm == null ? "noch zu wenig Nächte" : `Schlafmitte ${fmtMin(dm)} vom Schnitt der 4 Nächte davor`, "Geh und steh möglichst jeden Tag zur gleichen Zeit auf, auch am Wochenende."],
+    ["Effizienz", span && span > 60 ? Math.min(100, num(sl.h) * 60 / span * 100) : null, span ? `${Math.round(Math.min(100, num(sl.h) * 60 / span * 100))} % der Zeit geschlafen (ab 85 % gut)` : "ohne Bettzeiten", "Lange wach gelegen? Erst ins Bett, wenn du müde bist, und Handy raus aus dem Schlafzimmer."],
+    ["Ruhe", num(sl.stress) > 0 ? Math.max(0, Math.min(100, 100 - (num(sl.stress) - 10) * 2.5)) : null, num(sl.stress) > 0 ? `Stress im Schlaf ${fmt(num(sl.stress))} (niedrig ist gut)` : "kein Wert", "Unruhige Nacht: kein Alkohol und kein schweres Essen spät, abends runterfahren mit langer Ausatmung."]
+  ];
+  const valid = parts.filter(x => x[1] != null), weak = valid.length ? valid.reduce((a, x) => x[1] < a[1] ? x : a) : null;
+  const col = v => v >= 85 ? "var(--good)" : v >= 70 ? "var(--warn)" : "var(--bad)";
+  return `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Schlafleistung</div><div class="stack" style="gap:10px">${parts.map(([l, v, d]) => `<div><div class="spread small"><b>${l}</b><b class="num" style="color:${v == null ? "var(--muted)" : col(v)}">${v == null ? "–" : Math.round(v) + " %"}</b></div><div class="bar" style="margin:4px 0"><i style="width:${v == null ? 0 : v}%;background:${v == null ? "var(--line)" : col(v)}"></i></div><div class="small muted">${esc(d)}</div></div>`).join("")}</div>
+    ${weak && weak[1] < 85 ? `<div class="hint" style="margin-top:10px"><b>Größter Hebel: ${weak[0]}.</b> ${esc(weak[3])}</div>` : ""}</section>`;
+}
 function openSleepDetail(k){
   k = k || todayKey();
   const c = cfg(), sl = (S.days[k] || {}).sleep || {}, need = sleepNeed(k);
@@ -2664,6 +2768,7 @@ function openSleepDetail(k){
       ${weekBars(hVals, {h: 110, label: "Schlafdauer 14 Nächte", goal: c.sleepGoal, fmt: v => fmtHs(v), labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= c.sleepGoal - 0.25 ? "var(--accent-2)" : "color-mix(in srgb,var(--accent-2) 50%,var(--surface))"})}
       <p class="small muted" style="margin:4px 0 0">Gestrichelt: dein Schlafziel ${fmtH(c.sleepGoal)}.</p>
       ${sVals.filter(Boolean).length >= 3 ? `<div class="eyebrow" style="margin:12px 0 4px">Schlafwert · 14 Nächte</div>${weekBars(sVals, {h: 90, label: "Schlafwert", fmt: v => v + " / 100", labels: false, xlabels: days14.map(d => String(dateOf(d).getDate())), today: 13, color: v => v >= 80 ? "var(--good)" : v >= 60 ? "var(--warn)" : "var(--bad)"})}` : ""}</section>
+    ${sleepPerf(k)}
     <section class="card"><div class="eyebrow" style="margin-bottom:8px">Für besseren Schlaf</div><div class="stack" style="gap:6px">
       ${["Gleiche Zeit ins Bett und aufstehen, auch am Wochenende.", "Morgens 10–30 Minuten Tageslicht, abends ab etwa 22 Uhr Licht dimmen.", "Schlafzimmer kühl (ca. 18 °C), dunkel und ruhig, eine Stunde vorher Handy weg.", "Nach 14 Uhr kein Koffein, abends keine großen, fettigen Mahlzeiten."].map(t => `<div class="small ink2">• ${t}</div>`).join("")}</div></section>`;
   openSheet("Schlaf im Detail", body);
@@ -3503,6 +3608,7 @@ function viewKoerper(){
       <p class="small muted" style="margin:0">Am besten jeden Morgen nach der Toilette und vor dem Frühstück wiegen.</p>
     </form>
   </section>
+  <button class="btn block" data-act="trends" style="margin-top:12px">📈 Trends</button>
   <div class="section-title">Letzte Einträge</div>
   <section class="card" style="padding-block:6px"><div class="list">${recent.map(p => `<div class="li"><div class="grow"><div class="title num">${fmt(p.v, 1)} kg${p.out ? ` <span class="chip" style="color:var(--warn)">Ausreißer, zählt nicht</span>` : ""}</div><div class="sub">${fmtMid(p.k)} ${dateOf(p.k).getFullYear()}</div></div><button class="x" data-act="weight-del" data-date="${p.k}" aria-label="Eintrag vom ${fmtShort(p.k)} löschen">×</button></div>`).join("") || '<div class="empty">Noch kein Gewicht eingetragen.</div>'}</div></section>`;
 }
@@ -4688,6 +4794,9 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "trends": openTrends(); break;
+    case "trend-m": trendSel.m = D.m; renderTrends(); break;
+    case "trend-d": trendSel.d = +D.d; renderTrends(); break;
     case "journal-a": { const k = D.date || todayKey(), d = getDay(k) || {}; d.journal = Object.assign({}, d.journal || {}, {[D.q]: D.v === "true"}); saveDay(k, d);
       if (journalBf) { b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); break; }
       if (journalQs().every(q => d.journal[q[0]] != null)) { journalEdit = false; toast("Journal gespeichert."); } break; }
