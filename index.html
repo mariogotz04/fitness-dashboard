@@ -212,6 +212,7 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 [data-sort]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;transition:box-shadow .15s}
 [data-sort] input,[data-sort] textarea{-webkit-user-select:text;user-select:text}
 .dragging{position:relative;z-index:5;box-shadow:0 12px 30px rgba(0,0,0,.55);outline:2px solid var(--accent);transition:none}
+.recinfo{background:var(--surface-2);border-radius:12px;padding:10px 12px;margin-bottom:6px}
 .mk5{position:absolute;left:25%;top:-2px;bottom:-2px;width:2px;border-radius:1px;background:var(--ink-2);opacity:.55}
 .kbal{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px}
 .kb{background:var(--surface-2);border-radius:12px;padding:9px 10px;display:flex;flex-direction:column;gap:1px;min-width:0}
@@ -315,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 20:15";
+const APP_VERSION = "15.10.2026 20:17";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1089,8 +1090,8 @@ function recoverySection(k){
       <div class="spread"><div class="eyebrow">Regeneration heute</div>${sampleFn ? `<button class="btn ghost" data-act="tips-ai" data-date="${k}" ${tipsBusy ? "disabled" : ""}>${tipsBusy ? "Claude denkt nach …" : ai ? "Neu schreiben" : "Persönliche Tipps von Claude"}</button>` : ""}</div>
       ${ai ? `<div class="hint" style="margin:6px 0 10px;white-space:pre-wrap">${esc(ai)}</div>` : ""}
       <div class="list">${tips.map(([t, x]) => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="title" style="font-weight:600">${esc(t)}</div><div class="small ink2">${esc(x)}</div></div></div>`).join("")}</div>
-      ${(() => { const pl = recoveryPlan(k), done = d.recDone || {}; const cats = [...new Set(pl.map(x => x.cat))];
-        return `<div class="eyebrow" style="margin:14px 0 4px">${k === todayKey() && sickNow() ? "Schneller gesund werden" : "Deine Regeneration nach deinem Training"} · ${pl.filter(x => done[x.key]).length} / ${pl.length} erledigt</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<button class="planitem" data-act="plan-done" data-key="${x.key}" data-date="${k}" aria-pressed="${done[x.key] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></span></button>`).join("")).join(""); })()}
+      ${(() => { const pl = recoveryPlan(k); const cats = [...new Set(pl.map(x => x.cat))];
+        return `<div class="eyebrow" style="margin:14px 0 4px">${k === todayKey() && sickNow() ? "Schneller gesund werden" : "Deine Regeneration nach deinem Training"}</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<div class="recinfo"><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></div>`).join("")).join(""); })()}
       ${ci ? `<div class="small muted" style="margin-top:6px">Check-in: Energie ${ci.energy}/5 · Muskelkater ${ci.soreness}/5 <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="ci-reset" data-date="${k}">ändern</button></div>` : ""}
     </div>
   </section>`;
