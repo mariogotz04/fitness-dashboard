@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:34";
+const APP_VERSION = "15.10.2026 19:36";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -636,7 +636,7 @@ function lastPerformance(exId, beforeKey, excludeId){
 }
 function exHistory(exId){
   const out = [];
-  workoutsSorted().filter(w => w.status === "done").forEach(w => {
+  workoutsSorted().filter(w => w.status === "done" && !isReturnDay(w.date)).forEach(w => {
     (w.exercises || []).filter(x => exMatch(x, exId)).forEach(e => {
       const sets = (e.sets || []).filter(s => s.type !== "warmup" && (num(s.r) > 0 || num(s.sec) > 0));
       if (!sets.length) return;
@@ -1313,7 +1313,7 @@ function learnedBase(p){
   if (span < 10 || w0 == null || w1 == null) return null;
   const minK = Math.max(1000, bmrOf(p, w1) * 0.8);
   const logged = [];
-  for (let i = 0; i <= 20; i++) { const k = addDays(start, i), t = dayTotals(S.days[k]); if (t.kcal >= minK) logged.push({kcal: t.kcal, burn: burnedOf(k)}); }
+  for (let i = 0; i <= 20; i++) { const k = addDays(start, i), t = dayTotals(S.days[k]); if (t.kcal >= minK && !isSickDay(k)) logged.push({kcal: t.kcal, burn: burnedOf(k)}); }
   if (logged.length < 7) return null;
   const eat = logged.reduce((a, x) => a + x.kcal, 0) / logged.length, burn = logged.reduce((a, x) => a + x.burn, 0) / logged.length;
   return {base: eat - (w1 - w0) * 7700 / span - burn, days: logged.length, eat, burn, rate: (w1 - w0) / span * 7};
@@ -2737,6 +2737,7 @@ const KB = [
   {id: "rest", cat: "training", icon: "⏱️", title: "Lange Pausen bei schweren Sätzen", short: "Bei 3–5 Wiederholungen 3–5 Minuten Pause, sonst etwa 2–3 Minuten.", why: "Nach einer längeren Pause schaffst du im nächsten Satz mehr Gewicht und Wiederholungen, und das bringt mehr Fortschritt als kurze Pausen. Für den Muskelaufbau reichen meist 60–90 Sekunden. Längere Pausen bringen dafür kaum mehr, helfen aber bei schweren Grundübungen, weil der nächste Satz besser wird (Singer 2024).", how: ["Der Pausen-Timer in der App läuft automatisch nach dem Abhaken.", "Isolationsübungen: 1–2 Minuten reichen."], src: "N"},
   {id: "progression", cat: "training", icon: "📈", title: "Doppelte Progression", short: "Erst Wiederholungen steigern, dann Gewicht.", why: "Schaffst du in allen Sätzen das obere Ende des Wiederholungsbereichs, ist es Zeit für mehr Gewicht. So wird der Reiz langsam, aber stetig größer, wie es für Muskelaufbau nötig ist (ca. 60–70 % der Maximalkraft).", how: ["Beispiel 3 × 6–10: erst 10/10/10 schaffen, dann +2,5 kg.", "Mit „Ernährung & Training automatisch“ trägt die App das Gewicht selbst in deinen Plan ein."], src: "H"},
   {id: "rest24", cat: "training", icon: "🗓️", title: "24 Stunden Pause für gleiche Muskeln", short: "Den gleichen Muskel frühestens nach 24 h wieder hart belasten.", why: "Muskeln wachsen in der Erholungsphase nach dem Training, nicht währenddessen. Ohne Pause bleibt der Fortschritt aus und das Verletzungsrisiko steigt.", how: ["Oberkörper und Unterkörper abwechseln.", "Am Tag vor einem Spiel kein hartes Beintraining."], src: "H"},
+  {id: "fitage", cat: "training", icon: "🎂", title: "Fitnessalter: was dahintersteckt", short: "Dein Fitnessalter schätzt aus 9 Werten, wie fit dein Körper für dein Alter ist.", why: "Große Studien zeigen: VO2max, Ruhepuls, Schlaf, Bewegung, Krafttraining und Muskelmasse hängen stark mit einem langen, gesunden Leben zusammen. Die App rechnet nach dem gleichen Prinzip wie WHOOP mit denselben 9 Faktoren, aber mit einer eigenen, offen gelegten Rechnung. Es ist eine Schätzung, kein medizinischer Wert.", how: ["Am meisten zählt die VO2max. Verglichen wird mit der HUNT-Studie aus Norwegen, deren Teilnehmer sehr fit waren.", "Tippe im Reiter Körper auf dein Fitnessalter, um zu sehen, was wie viel zählt.", "Unter ‚So wirst du jünger‘ stehen deine 3 größten Hebel."], src: "E"},
   {id: "zone2talk", cat: "training", icon: "🗣️", title: "Zone 2 ist nicht gleich Garmin-Zone 2", short: "Die Pulszonen der Uhr sind eine Schätzung. Der Sprechtest ist oft genauer.", why: "Echte Zone 2 heißt: unter deiner ersten Laktatschwelle. Die Uhr rechnet nur mit Prozent der maximalen Herzfrequenz, und die Schwelle liegt bei jedem anders.", how: ["Sprechtest: ganze Sätze sprechen geht, singen nicht mehr.", "Wird das Sprechen abgehackt, bist du zu schnell, auch wenn die Uhr Zone 2 zeigt.", "Bei Hitze oder nach wenig Schlaf ist der Puls höher. Dann nach Gefühl laufen."], src: "E"},
   {id: "concurrent", cat: "training", icon: "🔀", title: "Kraft vor Ausdauer", short: "Gym und Fußball am selben Tag: möglichst über 6 h Abstand, sonst Krafttraining zuerst.", why: "Harte Ausdauer direkt vor dem Krafttraining macht müde Muskeln und kann die Anpassung an das Krafttraining etwas stören. Laufen und Sprints stören mehr als Radfahren. Mit genug Abstand und genug Essen ist der Störeffekt laut Quellen weitgehend weg.", how: ["Wenn beides an einem Tag: zuerst Gym, später Fußball.", "Mindestens 6 Stunden dazwischen, wenn es geht.", "Dazwischen eine Mahlzeit mit Kohlenhydraten und Eiweiß.", "Der Wochenplaner warnt dich, wenn der Abstand zu klein ist."], src: "C"},
   {id: "deload", cat: "training", icon: "🪫", title: "Entlastungswoche", short: "Alle 4–6 Wochen eine Woche mit etwa ⅓ weniger Sätzen, wenn der Körper Signale sendet.", why: "Ermüdung baut sich über Wochen auf, oft schneller als die Fitness. Eine leichtere Woche lässt sie abklingen, schützt vor Überlastung und Verletzungen, und danach geht es oft stärker weiter. Gewichte bleiben dabei gleich, nur die Satzzahl sinkt.", how: ["Etwa ⅓ weniger Sätze, z. B. 3 → 2, Gewichte gleich lassen.", "Nicht nach Kalender, sondern bei Signalen: HRV mehrere Tage niedrig, mehrere Übungen stagnieren, oft starker Muskelkater.", "Volumen danach höchstens um etwa 5–10 % pro Woche steigern.", "Die App schlägt sie dir unter Training vor, du startest sie selbst."], src: "C"},
@@ -2781,6 +2782,7 @@ function tipPersonal(id){
     case "protein30": { let m = 0, ok = 0; eat.forEach(d => MEALS.forEach(([k]) => { const it = (d.meals || {})[k] || []; if (it.length) { m++; if (it.reduce((a, x) => a + (+x.p || 0), 0) >= 30) ok++; } })); if (!m) return null; return {note: `${ok} von ${m} Mahlzeiten hatten zuletzt mindestens 30 g Eiweiß.`, hot: ok / m < 0.5 ? 6 : 0, why: ok / m < 0.5 ? `Nur ${ok} von ${m} Mahlzeiten hatten 30 g Eiweiß.` : ""}; }
     case "sleep": if (avgS == null) return null; return {note: `Ø ${fmtH(avgS)} Schlaf in den letzten 7 Nächten, Ziel ${fmtH(c.sleepGoal)}.`, hot: avgS < c.sleepGoal - 0.5 ? 7 : 0, why: avgS < c.sleepGoal - 0.5 ? `Du hast zuletzt im Schnitt nur ${fmtH(avgS)} geschlafen.` : ""};
     case "hrv": { const s0 = (S.days[today] || {}).sleep || {}, b = baseline(today, "hrv"); if (!b || !num(s0.hrv)) return null; const n = hrvLowStreak(today); return {note: `Heute ${fmt(num(s0.hrv))} ms, dein Schnitt ${fmt(b)} ms${n === 1 ? ". Ein einzelner Morgen sagt wenig, erst ein Trend zählt" : ""}.`, hot: n >= 2 ? 9 : 0, why: n >= 2 ? `Deine HRV liegt seit ${n} Tagen deutlich unter deinem Schnitt.` : ""}; }
+    case "fitage": { const fa = fitnessAge(); return fa.ok ? {note: `Dein Fitnessalter: ${fmt(fa.age, 1)} (echtes Alter ${fmt(fa.real, 1)}).`, hot: 0} : null; }
     case "sleepcold": { const sl = Array.from({length: 14}, (_, i) => num(((S.days[addDays(today, -i)] || {}).sleep || {}).h)).filter(h => h >= 3); if (!sl.length) return null; const a = sl.reduce((x, y) => x + y, 0) / sl.length; return {note: `Ø ${fmtH(a)} Schlaf in den letzten 14 Nächten.`, hot: a < 7 ? 3 : 0, why: a < 7 ? "Du schläfst zuletzt im Schnitt unter 7 Stunden." : ""}; }
     case "wakefix": { const r = wakeRegularity(); return r ? {note: `Deine Aufstehzeit schwankt um ± ${fmtMin(r.sd)} (meist um ${min2hm(r.avg)}).`, hot: r.sd > 60 ? 3 : 0, why: r.sd > 60 ? "Deine Aufstehzeit schwankt um mehr als eine Stunde." : ""} : null; }
     case "sigh": { const s0 = (S.days[today] || {}).sleep || {}; return num(s0.stress) > 0 || num(s0.hrv) > 0 ? {note: `${num(s0.stress) > 0 ? "Stress im Schlaf letzte Nacht: " + fmt(num(s0.stress)) : ""}${num(s0.stress) > 0 && num(s0.hrv) > 0 ? " · " : ""}${num(s0.hrv) > 0 ? "HRV " + fmt(num(s0.hrv)) + " ms" : ""}.`, hot: num(s0.stress) > 25 ? 3 : 0, why: num(s0.stress) > 25 ? "Dein Stress im Schlaf war zuletzt erhöht." : ""} : null; }
@@ -3111,7 +3113,7 @@ function openReview(mon){
         ${hero("Training", wk.strength.length + "/" + c.strengthPerWeek, "", wk.acts.length ? "+ " + wk.acts.length + "× Sport" : "")}
         ${hero("Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", "Ø der Woche")}
       </div></div>
-    ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>
+    ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>${(() => { const a = fitnessAge(addDays(mon, 6) > todayKey() ? todayKey() : addDays(mon, 6)), b = fitnessAge(addDays(mon, -1)); return a.ok ? `<div class="small" style="margin-top:10px">🎂 Fitnessalter: <b>${fmt(a.age, 1)}</b>${b.ok ? ` (${a.age - b.age <= 0 ? "−" : "+"}${fmt(Math.abs(a.age - b.age), 1)} zur Vorwoche)` : ""}</div>` : ""; })()}
       <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
       ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
       ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${fmt(n, n % 1 ? 1 : 0)}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
@@ -3369,7 +3371,7 @@ function viewKoerper(){
   const recent = weightSeriesAll().slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
   const lastWaist = waist.length ? waist[waist.length - 1] : null;
-  return `<button class="btn block" data-act="review-open" style="margin-bottom:12px">📊 Wochenrückblick ansehen</button><section class="card">
+  return `${fitnessAgeCard()}<button class="btn block" data-act="review-open" style="margin-bottom:12px">📊 Wochenrückblick ansehen</button><section class="card">
     <div class="card-h"><h2>Gewichtsverlauf</h2>
       <div class="seg" role="group" aria-label="Zeitraum">${[[30,"30 T"],[90,"90 T"],[0,"Alles"]].map(([r, l]) => `<button data-act="w-range" data-r="${r}" aria-pressed="${weightRange === r}">${l}</button>`).join("")}</div></div>
     <div class="chart" data-chart="weight" style="height:240px"></div>
@@ -3414,6 +3416,145 @@ function scaleHint(){
   const dv = last.v - a; if (Math.abs(dv) <= 1) return "";
   return `<button class="hint" data-act="tip" data-id="scale" style="margin-top:12px;display:block;width:100%;text-align:left;cursor:pointer">⚖️ <b>${dv > 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg zum Schnitt der Tage davor:</b> Wahrscheinlich Wasser (viele Kohlenhydrate, Salz oder spät gegessen), kein Fett. Der Trend zählt. <span class="muted">Mehr dazu ›</span></button>`;
 }
+/* ---------- Gesundheitszustand: Hilfsfunktionen (Krankheitstage aus Statistiken herausnehmen) ---------- */
+const healthCfg = () => cfgRaw().health || {};
+function isSickDay(k){
+  const h = healthCfg();
+  if ((h.ranges || []).some(r => r.from <= k && (!r.to || r.to >= k))) return true;
+  return h.state === "sick" && h.since && h.since <= k && (!h.returnFrom || k < h.returnFrom);
+}
+function isReturnDay(k){ const h = healthCfg(); return !!(h.returnFrom && k >= h.returnFrom && k < addDays(h.returnFrom, 6) && (h.state === "sick" || (h.returnEnd && k <= h.returnEnd))); }
+
+/* ---------- Fitnessalter (angelehnt an das WHOOP-Prinzip, eigene offen gelegte Rechnung) ----------
+   9 Faktoren → Jahre jünger/älter gegenüber dem echten Alter. Quellen: HUNT 3 (Loe 2013, Tab. 2), Blaha 2016, Zhang 2016,
+   Cappuccio 2010, Windred 2024, Paluch 2022, Banach 2023, Lee 2022 (WHO-Minuten), Momma 2022, Srikanthan 2014.
+   Umrechnung in Jahre ist eine grobe Annahme (Sterberisiko +9–10 % pro Lebensjahr), bewusst abgerundet. Alle Stufen hier an einer Stelle. */
+const FA = {
+  huntAges: [25, 35, 45, 55, 65, 75],
+  hunt: {m: [54.4, 49.1, 47.2, 42.6, 39.2, 35.3], w: [43.0, 40.0, 38.4, 34.4, 31.1, 28.3]},   // Loe et al. 2013, PLoS ONE, Tabelle 2 (ml/kg/min)
+  vo2Factor: 0.5, vo2Cap: 6, overlap: 0.6, cap: 12,
+  rhr: [[50, -1.5], [57, -0.8], [65, 0], [72, 0.8], [80, 1.6], [Infinity, 2.5]],
+  sleep: [[6, 1.5], [6.5, 0.8], [7, 0.4], [9.5, 0], [Infinity, 0.5]],
+  reg: [[30, -1], [60, 0], [90, 0.8], [Infinity, 1.5]],
+  steps: [[4000, 2], [6000, 1], [8000, 0], [10000, -0.8], [Infinity, -1.2]],
+  mod: [[75, 1], [150, 0.4], [300, -0.5], [Infinity, -1]],
+  vig: [[15, 0.5], [75, 0], [150, -0.8], [Infinity, -1]],
+  str: [[0.5, 1], [30, 0.3], [60, -0.7], [Infinity, -1]],
+  ffmi: [[17, 1.2], [18.5, 0.4], [20, 0], [22, -0.8], [Infinity, -1.2]]
+};
+const faTier = (tab, v) => { for (const [lim, y] of tab) if (v < lim || (lim === Infinity)) return y; return 0; };
+const faTierLE = (tab, v) => { for (const [lim, y] of tab) if (v <= lim) return y; return tab[tab.length - 1][1]; };
+function realAgeAt(k){
+  const p = cfgRaw().calc || {};
+  if (/^\d{4}-\d{2}-\d{2}$/.test(p.birthDate || "")) return (dateOf(k) - dateOf(p.birthDate)) / (365.2425 * 864e5);
+  return num(p.birth) > 0 ? dateOf(k).getFullYear() - num(p.birth) : null;
+}
+function vo2CompAge(v, sex){
+  const A = FA.huntAges, V = FA.hunt[sex === "w" ? "w" : "m"];
+  if (v >= V[0]) return A[0] + (v - V[0]) / ((V[1] - V[0]) / 10);
+  for (let i = 0; i < V.length - 1; i++) if (v <= V[i] && v >= V[i + 1]) return A[i] + (V[i] - v) / (V[i] - V[i + 1]) * 10;
+  const n = V.length - 1; return A[n] + (V[n] - v) / ((V[n - 1] - V[n]) / 10);
+}
+function faInputs(k){
+  const days = Array.from({length: 30}, (_, i) => addDays(k, -i)).filter(x => !isSickDay(x));
+  const D = x => S.days[x] || {}, avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  const vk = Array.from({length: 61}, (_, i) => addDays(k, -i)).find(x => num(D(x).vo2) > 0);
+  const rhr = avg(days.map(x => num((D(x).sleep || {}).rhr)).filter(v => v > 25));
+  const nights = days.map(x => D(x).sleep || {}).filter(q => num(q.h) >= 3);
+  const sleepH = nights.length >= 7 ? avg(nights.map(q => num(q.h))) : null;
+  const mids = nights.map(q => { const b = hm2min(q.bed); return b == null ? null : (b < 12 * 60 ? b + 1440 : b) + num(q.h) * 30; }).filter(v => v != null);
+  const mAvg = avg(mids), reg = mids.length >= 7 ? Math.sqrt(mids.reduce((a, b) => a + (b - mAvg) ** 2, 0) / mids.length) : null;
+  const st = days.map(x => num(D(x).steps)).filter(v => v > 500), steps = st.length >= 7 ? avg(st) : null;
+  const from = addDays(k, -27), wk = workoutsSorted().filter(w => w.date >= from && w.date <= k && w.status === "done" && !isSickDay(w.date));
+  const acts = wk.filter(w => w.kind === "activity");
+  const hasIm = acts.some(w => w.imMod != null || w.imVig != null);
+  const mod = hasIm ? acts.reduce((a, w) => a + (num(w.imMod) || 0), 0) / 4 : null, vig = hasIm ? acts.reduce((a, w) => a + (num(w.imVig) || 0), 0) / 4 : null;
+  const strMin = wk.filter(w => w.kind !== "activity" || /strength/.test(w.garminType || "")).reduce((a, w) => { const m = num(w.minutes) || (w.start && w.end ? (new Date(w.end) - new Date(w.start)) / 60000 : 60); return a + Math.min(150, Math.max(0, m)); }, 0) / 4;
+  const hm = (num((cfgRaw().calc || {}).height) || 0) / 100;
+  const bs = bodySeries().filter(x => x.k <= k && x.k >= addDays(k, -60) && x.w).slice(-3);
+  const ffmi = bs.length && hm > 1 ? avg(bs.map(x => x.w * (1 - num(x.fat) / 100))) / (hm * hm) : null;
+  const dataDays = days.filter(x => num(D(x).steps) > 0 || num((D(x).sleep || {}).h) > 0).length;
+  return {vo2: vk ? num(D(vk).vo2) : null, vo2At: vk || null, rhr, sleepH, reg, steps, mod, vig, strMin, ffmi, dataDays};
+}
+function faFactors(inp, real, sex){
+  const f = [];
+  const add = (key, icon, label, val, disp, good, years, w, why, kb) => f.push({key, icon, label, val, disp, good, years: val == null ? 0 : years, w, missing: val == null, why, kb});
+  const comp = inp.vo2 != null ? vo2CompAge(inp.vo2, sex) : null;
+  add("vo2", "🫁", "VO2max", inp.vo2, inp.vo2 != null ? `${fmt(inp.vo2, 1)} (wie ${Math.round(comp)}-Jährige)` : "", `über ${fmt(FA.hunt[sex === "w" ? "w" : "m"][0], 1)} für unter 30`, inp.vo2 != null ? clamp((comp - real) * FA.vo2Factor, -FA.vo2Cap, FA.vo2Cap) : 0, 1, "Die VO2max ist der stärkste Einzelwert für ein langes Leben (Blaha 2016). Verglichen wird mit dem Schnitt der HUNT-3-Studie (Loe 2013). Die Teilnehmer waren sehr fit, deshalb ist der Vergleich strenger als die Garmin-Einstufung.", "vo2int");
+  add("rhr", "❤️", "Ruhepuls", inp.rhr, inp.rhr != null ? `${Math.round(inp.rhr)} Schläge (Ø 30 Tage)` : "", "unter 58", inp.rhr != null ? faTierLE(FA.rhr, inp.rhr) : 0, 1, "10 Schläge mehr Ruhepuls hängen mit etwa 9 % höherem Sterberisiko zusammen (Zhang 2016). Ausdauertraining senkt ihn.", "zone2");
+  add("sleep", "😴", "Schlafdauer", inp.sleepH, inp.sleepH != null ? `${fmtH(inp.sleepH)} (Ø 30 Nächte)` : "", "7–9 h", inp.sleepH != null ? faTier(FA.sleep, inp.sleepH) : 0, 1, "Weniger als 6 Stunden pro Nacht hängen mit etwa 12 % höherem Sterberisiko zusammen (Cappuccio 2010).", "sleep");
+  add("reg", "⏰", "Schlaf-Regelmäßigkeit", inp.reg, inp.reg != null ? `Schlafmitte ± ${fmtMin(inp.reg)}` : "", "unter 30 Minuten Streuung", inp.reg != null ? faTier(FA.reg, inp.reg) : 0, 1, "Ein regelmäßiger Schlafrhythmus sagt die Lebenserwartung sogar besser voraus als die Schlafdauer (Windred 2024, UK Biobank).", "wakefix");
+  add("steps", "👟", "Schritte", inp.steps, inp.steps != null ? `${fmt(Math.round(inp.steps / 100) * 100)} pro Tag` : "", "über 8.000", inp.steps != null ? faTier(FA.steps, inp.steps) : 0, FA.overlap, "Der Nutzen steigt bis etwa 8.000–10.000 Schritte (Paluch 2022, Banach 2023).", "steps8k");
+  add("mod", "🚶", "Moderate Minuten (Zone 1–3)", inp.mod, inp.mod != null ? `${fmt(Math.round(inp.mod))} min pro Woche` : "", "150–300 pro Woche", inp.mod != null ? faTier(FA.mod, inp.mod) : 0, FA.overlap, "Die WHO empfiehlt 150–300 Minuten moderate Bewegung pro Woche (Lee 2022).", "zone2");
+  add("vig", "⚡", "Intensive Minuten (Zone 4–5)", inp.vig, inp.vig != null ? `${fmt(Math.round(inp.vig))} min pro Woche` : "", "75–150 pro Woche", inp.vig != null ? faTier(FA.vig, inp.vig) : 0, FA.overlap, "75–150 Minuten intensive Bewegung pro Woche zählen doppelt so viel wie moderate (WHO, Lee 2022).", "vo2int");
+  add("str", "🏋️", "Krafttraining", inp.strMin, `${fmt(Math.round(inp.strMin))} min pro Woche`, "über 60 min pro Woche", faTier(FA.str, inp.strMin), FA.overlap, "30–60 Minuten Krafttraining pro Woche hängen mit 10–20 % niedrigerem Sterberisiko zusammen (Momma 2022).", "volume");
+  add("ffmi", "💪", "Fettfreie Masse (FFMI)", inp.ffmi, inp.ffmi != null ? `${fmt(inp.ffmi, 1)} kg/m²` : "", "über 20", inp.ffmi != null ? faTier(FA.ffmi, inp.ffmi) : 0, 1, "Mehr Muskelmasse hängt mit längerem Leben zusammen (Srikanthan 2014). Gemessen mit deiner Index-Waage.", "protein");
+  return f;
+}
+let faMemo = {};
+function fitnessAgeAt(k){
+  const key = k + "|" + (S.days === faMemo.days && S.settings === faMemo.set ? "" : "x");
+  if (faMemo.days !== S.days || faMemo.set !== S.settings) faMemo = {days: S.days, set: S.settings};
+  if (faMemo[k]) return faMemo[k];
+  const real = realAgeAt(k); if (real == null) return (faMemo[k] = {ok: false, why: "Trag im Kalorienrechner dein Geburtsdatum ein."});
+  const inp = faInputs(k), sex = (cfgRaw().calc || {}).sex === "w" ? "w" : "m";
+  if ((inp.vo2 == null && inp.rhr == null) || inp.dataDays < 14) return (faMemo[k] = {ok: false, real, why: `Noch zu wenig Daten (${inp.dataDays}/14 Tage).`});
+  const f = faFactors(inp, real, sex), sum = f.reduce((a, x) => a + x.years * x.w, 0);
+  return (faMemo[k] = {ok: true, real, age: real + clamp(sum, -FA.cap, FA.cap), f, inp, sex});
+}
+function fitnessAge(k){
+  k = k || todayKey();
+  const xs = Array.from({length: 7}, (_, i) => fitnessAgeAt(addDays(k, -i))).filter(x => x.ok);
+  const today = fitnessAgeAt(k); if (!xs.length) return today;
+  return Object.assign({}, today.ok ? today : xs[0], {age: xs.reduce((a, x) => a + x.age, 0) / xs.length, real: realAgeAt(k)});
+}
+/* Was bringt die nächste Stufe? Gewinn in Jahren inkl. 0,6-Faktor */
+function faTips(fa){
+  const out = [], sex = fa.sex, real = fa.real;
+  const step = (tab, v, higherBetter) => { const cur = faTier(tab, v); for (const [lim, y] of (higherBetter ? tab : tab)) { if (y < cur) { return {lim, y}; } } return null; };
+  fa.f.forEach(x => {
+    if (x.missing) return;
+    let t = null;
+    if (x.key === "vo2") { const ny = clamp((vo2CompAge(x.val + 2, sex) - real) * FA.vo2Factor, -FA.vo2Cap, FA.vo2Cap); t = {gain: x.years - ny, txt: `VO2max ${fmt(x.val, 1)} → ${fmt(x.val + 2, 1)}: 1× pro Woche 4 × 4 Min. Intervalle und 1–2× Zone 2.`}; }
+    else if (x.key === "rhr") { const i = FA.rhr.findIndex(([lim]) => x.val <= lim); if (i > 0) { const lim = FA.rhr[i - 1][0]; t = {gain: x.years - FA.rhr[i - 1][1], txt: `Ruhepuls ${Math.round(x.val)} → ${lim}: mehr lockere Ausdauer (Zone 2), genug Schlaf, wenig Alkohol.`}; } }
+    else if (x.key === "sleep") { if (x.years > 0) t = {gain: x.years, txt: `Schlaf ${fmtH(x.val)} → 7 h oder mehr: nutze den Bettzeit-Rechner unter Erholung.`}; }
+    else if (x.key === "reg") { const i = FA.reg.findIndex(([lim]) => x.val < lim); if (i > 0) t = {gain: x.years - FA.reg[i - 1][1], txt: `Schlafmitte gleichmäßiger (± ${fmtMin(x.val)} → unter ${FA.reg[i - 1][0]} Minuten): feste Aufstehzeit, auch am Wochenende.`}; }
+    else { const tab = FA[x.key === "str" ? "str" : x.key], higher = x.key !== "x"; const i = tab.findIndex(([lim]) => x.val < lim); if (i >= 0 && i < tab.length - 1) { const target = tab[i][0], ny = tab[i + 1][1];
+        const lbl = {steps: `Schritte ${fmt(Math.round(x.val / 100) * 100)} → ${fmt(target)} pro Tag: Spaziergänge nach dem Essen.`, mod: `Moderate Minuten ${fmt(Math.round(x.val))} → ${fmt(target)} pro Woche: Zone 2, zügig gehen, Rad.`, vig: `Intensive Minuten ${fmt(Math.round(x.val))} → ${fmt(target)} pro Woche: Intervalle oder Fußball.`, str: `Krafttraining ${fmt(Math.round(x.val))} → ${fmt(Math.ceil(target))} Min. pro Woche.`, ffmi: `Fettfreie Masse: FFMI ${fmt(x.val, 1)} → ${fmt(target, 1)}: Krafttraining und genug Eiweiß.`}[x.key];
+        t = {gain: (x.years - ny) * x.w, txt: lbl}; } }
+    if (t && t.gain > 0.05) out.push(Object.assign({icon: x.icon, key: x.key}, t));
+  });
+  return out.sort((a, b) => b.gain - a.gain).slice(0, 3);
+}
+function fitnessAgeCard(){
+  const fa = fitnessAge();
+  if (!fa.ok) return `<section class="card" style="margin-bottom:12px"><div class="eyebrow">Fitnessalter</div><p class="small muted" style="margin:6px 0 0">${esc(fa.why || "Noch zu wenig Daten.")}</p></section>`;
+  const old = fitnessAge(addDays(todayKey(), -30)), d = fa.age - fa.real, tr = old.ok ? fa.age - old.age : null;
+  const col = d <= -0.05 ? "var(--good)" : d < 1 ? "var(--warn)" : "var(--bad)";
+  return `<button class="card" data-act="fa-open" style="display:block;width:100%;text-align:left;margin-bottom:12px;cursor:pointer;border:0">
+    <div class="spread"><span class="eyebrow">Fitnessalter</span><span class="small muted">Details ›</span></div>
+    <div class="row" style="align-items:baseline;gap:10px;margin-top:4px"><span style="font-family:var(--display);font-size:52px;font-weight:800;line-height:1">${fmt(fa.age, 1)}</span>${tr != null && Math.abs(tr) >= 0.1 ? `<span class="small num" style="color:${tr < 0 ? "var(--good)" : "var(--warn)"}">${tr < 0 ? "▼" : "▲"} ${fmt(Math.abs(tr), 1)} in 30 Tagen</span>` : ""}</div>
+    <div class="small" style="margin-top:4px">Echtes Alter ${fmt(fa.real, 1)} · <b style="color:${col}">${fmt(Math.abs(d), 1)} Jahre ${d <= 0 ? "jünger" : "älter"}</b></div>
+    <div class="small muted" style="margin-top:4px">Schätzung aus deinen Daten, angelehnt an das WHOOP-Prinzip und Studien (HUNT, Blaha 2016). Kein medizinischer Wert.</div></button>`;
+}
+let faOpenKey = null;
+function openFitnessAge(){ faOpenKey = null; openSheet("Fitnessalter", "", null, () => { faOpenKey = null; }); renderFitnessAge(); }
+function renderFitnessAge(){
+  const fa = fitnessAge(); if (!fa.ok) { $("#sheet-b").innerHTML = `<p class="small muted">${esc(fa.why || "")}</p>`; return; }
+  const pts = []; for (let i = 25; i >= 0; i--) { const k = addDays(todayKey(), -7 * i), x = fitnessAgeAt(k); if (x.ok) pts.push({k, v: x.age}); }
+  const d = fa.age - fa.real, rows = fa.f.slice().sort((a, b) => Math.abs(b.years * b.w) - Math.abs(a.years * a.w)), mx = 6;
+  const tips = faTips(fa);
+  $("#sheet-b").innerHTML = `<div style="text-align:center;margin-bottom:10px"><div style="font-family:var(--display);font-size:64px;font-weight:800;line-height:1">${fmt(fa.age, 1)}</div>
+      <div class="small" style="margin-top:4px">Echtes Alter ${fmt(fa.real, 1)} · <b style="color:${d <= 0 ? "var(--good)" : "var(--warn)"}">${fmt(Math.abs(d), 1)} Jahre ${d <= 0 ? "jünger" : "älter"}</b></div></div>
+    ${pts.length >= 3 ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:4px">Verlauf · 6 Monate</div>${trendSvg(pts, {label: "Fitnessalter", unit: "Jahre", dec: 1, pad: 0.5, ref: fa.real, refLabel: "echtes Alter"})}</section>` : ""}
+    <section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">Was reinzählt</div><div class="stack" style="gap:8px">${rows.map(x => { const y = x.years * x.w, wpx = Math.min(50, Math.abs(y) / mx * 50);
+      return `<button data-act="fa-row" data-k="${x.key}" style="all:unset;display:block;cursor:pointer"><div style="display:grid;grid-template-columns:24px 1fr 64px;gap:8px;align-items:center"><span>${x.icon}</span><span style="min-width:0"><b class="small">${esc(x.label)}</b><span class="small muted" style="display:block">${x.missing ? "fehlt" : esc(x.disp)} · gut: ${esc(x.good)}</span></span><span class="num small" style="text-align:right;color:${x.missing ? "var(--muted)" : y < 0 ? "var(--good)" : y > 0 ? "var(--bad)" : "var(--ink-2)"}"><b>${x.missing ? "–" : (y > 0 ? "+" : y < 0 ? "−" : "±") + fmt(Math.abs(y), 1)}</b> J.</span></div>
+        <div style="position:relative;height:6px;margin:6px 0 0 32px;background:var(--surface-2);border-radius:3px"><i style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--line)"></i>${!x.missing && y ? `<i style="position:absolute;top:0;bottom:0;${y < 0 ? `right:50%;width:${wpx}%;background:var(--good)` : `left:50%;width:${wpx}%;background:var(--bad)`};border-radius:3px"></i>` : ""}</div>
+        ${faOpenKey === x.key ? `<div class="small ink2" style="margin:8px 0 0 32px">${esc(x.why)}${x.w < 1 ? " Zählt mit Faktor 0,6, weil es teilweise schon in VO2max und Ruhepuls steckt." : ""} <span class="chip" data-act="tip" data-id="${x.kb}" style="cursor:pointer">Mehr dazu ›</span></div>` : ""}</button>`; }).join("")}</div></section>
+    ${tips.length ? `<section class="card" style="margin-bottom:12px"><div class="eyebrow" style="margin-bottom:8px">So wirst du jünger</div><div class="stack" style="gap:8px">${tips.map(t => `<div class="row" style="flex-wrap:nowrap;align-items:flex-start;gap:10px"><span style="font-size:18px">${t.icon}</span><span class="small" style="flex:1;min-width:0">${esc(t.txt)}</span><b class="small num" style="color:var(--good);white-space:nowrap">−${fmt(t.gain, 1)} J.</b></div>`).join("")}</div></section>` : ""}
+    <p class="small muted" style="margin:0">Schätzung aus deinen Daten der letzten 30 Tage, angezeigt als Schnitt der letzten 7 Tage. Angelehnt an das WHOOP-Prinzip (gleiche 9 Faktoren) und Studien, aber mit eigener, offen gelegter Rechnung. Kein medizinischer Wert. Krankheitstage werden nicht mitgezählt.</p>`;
+}
+
 /* Körperzusammensetzung (Garmin Index S2): Körperfett, Fett- und Muskelmasse mit Veränderung zu vor ca. 4 Wochen */
 function bodyCompCard(){
   const ser = bodySeries().filter(x => x.w); if (!ser.length) return "";
@@ -4326,6 +4467,8 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "fa-open": openFitnessAge(); break;
+    case "fa-row": faOpenKey = faOpenKey === D.k ? null : D.k; renderFitnessAge(); break;
     case "cut-pause": { saveCfg({goalType: "maintain", cutPausedAt: todayKey(), calc: Object.assign({}, cfgRaw().calc, {pace: 0})}); toast("Ziel: Gewicht halten. Wechsle in 2–4 Wochen im Kalorienrechner wieder auf Cut."); render(); break; }
     case "cut-continue": saveCfg({cutFatigueSnooze: addDays(todayKey(), 7)}); render(); break;
     case "break-now": { const t = todayKey(), to = addDays(t, 6); saveCfg({calc: Object.assign({}, cfgRaw().calc, {breakFrom: t, breakTo: to, cutStart: addDays(t, 7)})}); toast(`Diätpause bis ${fmtShort(to)}: diese Woche Erhaltungskalorien.`); render(); break; }
