@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:58";
+const APP_VERSION = "15.10.2026 20:11";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -710,8 +710,23 @@ const zoneTarget = z => z === "good" ? [14, 18] : z === "warn" ? [10, 14] : [0, 
 /* Regenerationsplan: Bewegung, Kälte & Wärme, Entspannung, Schlaf, Ernährung — passend zu Erholung, Belastung und Plan. */
 /* Regenerationstipps nur aus dem, was du wirklich trainiert hast (heute und gestern) und deiner Belastung, höchstens 4.
    Ohne harte Einheit gibt es keine allgemeinen Tipps wie Eisbad, sondern nur den Hinweis, dass nichts Besonderes nötig ist. */
+/* Genesungs-Tipps, solange krank (nach Symptomen). Ehrlich eingeordnet, keine Dosierungen. */
+function sickRecoveryPlan(){
+  const h = healthCfg(), sy = h.symptoms || [], fever = hasFever(h), g = waterGoal(todayKey()), out = [];
+  const add = (cat, key, title, text) => out.push({cat, key, title, text, prio: 5});
+  add("Ruhe", "s-sleep", "Viel schlafen und ausruhen", "Schlaf ist das Wichtigste für die Abwehr. Heute früher ins Bett, tagsüber hinlegen ist okay. Kein Training, auch kein lockeres, solange du dich krank fühlst.");
+  add("Trinken", "s-drink", `Heute ${fmtL(g.total)} trinken`, "Am besten warm: Tee, Wasser, Brühe. Warme Getränke lösen Schleim und tun dem Hals gut." + (fever ? " Bei Fieber verlierst du mehr Wasser, deshalb ist dein Ziel höher." : ""));
+  add("Essen", "s-food", "Eiweiß halten, Obst und Gemüse dazu", "Iss normal weiter, auch wenn der Appetit fehlt: Eiweiß für die Abwehr und die Muskeln, dazu Obst und Gemüse für Vitamine und Ballaststoffe. Eine warme Hühnersuppe liefert Flüssigkeit, Salz und Eiweiß auf einmal. Extra Vitamin C verkürzt eine schon begonnene Erkältung laut Studien nicht, Obst schadet aber nie.");
+  if (sy.includes("hals") || sy.includes("husten") || sy.includes("husten_tief")) add("Hals und Husten", "s-honey", "Honig und Gurgeln", "Ein Löffel Honig in warmem Tee kann den Hustenreiz lindern. Gurgeln mit warmem Salzwasser beruhigt den Hals.");
+  if (sy.includes("schnupfen") || sy.includes("niesen")) add("Nase", "s-nose", "Nase mit Salzwasser spülen", "Eine Nasenspülung oder ein Spray mit Salzwasser kann die verstopfte Nase lindern. Kopf beim Schlafen etwas höher legen.");
+  if (sy.includes("uebel") || sy.includes("durchfall")) add("Magen-Darm", "s-gi", "Leichte Kost und Elektrolyte", "Reis, Banane, Zwieback und Brühe in kleinen Portionen. Trink in kleinen Schlucken, gut ist eine Elektrolytlösung aus der Apotheke.");
+  add("Mittel", "s-zinc", "Zink: kann man probieren", "Zink-Lutschtabletten verkürzten eine Erkältung in Studien um etwa 2 Tage, wenn man sie in den ersten 24 Stunden beginnt. Die Beweislage ist aber schwach, Übelkeit und schlechter Geschmack sind häufig. Packungsbeilage beachten oder in der Apotheke fragen.");
+  add("Verzichten", "s-avoid", "Kein Alkohol, keine Sauna, kein Eisbad", "Alkohol stört Schlaf und Abwehr. Sauna und Kälte belasten den Kreislauf zusätzlich" + (fever ? ", bei Fieber erst recht." : "."));
+  add("Andere schützen", "s-hands", "Hände waschen, Abstand halten", "Bis es dir besser geht: kein Gym und kein Mannschaftstraining, damit du niemanden ansteckst.");
+  return out;
+}
 function recoveryPlan(k){
-  if (k === todayKey() && sickNow()) return [{cat: "Gesundheit", key: "sick", title: "Erholung hat Vorrang", text: "Du bist krank eingetragen: schlafen, trinken, ausruhen. Keine Sauna, kein Eisbad und kein Training, bis es besser wird.", prio: 10}];
+  if (k === todayKey() && sickNow()) return sickRecoveryPlan();
   const c = cfg(), d = S.days[k] || {}, sl = d.sleep || {}, ci = d.checkin || {}, y = addDays(k, -1);
   const out = [], add = (cat, key, title, text, prio) => { const ex = out.find(x => x.key === key); if (ex) { if (prio > ex.prio) Object.assign(ex, {cat, title, text, prio}); } else out.push({cat, key, title, text, prio}); };
   const sessions = workoutsSorted().filter(w => (w.date === k && (w.status === "done" || w.status === "active")) || (w.date === y && w.status === "done"));
@@ -1075,7 +1090,7 @@ function recoverySection(k){
       ${ai ? `<div class="hint" style="margin:6px 0 10px;white-space:pre-wrap">${esc(ai)}</div>` : ""}
       <div class="list">${tips.map(([t, x]) => `<div class="li" style="align-items:flex-start"><div class="grow"><div class="title" style="font-weight:600">${esc(t)}</div><div class="small ink2">${esc(x)}</div></div></div>`).join("")}</div>
       ${(() => { const pl = recoveryPlan(k), done = d.recDone || {}; const cats = [...new Set(pl.map(x => x.cat))];
-        return `<div class="eyebrow" style="margin:14px 0 4px">Deine Regeneration nach deinem Training · ${pl.filter(x => done[x.key]).length} / ${pl.length} erledigt</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<button class="planitem" data-act="plan-done" data-key="${x.key}" data-date="${k}" aria-pressed="${done[x.key] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></span></button>`).join("")).join(""); })()}
+        return `<div class="eyebrow" style="margin:14px 0 4px">${k === todayKey() && sickNow() ? "Schneller gesund werden" : "Deine Regeneration nach deinem Training"} · ${pl.filter(x => done[x.key]).length} / ${pl.length} erledigt</div>` + cats.map(cat => `<div class="plancat">${esc(cat)}</div>` + pl.filter(x => x.cat === cat).map(x => `<button class="planitem" data-act="plan-done" data-key="${x.key}" data-date="${k}" aria-pressed="${done[x.key] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${esc(x.title)}</b><span class="small ink2" style="display:block">${esc(x.text)}</span></span></button>`).join("")).join(""); })()}
       ${ci ? `<div class="small muted" style="margin-top:6px">Check-in: Energie ${ci.energy}/5 · Muskelkater ${ci.soreness}/5 <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="ci-reset" data-date="${k}">ändern</button></div>` : ""}
     </div>
   </section>`;
