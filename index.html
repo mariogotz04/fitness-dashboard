@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:39";
+const APP_VERSION = "15.10.2026 19:43";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1058,6 +1058,7 @@ function recoverySection(k){
       <button class="dialbtn" data-act="rec-detail" data-date="${k}" aria-label="Belastung im Detail">${dial(st / 21, "var(--strain)", fmt(st, 1), "", "Belastung", (d.steps ? fmt(d.steps) + " Schritte<br>" : "") + (r ? `Ziel heute ${tgt[0]}–${tgt[1]}` : "Skala 0–21"))}</button>
       <button class="dialbtn" data-act="sleep-detail" data-date="${k}" aria-label="Schlaf im Detail">${dial(sl && sl.h ? sl.h / need : 0, "var(--sleep)", sl && sl.h ? dialHM(sl.h) : "–", "", "Schlaf", sl && sl.h ? `${Math.round(sl.h / need * 100)} % vom Bedarf` : `Bedarf ${fmtH(need)}`)}</button>
     </div>
+    ${fitnessAgeMini()}
     ${hasGarmin && garminSt.last_error && (!garminSt.last_ok_at || garminSt.last_error_at > garminSt.last_ok_at) ? `<div class="hint" style="border:1.5px solid var(--warn)">${esc(garminErrMsg(garminSt.last_error))}</div>` : ""}
     ${hasGarmin || d.garminAt ? `<div class="row" style="justify-content:center;gap:10px"><span class="small muted">${d.garminAt ? "Garmin-Stand " + esc(d.garminAt) + " Uhr" : "Noch keine Garmin-Daten für diesen Tag"}</span>${hasGarmin ? `<button class="btn ghost" style="min-height:0;padding:4px 8px" data-act="garmin-now" ${garminBusy ? "disabled" : ""}>${garminBusy ? "Wird abgerufen …" : "Garmin-Daten abrufen"}</button>` : ""}</div>` : ""}
     ${r ? `<div class="row" style="justify-content:center;margin-top:12px">${r.parts.map(p => `<span class="chip ${zoneOf(p.score)}" title="Wirkt mit ${Math.round(p.score)} von 100 Punkten auf deine Erholung">${p.label} ${p.disp}</span>`).join("")}</div>` : ""}
@@ -3651,6 +3652,12 @@ function faTips(fa){
     if (t && t.gain > 0.05) out.push(Object.assign({icon: x.icon, key: x.key}, t));
   });
   return out.sort((a, b) => b.gain - a.gain).slice(0, 3);
+}
+/* Kompakt für Heute: eine Zeile unter den drei Kreisen */
+function fitnessAgeMini(){
+  const fa = fitnessAge(); if (!fa.ok) return "";
+  const d = fa.age - fa.real, col = d <= -0.05 ? "var(--good)" : d < 1 ? "var(--warn)" : "var(--bad)";
+  return `<button data-act="fa-open" style="all:unset;display:flex;justify-content:center;align-items:baseline;gap:8px;width:100%;margin:10px 0 2px;cursor:pointer"><span class="small muted">🎂 Fitnessalter</span><b style="font-family:var(--display);font-size:22px">${fmt(fa.age, 1)}</b><span class="small" style="color:${col}">${fmt(Math.abs(d), 1)} Jahre ${d <= 0 ? "jünger" : "älter"}</span><span class="small muted">›</span></button>`;
 }
 function fitnessAgeCard(){
   const fa = fitnessAge();
