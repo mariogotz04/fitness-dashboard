@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 20:32";
+const APP_VERSION = "15.10.2026 20:51";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -716,37 +716,62 @@ const JQ = [
   ["cold", "🧊", "Kälte (Eisbad oder kalt duschen)?"], ["mag", "💊", "Magnesium genommen?"], ["travel", "✈️", "Gereist oder woanders geschlafen?"], ["sickq", "🤧", "Angeschlagen oder krank gefühlt?"]
 ];
 const JQ_DEFAULT = ["alk", "caf", "screen", "late", "stress", "sore", "lowen", "nap"];
-const journalQs = () => { const q = cfgRaw().journalQs; return (Array.isArray(q) && q.length ? q : JQ_DEFAULT).map(id => JQ.find(x => x[0] === id)).filter(Boolean); };
+const jqAll = () => JQ.concat((cfgRaw().journalCustom || []).map(x => [x.id, x.ic || "📝", x.q, x.hidden]));
+const journalQs = () => { const q = cfgRaw().journalQs, all = jqAll(); return (Array.isArray(q) && q.length ? q : JQ_DEFAULT).map(id => all.find(x => x[0] === id && !x[3])).filter(Boolean); };
 function journalCard(k){
   if (k !== todayKey()) return "";
   const d = S.days[k] || {}, j = d.journal || {}, qs = journalQs(), done = qs.filter(q => j[q[0]] != null).length;
-  if (done === qs.length && !journalEdit) return `<div class="small muted" style="margin-top:10px;text-align:center">📓 Journal erledigt (${done} Fragen) · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-edit">ändern</button> · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-insights">Auswertung</button></div>`;
-  return `<div class="checkin" style="margin-top:12px"><div class="spread" style="margin-bottom:8px"><span class="eyebrow">📓 Journal · ${done}/${qs.length}</span><button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-qs">Fragen wählen</button></div>
+  if (done === qs.length && !journalEdit) return `<div class="small muted" style="margin-top:10px;text-align:center">📓 Journal erledigt (${done} Fragen) · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-edit">ändern</button> · <button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-insights">Auswertung</button></div>${journalOpenLink()}`;
+  return `${journalOpenLink()}<div class="checkin" style="margin-top:12px"><div class="spread" style="margin-bottom:8px"><span class="eyebrow">📓 Journal · ${done}/${qs.length}</span><button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-qs">Fragen wählen</button></div>
     <div class="stack" style="gap:6px">${qs.map(([id, ic, q]) => `<div class="spread" style="gap:8px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${ic} ${esc(q)}</span><div class="seg" role="group" style="flex:none">${[[true, "Ja"], [false, "Nein"]].map(([v, l]) => `<button type="button" data-act="journal-a" data-q="${id}" data-v="${v}" aria-pressed="${j[id] === v}" style="min-height:30px;padding:2px 12px">${l}</button>`).join("")}</div></div>`).join("")}</div>
     <p class="small muted" style="margin:8px 0 0">Deine Erholung kommt nur aus den Messwerten der Nacht. Das Journal zeigt dir nach ein paar Wochen, was sie besser oder schlechter macht.</p></div>`;
 }
 let journalEdit = false;
+/* Offene Tage der letzten 7 Tage (ohne heute und ohne Krankheitstage). Antworten gehören zum Morgen-Datum (Fragen zu „gestern“). */
+function journalOpenDays(){
+  const t = todayKey(), qs = journalQs();
+  return Array.from({length: 7}, (_, i) => addDays(t, -i - 1)).filter(k => !isSickDay(k) && (!cfgRaw().journalSince || k >= cfgRaw().journalSince) && qs.some(q => ((S.days[k] || {}).journal || {})[q[0]] == null));
+}
+function journalOpenLink(){
+  const n = journalOpenDays().length;
+  return n ? `<div class="small" style="margin-top:6px;text-align:center"><button class="btn ghost" style="min-height:0;padding:2px 6px" data-act="journal-backfill">📓 ${n} Tag${n > 1 ? "e" : ""} offen · nachtragen</button></div>` : "";
+}
+function openJournalBackfill(){
+  const qs = journalQs(), days = journalOpenDays();
+  if (!days.length) { toast("Alles nachgetragen."); closeSheet(); return; }
+  const wd = k => WDL[dateOf(k).getDay()].slice(0, 2);
+  openSheet("Journal nachtragen", days.map(k => { const j = (S.days[k] || {}).journal || {}, y = addDays(k, -1);
+    return `<div class="eyebrow" style="margin:12px 0 6px">${wd(k)} ${fmtShort(k)} (Fragen zu ${wd(y)} ${fmtShort(y)})</div><div class="stack" style="gap:6px">${qs.map(([id, ic, q]) => `<div class="spread" style="gap:8px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${ic} ${esc(q.replace(/^Heute /, "An dem Morgen "))}</span><div class="seg" role="group" style="flex:none">${[[true, "Ja"], [false, "Nein"]].map(([v, l]) => `<button type="button" data-act="journal-a" data-date="${k}" data-q="${id}" data-v="${v}" aria-pressed="${j[id] === v}" style="min-height:30px;padding:2px 12px">${l}</button>`).join("")}</div></div>`).join("")}</div>`; }).join(""), null, () => { journalBf = false; });
+  journalBf = true;
+}
+let journalBf = false;
 /* Auswertung: Erholung an Tagen mit „Ja“ vs. „Nein“ (mind. 3× je Antwort in 90 Tagen) */
+const JMIN = 5; // wie WHOOP: erst ab 5× Ja und 5× Nein
 function journalInsights(){
   const t = todayKey(), out = [];
-  JQ.forEach(([id, ic, q]) => {
+  jqAll().forEach(([id, ic, q]) => {
     const yes = [], no = [];
-    for (let i = 0; i < 90; i++) { const k = addDays(t, -i), j = (S.days[k] || {}).journal; if (!j || j[id] == null) continue; const r = recoveryOf(k); if (!r) continue; (j[id] ? yes : no).push(r.score); }
-    if (yes.length >= 3 && no.length >= 3) { const a = yes.reduce((x, y) => x + y, 0) / yes.length, b = no.reduce((x, y) => x + y, 0) / no.length; out.push({id, ic, q, diff: a - b, yes: yes.length, no: no.length}); }
+    for (let i = 0; i < 90; i++) { const k = addDays(t, -i), j = (S.days[k] || {}).journal; if (!j || j[id] == null || isSickDay(k)) continue; const r = recoveryOf(k); if (!r) continue; (j[id] ? yes : no).push(r.score); }
+    if (yes.length >= JMIN && no.length >= JMIN) { const a = yes.reduce((x, y) => x + y, 0) / yes.length, b = no.reduce((x, y) => x + y, 0) / no.length; out.push({id, ic, q, diff: a - b, yes: yes.length, no: no.length}); }
     else if (yes.length + no.length) out.push({id, ic, q, diff: null, yes: yes.length, no: no.length});
   });
   return out.sort((a, b) => (b.diff == null ? -1 : Math.abs(b.diff)) - (a.diff == null ? -1 : Math.abs(a.diff)));
 }
 function openJournalInsights(){
   const ins = journalInsights();
-  openSheet("Journal-Auswertung", `<p class="small muted" style="margin:0 0 12px">So unterscheidet sich deine Erholung an Tagen mit „Ja“ von Tagen mit „Nein“ (letzte 90 Tage). Ab 3 Antworten je Seite zeigt die App einen Wert, je mehr Tage, desto verlässlicher.</p>
-    ${ins.length ? `<div class="stack" style="gap:8px">${ins.map(x => `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${x.ic} ${esc(x.q)}<span class="muted" style="display:block;font-size:12px">${x.yes}× Ja · ${x.no}× Nein</span></span>${x.diff == null ? `<span class="small muted">noch zu wenig</span>` : `<b class="num" style="color:${x.diff >= 0 ? "var(--good)" : "var(--bad)"}">${x.diff >= 0 ? "+" : "−"}${fmt(Math.abs(x.diff))} %</b>`}</div>`).join("")}</div>` : `<div class="empty">Beantworte ein paar Tage dein Journal, dann siehst du hier, was deine Erholung beeinflusst.</div>`}
-    <p class="small muted" style="margin:12px 0 0">Das sind Zusammenhänge aus deinen eigenen Tagen, keine Beweise. Ein großer Unterschied mit vielen Tagen ist aber ein guter Hinweis.</p>`);
+  const need = x => [x.yes < JMIN ? `${JMIN - x.yes}× Ja` : "", x.no < JMIN ? `${JMIN - x.no}× Nein` : ""].filter(Boolean).join(" und ");
+  openSheet("Journal-Auswertung", `<p class="small muted" style="margin:0 0 12px">So unterscheidet sich deine Erholung an Tagen mit „Ja“ von Tagen mit „Nein“ (letzte 90 Tage, ohne Krankheitstage). Ab 5 Antworten je Seite zeigt die App einen Wert, je mehr Tage, desto verlässlicher.</p>
+    ${ins.length ? `<div class="stack" style="gap:8px">${ins.map(x => `<div class="spread" style="gap:10px;flex-wrap:nowrap"><span class="small" style="flex:1;min-width:0">${x.ic} ${esc(x.q)}<span class="muted" style="display:block;font-size:12px">${x.yes}× Ja · ${x.no}× Nein</span></span>${x.diff == null ? `<span class="small muted" style="text-align:right">noch ${need(x)} nötig</span>` : Math.abs(x.diff) < 3 ? `<span class="small muted">kaum Unterschied</span>` : `<b class="num" style="color:${x.diff >= 0 ? "var(--good)" : "var(--bad)"}">${x.diff >= 0 ? "+" : "−"}${fmt(Math.abs(x.diff))} Punkte</b>`}</div>`).join("")}</div>` : `<div class="empty">Beantworte ein paar Tage dein Journal, dann siehst du hier, was deine Erholung beeinflusst.</div>`}
+    <p class="small muted" style="margin:12px 0 0">Das sind Zusammenhänge aus deinen eigenen Tagen, keine Beweise. Achtung bei Gewohnheiten, die meist zusammen vorkommen (z. B. Alkohol und spät ins Bett). Dann lässt sich nicht trennen, was wirkt. <span class="chip" data-act="tip" data-id="journal" style="cursor:pointer">📓 Journal richtig lesen ›</span></p>`);
 }
 function openJournalQs(){
   const sel = new Set(journalQs().map(q => q[0]));
   openSheet("Journal-Fragen", `<p class="small muted" style="margin:0 0 10px">Wähle die Fragen, die du jeden Morgen beantworten willst. Weniger ist oft besser.</p>
-    <div class="stack" style="gap:4px">${JQ.map(([id, ic, q]) => `<label class="row small" style="gap:8px;min-height:34px"><input type="checkbox" data-jq="${id}" ${sel.has(id) ? "checked" : ""}> ${ic} ${esc(q)}</label>`).join("")}</div>
+    <div class="stack" style="gap:4px">${jqAll().filter(x => !x[3]).map(([id, ic, q]) => `<div class="row small" style="gap:8px;min-height:34px;flex-wrap:nowrap"><label class="row" style="gap:8px;flex:1;min-width:0"><input type="checkbox" data-jq="${id}" ${sel.has(id) ? "checked" : ""}> ${ic} ${esc(q)}</label>${id.startsWith("c_") ? `<button class="x" data-act="jq-del" data-id="${id}" aria-label="Eigene Frage löschen">×</button>` : ""}</div>`).join("")}</div>
+    <p class="small muted" id="jqwarn" style="margin:8px 0 0">${sel.size > 10 ? "Mehr als etwa 10 Fragen werden schnell lästig. Lieber wenige, dafür jeden Tag." : ""}</p>
+    <div class="section-title" style="margin-top:12px">+ Eigene Frage</div>
+    <div class="row" style="flex-wrap:nowrap;gap:6px"><input class="inp" id="jqic" placeholder="🙂" maxlength="4" style="width:56px;text-align:center"><input class="inp" id="jqq" placeholder="z. B. Gestern Kreatin genommen?" style="flex:1;min-width:0"><button class="btn" data-act="jq-add">Hinzufügen</button></div>
+    <p class="small muted" style="margin:4px 0 0">Eine Ja/Nein-Frage zu gestern.</p>
     <div class="row" style="margin-top:12px"><button class="btn primary" data-act="journal-qs-save">Speichern</button></div>`);
 }
 function feelOf(k){
@@ -2784,7 +2809,7 @@ async function runExport(){
 /* ---------- Tipps: Informationscenter ----------
    Wissen aus deinen Quellen (H = Hessmann „Sporternährung für jeden Tag“, N = Zusammenfassung NotebookLM,
    S = Spieltagsvorbereitung Fußball), plus „Für dich heute“ aus deinen Daten. Jeder Tipp hat einen Deep Dive. */
-const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)", K: "Briefing Körperfettreduktion", P: "Huberman, Protocols (Diary of a CEO)", E: "Evidenz-Wissensbasen 15.10. (Training, Ernährung, Schlaf, Infekte, Fitnessalter)"};
+const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)", K: "Briefing Körperfettreduktion", P: "Huberman, Protocols (Diary of a CEO)", E: "Evidenz-Wissensbasen 15.10. (Training, Ernährung, Schlaf, Infekte, Fitnessalter)", W: "WHOOP-Funktionsanalyse"};
 const TIP_CATS = [["", "Alle"], ["ernaehrung", "🍽️ Ernährung"], ["training", "🏋️ Training"], ["erholung", "🌿 Erholung"], ["schlaf", "😴 Schlaf"], ["trinken", "💧 Trinken"], ["fussball", "⚽ Fußball"], ["supps", "💊 Supplements"]];
 const KB = [
   {id: "protein", cat: "ernaehrung", icon: "🥩", title: "1,6–2,2 g Eiweiß pro kg Körpergewicht", short: "Die wichtigste Stellschraube für Muskelaufbau und -erhalt, egal ob Aufbau, Diät oder Halten.", why: "Muskeln bestehen aus Eiweiß. Bekommt der Körper zu wenig, kann er nach dem Training kaum neue Muskelmasse aufbauen, und im Kaloriendefizit baut er sie sogar ab. Eiweiß sättigt außerdem am stärksten.", how: ["Rechne dein Ziel: Körpergewicht × 1,6 bis 2,2.", "Verteile es auf 3–4 Mahlzeiten.", "Gute Quellen: Skyr, Magerquark, Hähnchen, Pute, Eier, Thunfisch, körniger Frischkäse, Linsen.", "Im Cut rechnet die App mit deiner fettfreien Masse, das landet meist etwas darüber und ist für Muskelerhalt belegt."], src: "N"},
@@ -2819,6 +2844,7 @@ const KB = [
   {id: "vo2", cat: "training", icon: "🫁", title: "VO2max: der wichtigste Langlebigkeits-Wert", short: "Wie viel Sauerstoff dein Körper maximal verwerten kann.", why: "Laut deiner Quelle ist die VO2max der stärkste Einzelwert für ein langes, gesundes Leben. Sie lässt sich in jedem Alter verbessern.", how: ["Zone-2-Grundlage plus intensive Intervalle.", "Die Uhr misst sie bei Läufen oder zügigen Gehrunden mit GPS.", "Verlauf unter Körper → Fitness-Werte."], src: "N"},
   {id: "stretch", cat: "erholung", icon: "🧘", title: "Statisch dehnen nach dem Sport", short: "30–60 Sekunden pro Dehnung, mindestens 5 Minuten pro Muskelgruppe und Woche.", why: "So verbessert sich die Beweglichkeit am stärksten. Vor Krafttraining, Sprints und Fußball dagegen dynamisch aufwärmen, weil statisches Dehnen kurzfristig Kraft kostet.", how: ["Nach dem Training Waden, Oberschenkel, Hüfte und Brust dehnen.", "Vorher: Beinschwingen, Ausfallschritte, lockere Sprints."], src: "N"},
   {id: "mobility", cat: "erholung", icon: "🦵", title: "Mobility-Routine Unterkörper (10 Min.)", short: "Fünf Übungen für Hüfte, Knie und Oberschenkel, ideal nach Fußball.", why: "Fußball macht Hüftbeuger und Oberschenkel kurz und fest. Diese kurze Routine hält Hüfte und Knie beweglich und lässt sich nach dem Training oder abends machen.", how: ["Tiefe Hocke halten, Fersen am Boden (30–60 s).", "Hüftrotation im Sitzen (90/90), beide Seiten (30–60 s).", "Tauben-Dehnung, je Seite 30–60 s.", "Kniende Hüftbeuger-Dehnung, je Seite 30–60 s.", "Couch Stretch an der Wand, je Seite 30–60 s.", "Bei Knie- oder Schulterbeschwerden nur bis zu leichtem Ziehen."], src: "C"},
+  {id: "journal", cat: "erholung", icon: "📓", title: "Journal richtig lesen", short: "Die Journal-Auswertung zeigt Zusammenhänge, keine Beweise.", why: "Die App vergleicht deine Erholung nach Tagen mit Ja mit Tagen mit Nein. Ein Unterschied heißt nicht automatisch, dass die Gewohnheit ihn verursacht. Wer zum Beispiel Zink nur nimmt, wenn er krank ist, sieht danach schlechtere Werte, obwohl Zink nicht schuld ist.", how: ["Erst ab 5× Ja und 5× Nein zeigt die App einen Wert, je mehr Tage, desto verlässlicher.", "Beantworte auch die Nein-Tage, sonst fehlt der Vergleich.", "Willst du etwas testen, ändere 2–4 Wochen lang nur diese eine Gewohnheit."], src: "W"},
   {id: "sicktrain", cat: "erholung", icon: "🚦", title: "Training bei Erkältung: rot, gelb, grün", short: "Nur Schnupfen: höchstens locker. Fieber oder Gliederschmerzen: gar nicht.", why: "Der Konsens des Internationalen Olympischen Komitees (2022) arbeitet mit einer Ampel. Bei Fieber, Gliederschmerzen, starker Müdigkeit oder Symptomen in Brust oder Magen ist Training riskant. Infekte können in seltenen Fällen den Herzmuskel angreifen.", how: ["Rot (Fieber, Schüttelfrost, Gliederschmerzen, tiefer Husten, Magen-Darm): kein Training.", "Gelb (nur Schnupfen oder Halskratzen): höchstens lockere Bewegung. Kein Gym, kein Mannschaftstraining, damit du niemanden ansteckst.", "Grün: 24 Stunden fieberfrei ohne Fiebermittel, dann über einige Tage stufenweise zurück.", "Atemnot, Brustschmerz, Herzrasen oder Verwirrtheit: ärztlich abklären, im Notfall 112.", "In der App: Zahnrad → Gesundheit → Krank, dann passt sich alles an."], src: "E"},
   {id: "cold", cat: "erholung", icon: "🧊", title: "Kälte nicht direkt nach Krafttraining", short: "Eisbad oder sehr kalte Dusche erst mit etwa 6 Stunden Abstand.", why: "Kälte dämpft die Signale, die nach dem Krafttraining das Muskelwachstum anstoßen. Nach Fußball oder an freien Tagen ist Kälte gut gegen Muskelkater.", how: ["Nach dem Krafttraining lieber Sauna oder warm duschen.", "Eisbad: 10 Min. bei 10–15 °C."], src: "N"},
   {id: "hrv", cat: "erholung", icon: "📉", title: "HRV als Ampel für dein Training", short: "Liegt die HRV deutlich unter deinem Schnitt, ist dein Körper noch nicht erholt.", why: "Die Herzfrequenzvariabilität zeigt, wie entspannt dein Nervensystem ist. Ein deutlich niedrigerer Wert oder ein höherer Ruhepuls sind ein Signal für mehr Erholung.", how: ["HRV unter Schnitt: locker trainieren oder Ruhetag.", "Erholung im Detail: unter Heute auf den Erholungs-Kreis tippen."], src: "N"},
@@ -4662,7 +4688,13 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
-    case "journal-a": { const k = todayKey(), d = getDay(k) || {}; d.journal = Object.assign({}, d.journal || {}, {[D.q]: D.v === "true"}); saveDay(k, d); if (journalQs().every(q => d.journal[q[0]] != null)) { journalEdit = false; toast("Journal gespeichert."); } break; }
+    case "journal-a": { const k = D.date || todayKey(), d = getDay(k) || {}; d.journal = Object.assign({}, d.journal || {}, {[D.q]: D.v === "true"}); saveDay(k, d);
+      if (journalBf) { b.parentElement.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false")); break; }
+      if (journalQs().every(q => d.journal[q[0]] != null)) { journalEdit = false; toast("Journal gespeichert."); } break; }
+    case "journal-backfill": openJournalBackfill(); break;
+    case "jq-add": { const q = (($("#jqq") || {}).value || "").trim(); if (q.length < 4) { toast("Schreib eine kurze Ja/Nein-Frage."); break; } const ic = (($("#jqic") || {}).value || "").trim() || "📝", id = "c_" + Date.now().toString(36), c = cfgRaw();
+      saveCfg({journalCustom: (c.journalCustom || []).concat([{id, ic, q: /\?$/.test(q) ? q : q + "?"}]), journalQs: journalQs().map(x => x[0]).concat(id)}); toast("Frage hinzugefügt."); openJournalQs(); break; }
+    case "jq-del": { const c = cfgRaw(); saveCfg({journalCustom: (c.journalCustom || []).map(x => x.id === D.id ? Object.assign({}, x, {hidden: true}) : x), journalQs: journalQs().map(x => x[0]).filter(x => x !== D.id)}); toast("Frage ausgeblendet. Alte Antworten bleiben gespeichert."); openJournalQs(); break; }
     case "journal-edit": journalEdit = true; render(); break;
     case "journal-insights": openJournalInsights(); break;
     case "journal-qs": openJournalQs(); break;
@@ -4723,6 +4755,7 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target;
+  if (t.dataset && t.dataset.jq != null) { const n = document.querySelectorAll("[data-jq]:checked").length, w = $("#jqwarn"); if (w) w.textContent = n > 10 ? "Mehr als etwa 10 Fragen werden schnell lästig. Lieber wenige, dafür jeden Tag." : ""; return; }
   if (t.dataset.move) { const w = clone(S.workouts[t.dataset.move]); if (w && t.value) { w.date = t.value; put("workouts", t.dataset.move, w); calSel = t.value; calMonth = t.value.slice(0, 7); toast("Verschoben auf " + fmtShort(t.value) + "."); } return; }
   if (t.id === "avf" && t.files[0]) { shrinkImage(t.files[0]).then(async a => { const {error} = await sb.rpc("set_my_avatar", {p_avatar: a}); if (error) throw error; FR.avatar = a; toast("Profilbild gespeichert."); loadFriends(true); render(); }).catch(() => toast("Das Bild konnte nicht gespeichert werden.")); return; }
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
