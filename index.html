@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:43";
+const APP_VERSION = "15.10.2026 19:56";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -585,9 +585,9 @@ function openExdbItem(rid){
 
 /* ---------- Berechnungen ---------- */
 function dayTotals(d){
-  const t = {kcal: 0, p: 0, f: 0, c: 0};
+  const t = {kcal: 0, p: 0, f: 0, c: 0, fib: 0, fibN: 0, n: 0};
   if (!d || !d.meals) return t;
-  MEALS.forEach(([m]) => (d.meals[m] || []).forEach(it => { t.kcal += +it.kcal || 0; t.p += +it.p || 0; t.f += +it.f || 0; t.c += +it.c || 0; }));
+  MEALS.forEach(([m]) => (d.meals[m] || []).forEach(it => { t.kcal += +it.kcal || 0; t.p += +it.p || 0; t.f += +it.f || 0; t.c += +it.c || 0; t.n++; if (it.fib != null) { t.fib += +it.fib || 0; t.fibN++; } }));
   return t;
 }
 /* Ausreißer (z. B. mit Kleidung oder falsche Person auf der Waage) zählen nicht: mehr als 2,5 kg bzw. 2,5 %
@@ -899,6 +899,14 @@ function burnAuto(d, c){
 }
 const kcalGoal = k => cfg().kcal + burnedOf(k);
 /* Kalorienbilanz: Budget (Grundziel + Verbrauch, wächst mit jeder verbrannten Kalorie), gegessen, übrig */
+/* Ballaststoffe heute: Ziel 15 g pro 1.000 kcal (mind. 30 g). Fehlen Angaben, steht „mindestens“ dabei. */
+function fiberRow(t){
+  if (!t.n) return "";
+  const g = fiberGoal(), pct = Math.min(100, t.fib / g * 100), miss = t.n - t.fibN;
+  return `<div class="macro m2" style="margin-top:12px"><span class="lbl"><span class="dot" style="background:#A3E635"></span>Ballaststoffe</span>
+    <div class="bar" role="img" aria-label="Ballaststoffe ${fmt(t.fib)} von ${g} g"><i style="width:${pct}%;background:#A3E635"></i></div>
+    <span class="num small"><b>${miss ? "≥ " : ""}${fmt(t.fib)}</b><span class="muted"> / ${g} g</span></span></div>${miss ? `<div class="small muted" style="margin-top:2px">Bei ${miss} von ${t.n} Einträgen fehlt die Angabe.</div>` : ""}`;
+}
 function kcalBalance(k, t){
   const base = cfg().kcal, burn = burnedOf(k), budget = base + burn, eaten = Math.round(t.kcal), left = budget - eaten;
   const box = (l, v, sub, col) => `<div class="kb"><span class="small muted">${l}</span><span class="kbv num" style="${col ? "color:" + col : ""}">${fmt(v)}</span><span class="small muted num">${sub}</span></div>`;
@@ -1666,6 +1674,7 @@ function viewEssen(){
   return `<section class="card">
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}<div class="stack" style="flex:1;min-width:0">${macroRows(t, c)}</div></div>
     ${kcalBalance(curDate, t)}
+    ${fiberRow(t)}
     ${burnRow(curDate)}
     ${proteinMeals(d)}
     ${calcLine()}
@@ -2174,7 +2183,7 @@ async function lookupBarcode(code){
   const name = (base + (p.brands ? " (" + String(p.brands).split(",")[0].trim() + ")" : "")).slice(0, 80);
   const liquid = /\d\s*(ml|cl|l)\b/i.test(p.quantity || "") || isLiquidName(name);
   const id = uid("f");
-  put("foods", id, {name, kcal: Math.round(offKcal(n)), p: +num(n.proteins_100g).toFixed(1), c: +num(n.carbohydrates_100g).toFixed(1), f: +num(n.fat_100g).toFixed(1), portion: num(p.serving_quantity) > 0 ? Math.round(num(p.serving_quantity)) : undefined, nova: p.nova_group || undefined, unit: liquid ? "ml" : undefined, ean: code, uses: 0, src: "openfoodfacts"});
+  put("foods", id, {name, kcal: Math.round(offKcal(n)), p: +num(n.proteins_100g).toFixed(1), c: +num(n.carbohydrates_100g).toFixed(1), f: +num(n.fat_100g).toFixed(1), fib: num(n.fiber_100g) >= 0 ? +num(n.fiber_100g).toFixed(1) : undefined, portion: num(p.serving_quantity) > 0 ? Math.round(num(p.serving_quantity)) : undefined, nova: p.nova_group || undefined, unit: liquid ? "ml" : undefined, ean: code, uses: 0, src: "openfoodfacts"});
   af.mode = "suchen"; af.pick = id; af.g = ""; af.n = ""; af.u = null; renderAddFood(); toast("Gefunden und gespeichert: " + name);
 }
 /* Deine gescannten Produkte zum schnellen Antippen */
@@ -2802,7 +2811,7 @@ function tipPersonal(id){
     case "steps8k": { const st = stepsTrend(); return st ? {note: `Ø ${fmt(st.now)} Schritte in den letzten 7 Tagen. Dein persönliches Ziel: ${fmt(stepGoal())} (dein Schnitt + 1.000, höchstens 10.000).`, hot: st.now < 6000 ? 3 : 0, why: st.now < 6000 ? "Du lagst zuletzt deutlich unter 8.000 Schritten." : ""} : null; }
     case "walkmeal": { const st = stepsTrend(); return st ? {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen.`, hot: 0} : null; }
     case "satiety": { const pt = dayTotals(S.days[today] || {}).p; return {note: `Eiweiß heute: ${fmt(pt)} von ${fmt(cfg().p)} g.`, hot: 0}; }
-    case "fiber": { const g = fiberGoal(); return {note: `Dein Ziel: etwa ${g} g Ballaststoffe am Tag (bei ${fmt(cfg().kcal)} kcal).`, hot: 0}; }
+    case "fiber": { const g = fiberGoal(), tt = dayTotals(S.days[today] || {}); return {note: `Dein Ziel: etwa ${g} g Ballaststoffe am Tag (bei ${fmt(cfg().kcal)} kcal).${tt.fibN ? ` Heute bisher ${tt.fibN < tt.n ? "mindestens " : ""}${fmt(tt.fib)} g.` : ""}`, hot: 0}; }
     case "scale": { const ser = weightSeries(); if (!ser.length) return null; const last = ser[ser.length - 1], a = avgAt(ser, last.k), dv = last.v - a; return {note: `Letzte Messung ${fmt(last.v, 1)} kg, 7-Tage-Schnitt ${fmt(a, 1)} kg (${dv >= 0 ? "+" : "−"}${fmt(Math.abs(dv), 1)} kg).`, hot: Math.abs(dv) > 1 && last.k >= addDays(today, -1) ? 4 : 0, why: Math.abs(dv) > 1 ? `Deine letzte Messung liegt ${fmt(Math.abs(dv), 1)} kg ${dv > 0 ? "über" : "unter"} dem Schnitt, das ist meist Wasser.` : ""}; }
     case "neat": { const st = stepsTrend(); if (!st) return null; const drop = st.now < st.old * 0.85; return {note: `Schritte: Ø ${fmt(st.now)} in den letzten 7 Tagen, davor Ø ${fmt(st.old)}.`, hot: drop && paceAdj() < 0 ? 6 : 0, why: drop ? `Deine Schritte sind um ${Math.round((1 - st.now / st.old) * 100)} % gesunken.` : ""}; }
     case "concurrent": { const nx = nextGymFootball(); return nx ? {note: `${WDN[dateOf(nx.k).getDay()]}, ${fmtShort(nx.k)}: Gym und Fußball am selben Tag${nx.gap != null ? ", " + fmtH(nx.gap) + " Abstand" : ""}.`, hot: nx.gap != null && nx.gap < 6 ? 5 : 0, why: nx.gap != null && nx.gap < 6 ? `Am ${WDN[dateOf(nx.k).getDay()]} liegen Gym und Fußball nur ${fmtH(nx.gap)} auseinander.` : ""} : null; }
@@ -3243,6 +3252,7 @@ async function runAiFood(text){
 
 /* ----- Schnelleingabe ohne KI: "500 g Skyr und eine Banane" → Einträge ----- */
 /* Richtwerte pro 100 g (Getränke pro 100 ml): [Name, Suchbegriffe, kcal, Protein, Kohlenhydrate, Fett, Stückgewicht g] */
+const BASE_FIB = {"Banane": 1.7, "Apfel": 2, "Birne": 3.1, "Orange": 1.6, "Mandarine": 1.7, "Kiwi": 2.1, "Erdbeeren": 1.6, "Heidelbeeren": 2.4, "Beeren (TK)": 3, "Weintrauben": 0.9, "Ananas": 1.4, "Mango": 1.6, "Wassermelone": 0.4, "Avocado": 6.7, "Tomate": 1.2, "Gurke": 0.5, "Paprika": 2.1, "Karotte": 2.8, "Brokkoli": 2.6, "Blumenkohl": 2, "Zucchini": 1, "Spinat": 2.2, "Salat": 1.3, "Zwiebel": 1.7, "Champignons": 1, "Mais (Dose)": 2.4, "Erbsen": 5, "Kartoffeln gekocht": 1.8, "Süßkartoffel": 3, "Pommes frites": 3.5, "Reis gekocht": 0.4, "Reis roh": 1.3, "Nudeln gekocht": 1.8, "Nudeln roh": 3.2, "Haferflocken": 10, "Müsli": 7, "Cornflakes": 3, "Mischbrot": 5, "Vollkornbrot": 8, "Dinkelbrot": 5, "Brötchen": 3, "Toast": 3, "Wrap": 3, "Knäckebrot": 14, "Kichererbsen (Dose)": 5.4, "Linsen gekocht": 7.9, "Kidneybohnen": 6, "Mandeln": 12.5, "Walnüsse": 6.7, "Erdnüsse": 8.5, "Cashews": 3.3, "Zartbitterschokolade": 10, "Vollmilchschokolade": 3, "Chips": 4, "Erdnussbutter": 6, "Tofu": 1.5, "Proteinriegel": 5, "Pizza": 2, "Döner": 2, "Burger": 1.5, "Lasagne": 1.5, "Spaghetti Bolognese": 1.8, "Kartoffelsalat": 1.5, "Kartoffelknödel": 1.5, "Semmelknödel": 2.5, "Spätzle": 1.5, "Gemüse gemischt": 3, "Bratensoße": 0.5, "Orangensaft": 0.2, "Hafermilch": 0.8, "Mandelmilch ungesüßt": 0.4, "Marmelade": 1, "Nuss-Nougat-Creme": 3.5, "Apfelschorle": 0.1};
 const BASE_FOODS = [
   ["Banane","banane,bananen",93,1.2,20,0.2,120],["Apfel","apfel,äpfel",54,0.3,11.4,0.2,150],["Birne","birne,birnen",55,0.5,12.4,0.3,160],
   ["Orange","orange,orangen,apfelsine",47,1,9,0.2,150],["Mandarine","mandarine,mandarinen,clementine",50,0.7,10,0.3,70],["Kiwi","kiwi,kiwis",61,1.1,10.3,0.5,75],
@@ -3968,12 +3978,14 @@ function renderAddFood(){
   } else if (af.mode === "schnell") {
     b += `<form class="stack" data-form="af-quick"><div class="field"><label for="qn">Bezeichnung</label><input class="inp" id="qn" placeholder="z. B. Proteinriegel" required></div>
       <div class="fields"><div class="field"><label for="qk">kcal</label><input class="inp num" id="qk" inputmode="decimal" required></div><div class="field"><label for="qp">Protein g</label><input class="inp num" id="qp" inputmode="decimal"></div><div class="field"><label for="qc">Kohlenhydr. g</label><input class="inp num" id="qc" inputmode="decimal"></div><div class="field"><label for="qf">Fett g</label><input class="inp num" id="qf" inputmode="decimal"></div></div>
+      <div class="fields"><div class="field"><label for="qfb">Ballaststoffe g (optional)</label><input class="inp num" id="qfb" inputmode="decimal"></div></div>
       <div class="field"><label for="qw">Flüssigkeit ml (optional)</label><input class="inp num" id="qw" inputmode="numeric" placeholder="z. B. 250"><span class="small muted">Zählt bei „Aus Lebensmitteln“, nicht bei „Getrunken“.</span></div>
       <button class="btn primary" type="submit">Hinzufügen</button></form>`;
   } else {
     b += `<form class="stack" data-form="af-new"><div class="field"><label for="nn">Name</label><input class="inp" id="nn" placeholder="z. B. Skyr natur (Milbona)" required></div>
       <div class="eyebrow">Nährwerte pro 100 g bzw. 100 ml (steht auf der Packung)</div>
       <div class="fields"><div class="field"><label for="nk">kcal</label><input class="inp num" id="nk" inputmode="decimal" required></div><div class="field"><label for="np">Protein g</label><input class="inp num" id="np" inputmode="decimal" required></div><div class="field"><label for="nc">Kohlenhydr. g</label><input class="inp num" id="nc" inputmode="decimal" required></div><div class="field"><label for="nf">Fett g</label><input class="inp num" id="nf" inputmode="decimal" required></div></div>
+      <div class="fields"><div class="field"><label for="nfb">Ballaststoffe g (optional)</label><input class="inp num" id="nfb" inputmode="decimal"></div></div>
       <div class="field"><label for="npo">Übliche Portion in g bzw. ml (optional)</label><input class="inp num" id="npo" inputmode="decimal"></div>
       <button class="btn primary" type="submit">Speichern und auswählen</button></form>`;
   }
@@ -4309,7 +4321,7 @@ function itemScaled(){
   const it = ie.it, base = num(it.g) || null;
   const newG = ie.qty && num(it.qty) ? num(it.g) / num(it.qty) * ie.qty : ie.g;
   const k = base && newG ? newG / base : 1;
-  return {k, g: newG, kcal: Math.round(num(it.kcal) * k), p: +(num(it.p) * k).toFixed(1), c: +(num(it.c) * k).toFixed(1), f: +(num(it.f) * k).toFixed(1)};
+  return {k, g: newG, kcal: Math.round(num(it.kcal) * k), p: +(num(it.p) * k).toFixed(1), c: +(num(it.c) * k).toFixed(1), f: +(num(it.f) * k).toFixed(1), fib: it.fib != null ? +(num(it.fib) * k).toFixed(1) : undefined};
 }
 function renderItemEdit(){
   if (!ie) return;
@@ -4328,7 +4340,7 @@ function saveItemEdit(){
   if (!ie) return;
   const sc = itemScaled(); if (!(sc.g > 0)) { toast("Bitte eine Menge eintragen."); return; }
   const d = getDay(curDate), arr = (d.meals || {})[ie.meal]; if (!arr || !arr[ie.i]) return;
-  const n = Object.assign({}, arr[ie.i], {g: Math.round(sc.g), kcal: sc.kcal, p: sc.p, c: sc.c, f: sc.f});
+  const n = Object.assign({}, arr[ie.i], {g: Math.round(sc.g), kcal: sc.kcal, p: sc.p, c: sc.c, f: sc.f}); if (sc.fib != null) n.fib = sc.fib;
   if (ie.qty != null && num(arr[ie.i].qty)) n.qty = ie.qty;
   arr[ie.i] = n; saveDay(curDate, d); ie = null; sheetClose = null; closeSheet(); toast("Menge geändert.");
 }
@@ -4496,10 +4508,10 @@ document.addEventListener("click", async e => {
     case "af-u": af.u = +D.i < 0 ? null : +D.i; af.n = af.n || 1; renderAddFood(); break;
     case "af-n": af.n = D.n; renderAddFood(); break;
     case "af-base": { const b = BASE_FOODS.find(x => x[0] === D.name); if (!b) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === b[0]); const id = ex ? ex[0] : uid("f");
-      if (!ex) put("foods", id, {name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], portion: b[6] || undefined, uses: 0, src: "richtwert"});
+      if (!ex) put("foods", id, {name: b[0], kcal: b[2], p: b[3], c: b[4], f: b[5], fib: BASE_FIB[b[0]] != null ? BASE_FIB[b[0]] : 0, portion: b[6] || undefined, uses: 0, src: "richtwert"});
       af.pick = id; af.g = ""; renderAddFood(); break; }
     case "af-off": { const p = af.off && af.off.items[+D.i]; if (!p) break; const ex = Object.entries(S.foods).find(([, f]) => f.name === p.name); const id = ex ? ex[0] : uid("f");
-      if (!ex) put("foods", id, {name: p.name, kcal: p.kcal, p: p.p, c: p.c, f: p.f, portion: p.portion || undefined, nova: p.nova || undefined, unit: p.unit === "ml" || isLiquidName(p.name) ? "ml" : undefined, ean: p.code || undefined, uses: 0, src: "openfoodfacts"});
+      if (!ex) put("foods", id, {name: p.name, kcal: p.kcal, p: p.p, c: p.c, f: p.f, fib: p.fib != null ? p.fib : undefined, portion: p.portion || undefined, nova: p.nova || undefined, unit: p.unit === "ml" || isLiquidName(p.name) ? "ml" : undefined, ean: p.code || undefined, uses: 0, src: "openfoodfacts"});
       af.pick = id; af.g = ""; renderAddFood(); break; }
     case "af-unpick": af.pick = null; renderAddFood(); break;
     case "af-g": af.g = D.g; renderAddFood(); break;
@@ -4507,7 +4519,7 @@ document.addEventListener("click", async e => {
     case "af-add-pick": {
       const f = S.foods[af.pick]; if ($("#afg")) af.g = $("#afg").value; if ($("#afn")) af.n = $("#afn").value;
       const uc = afUnitCalc(f), g = uc.g, k = g / 100;
-      addItems(af.meal, [{name: f.name, unit: unitOfFood(f) === "ml" ? "ml" : undefined, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), foodId: af.pick, qty: uc.u ? uc.n : undefined, qu1: uc.u ? uc.u.one : undefined, qu: uc.u ? uc.u.many : undefined}]);
+      addItems(af.meal, [{name: f.name, unit: unitOfFood(f) === "ml" ? "ml" : undefined, g: Math.round(g), kcal: Math.round(f.kcal * k), p: +(f.p * k).toFixed(1), c: +(f.c * k).toFixed(1), f: +(f.f * k).toFixed(1), fib: f.fib != null ? +(num(f.fib) * k).toFixed(1) : undefined, foodId: af.pick, qty: uc.u ? uc.n : undefined, qu1: uc.u ? uc.u.one : undefined, qu: uc.u ? uc.u.many : undefined}]);
       put("foods", af.pick, Object.assign(clone(f), {uses: (f.uses || 0) + 1, lastG: Math.round(g), lastU: uc.ui >= 0 ? uc.ui : null}));
       toast(f.name + " hinzugefügt."); closeSheet(); break;
     }
@@ -4687,9 +4699,9 @@ document.addEventListener("submit", async e => {
       document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmtH(mins / 60) + "."); break;
     }
     case "ai-food": runQuickFood(v("aiq")); break;
-    case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; const wml = Math.round(num(v("qw"))); if (wml > 0) it.water = wml; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
+    case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; const wml = Math.round(num(v("qw"))); if (wml > 0) it.water = wml; const qfb = num(v("qfb")); if (qfb >= 0) it.fib = +qfb.toFixed(1); addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
     case "ean": lookupBarcode(v("eanin")); break;
-    case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; if (af.newEan) { food.ean = af.newEan; af.newEan = null; } const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
+    case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; if (num(v("nfb")) >= 0) food.fib = +num(v("nfb")).toFixed(1); if (af.newEan) { food.ean = af.newEan; af.newEan = null; } const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
     case "ex-edit": { const id = f.dataset.id || uid("x"); const prev = S.exercises[id] || {}; put("exercises", id, Object.assign(clone(prev), {name: v("exn").trim(), group: v("exg"), equipment: v("exq").trim(), notes: v("exo").trim(), ref: v("exr") || undefined})); closeSheet(); toast("Übung gespeichert."); break; }
     case "auth": {
