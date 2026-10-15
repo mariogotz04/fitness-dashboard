@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:36";
+const APP_VERSION = "15.10.2026 19:39";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -719,6 +719,7 @@ const zoneTarget = z => z === "good" ? [14, 18] : z === "warn" ? [10, 14] : [0, 
 /* Regenerationstipps nur aus dem, was du wirklich trainiert hast (heute und gestern) und deiner Belastung, höchstens 4.
    Ohne harte Einheit gibt es keine allgemeinen Tipps wie Eisbad, sondern nur den Hinweis, dass nichts Besonderes nötig ist. */
 function recoveryPlan(k){
+  if (k === todayKey() && sickNow()) return [{cat: "Gesundheit", key: "sick", title: "Erholung hat Vorrang", text: "Du bist krank eingetragen: schlafen, trinken, ausruhen. Keine Sauna, kein Eisbad und kein Training, bis es besser wird.", prio: 10}];
   const c = cfg(), d = S.days[k] || {}, sl = d.sleep || {}, ci = d.checkin || {}, y = addDays(k, -1);
   const out = [], add = (cat, key, title, text, prio) => { const ex = out.find(x => x.key === key); if (ex) { if (prio > ex.prio) Object.assign(ex, {cat, title, text, prio}); } else out.push({cat, key, title, text, prio}); };
   const sessions = workoutsSorted().filter(w => (w.date === k && (w.status === "done" || w.status === "active")) || (w.date === y && w.status === "done"));
@@ -774,6 +775,7 @@ function sleepNeed(k){
   return Math.round(Math.min(c.sleepGoal + 1, c.sleepGoal + Math.max(ys, ts) / 21 * 0.75 + debt * 0.3) * 4) / 4;
 }
 function recoveryTips(k){
+  if (k === todayKey() && sickNow()) return [["Krank: Erholung hat Vorrang", "Hoher Ruhepuls und niedrige HRV sind während eines Infekts erwartbar. Schlaf, Trinken und Ruhe helfen am meisten, Training wartet."]];
   const c = cfg(), d = S.days[k] || {}, r = recoveryOf(k), sl = d.sleep, ci = d.checkin;
   const y = S.days[addDays(k, -1)] || {}, yt = dayTotals(y);
   const tips = [];
@@ -791,7 +793,7 @@ function recoveryTips(k){
 
 /* ---------- Rendering ---------- */
 let tab = (location.hash || "").slice(1);
-if (!TABS.some(t => t[0] === tab)) tab = (location.hash || "") === "#planen" ? "training" : "heute";
+if (!TABS.some(t => t[0] === tab)) tab = (location.hash || "") === "#planen" ? "training" : "heute"; // #gesundheit → Heute mit Abfrage
 let curDate = todayKey();
 let openPlanOnLoad = (location.hash || "") === "#planen";
 let animNext = true, animT = null;
@@ -820,6 +822,7 @@ function render(){
   drawCharts();
   if (loaded && EXDB) setTimeout(autoPlanDaily, 600);
   if (loaded && mode === "db" && (cfgRaw().drinkRem || {}).on) setTimeout(syncWaterGoal, 800);
+  if (loaded && mode === "db") healthOnOpen();
   if (openPlanOnLoad && mode === "db") { openPlanOnLoad = false; setTimeout(() => openPlanner(), 400); }
   setTimeout(maybeShowReview, 600);
 }
@@ -930,7 +933,7 @@ function viewHeute(){
   const taken = d.supps || {};
   const sl = d.sleep;
 
-  return `${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
+  return `${healthBand()}${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
   ${plannerPrompt(curDate)}
   ${recoverySection(curDate)}
   ${footballCard(curDate)}
@@ -963,7 +966,7 @@ function viewHeute(){
   ${cutChecks()}
   <section class="card">
     <div class="card-h"><h2>Training</h2><button class="btn ghost" data-act="tab" data-tab="training">Kalender</button></div>
-    ${trainHtml}
+    ${trainingHealthNote()}${trainHtml}
     ${cardioCard(curDate)}
     <div class="row">${tpls.map(tp => `<button class="btn" data-act="start-template" data-id="${tp.id}" data-date="${curDate}">${esc(tp.short || tp.name)} starten</button>`).join("") || '<span class="muted small">Noch keine Trainingspläne angelegt.</span>'}</div>
     ${fuelBox(curDate)}
@@ -1139,6 +1142,7 @@ function suggestKg(exId, reps){
 const autoTemplate = t => t && !t.coach && !t.inactive;
 function autoPlanSync(){
   if (!loaded || mode !== "db" || !EXDB) return 0;
+  if (sickNow()) return 0; // krank: die Automatik erhöht nichts
   const on = autoOn(), today = todayKey(); let n = 0;
   templatesSorted().filter(t => !t.inactive).forEach(t => {
     let changed = false;
@@ -1151,9 +1155,10 @@ function autoPlanSync(){
       const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
       const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
       if (x.userSets) { delete x.userSets; changed = true; }
-      const nv = {sets: r.sets, reps: r.reps, rest: r.rest, kg: kg || undefined};
+      const rp = returnPhase(), rs = rp && !rp.done && rp.sets ? rp : null;
+      const nv = {sets: rs ? Math.max(1, Math.round(r.sets * rs.sets)) : r.sets, reps: r.reps, rest: r.rest, kg: kg ? (rs && rs.kg < 1 ? Math.round(kg * rs.kg / 1.25) * 1.25 : kg) : undefined};
       // Volumen langsam steigern: höchstens 1 Satz mehr pro Übung und Woche (ca. 5–10 %), außer direkt nach einer Entlastungswoche
-      const dl = cfgRaw().deload || {}, after = dl.to && dl.to < today && diffDays(dl.to, today) <= 7;
+      const dl = cfgRaw().deload || {}, hh = healthCfg(), after = (dl.to && dl.to < today && diffDays(dl.to, today) <= 7) || (hh.returnEnd && hh.returnEnd < today && diffDays(hh.returnEnd, today) <= 7) || !!returnPhase();
       if (num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
       if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
         if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
@@ -1432,7 +1437,7 @@ function calcTargets(p, goal){
   if (L) { share = Math.min(1, (L.days - 7) / 14) * 0.8; base = formula * (1 - share) + clamp(L.base, formula * 0.75, formula * 1.25) * share; }
   const pace = p.pace != null && PACE[goal].some(x => x[0] === p.pace) ? p.pace : PACE_DEF[goal];
   const auto = pace === "auto" ? autoPace(p, goal, w, base) : null;
-  const adj = auto ? auto.adj : pace;
+  const adj = sickNow() ? 0 : auto ? auto.adj : pace; // krank: kein Defizit
   const floor = Math.round(Math.max(bmr * 0.75, p.sex === "w" ? 1200 : 1500) / 10) * 10;
   const kcal = Math.round(Math.max(floor, base + adj) / 10) * 10;
   const mac = autoMacros(p, goal, w, kcal);
@@ -1602,7 +1607,9 @@ function waterGoal(k){
   const sweat = num(d.sweatLoss) > 0 ? Math.round(num(d.sweatLoss) * 1500 / 50) * 50 : 0;
   if (sweat > sport) sport = sweat;
   const drunk = num(d.water) || 0, food = foodWater(d);
-  return {base, sport, total: base + sport, parts, sweat, drunk, food, have: drunk + food};
+  // krank: Fieber +0,5 l, Erbrechen/Durchfall +0,75 l (nur für heute)
+  const h = healthCfg(), sym = k === todayKey() && sickNow() ? (h.symptoms || []) : [], sickMl = (sym.includes("fieber") || num(h.temp) >= 38 && sym.length ? 500 : 0) + (sym.includes("uebel") || sym.includes("durchfall") ? 750 : 0);
+  return {base, sport, sick: sickMl, total: base + sport + sickMl, parts, sweat, drunk, food, have: drunk + food};
 }
 /* Stunden als „6 h 48 min“ statt „6,8 h“ (kurz für Diagramme: „6:48“) */
 const fmtH = h => { const m = Math.round(num(h) * 60); if (!(m > 0)) return "0\u00a0min"; const hh = Math.floor(m / 60), mm = m % 60; return hh ? hh + "\u00a0h" + (mm ? "\u00a0" + mm + "\u00a0min" : "") : mm + "\u00a0min"; };
@@ -1612,6 +1619,7 @@ const dialHM = h => { const m = Math.round(num(h) * 60); return `<span class="hm
 const fmtHs = (h, bare) => { const m = Math.round(num(h) * 60); return Math.floor(m / 60) + ":" + String(m % 60).padStart(2, "0") + (bare ? "" : " h"); };
 const fmtL = ml => fmt(ml / 1000, ml % 1000 === 0 ? 0 : ml % 100 === 0 ? 1 : 2) + " l";
 function waterTip(k, g){
+  if (g.sick) { const sym = healthCfg().symptoms || []; return sym.includes("uebel") || sym.includes("durchfall") ? ["Krank: Flüssigkeit und Salze", "Bei Erbrechen oder Durchfall verlierst du viel Wasser und Salz. Trink in kleinen Schlucken, gut sind eine Elektrolytlösung aus der Apotheke oder Brühe. Kaum Wasserlassen ist ein Warnzeichen: ärztlich abklären."] : ["Krank: mehr trinken", "Bei Fieber verlierst du mehr Wasser. Warme Getränke, Tee und Brühe zählen mit."]; }
   if (k === todayKey() && new Date().getHours() < 11 && g.drunk < 300) return ["Gut in den Tag starten", "Starte mit einem großen Glas (ca. 0,5 l). Morgens vorne trinken, dann musst du abends nicht nachholen und schläfst ohne nächtliche Toilettengänge."];
   const n = Math.floor(dateOf(k) / 864e5), long = g.parts.some(p => p.min >= 60 && p.ml >= 450);
   if (g.sweat) return ["Nach dem Training auffüllen", `Du hast etwa ${fmt(num((S.days[k] || {}).sweatLoss), 1)} kg verloren. Trink dafür über die nächsten Stunden etwa ${fmtL(g.sweat)}. Am besten mit etwas Salz oder als Saftschorle, so bleibt das Wasser besser im Körper.`];
@@ -1642,7 +1650,7 @@ function waterCard(k){
     <div class="bar" style="height:12px;position:relative"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i>${g.food ? `<i style="position:absolute;left:0;top:0;bottom:0;width:${fpct}%;background:#7DD3FC;border-radius:inherit"></i>` : ""}</div>
     <div class="small num" style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap"><span><span class="dot" style="background:#38BDF8"></span> Getrunken ${fmtL(g.drunk)}</span>${g.food ? `<span class="muted"><span class="dot" style="background:#7DD3FC"></span> 🥗 Aus Lebensmitteln ${fmtL(g.food)} (geschätzt)</span>` : ""}</div>
     <div class="row" style="gap:3px;margin-top:8px;flex-wrap:wrap" aria-hidden="true">${Array.from({length: Math.min(glasses, 24)}, (_, i) => `<span style="font-size:15px;opacity:${i < full ? 1 : .25}">💧</span>`).join("")}</div>
-    <div class="small muted" style="margin-top:6px">Grundbedarf ${fmtL(g.base)}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : "geschätzt ca. " + fmt(g.parts.reduce((a, p) => a + p.sweat, 0), 1) + " l Schweiß × 1,5 aus " + g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : " · Sport kommt dazu, sobald eine Einheit erledigt ist"}</div>
+    <div class="small muted" style="margin-top:6px">Grundbedarf ${fmtL(g.base)}${g.sick ? ` + krank ${fmtL(g.sick)}` : ""}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : "geschätzt ca. " + fmt(g.parts.reduce((a, p) => a + p.sweat, 0), 1) + " l Schweiß × 1,5 aus " + g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : " · Sport kommt dazu, sobald eine Einheit erledigt ist"}</div>
     <div class="row" style="margin-top:10px;gap:6px">${WATER_STEPS.map(ml => `<button class="btn" data-act="water" data-ml="${ml}" data-date="${k}">+ ${ml} ml</button>`).join("")}<button class="btn ghost" data-act="water" data-ml="-250" data-date="${k}" ${g.drunk ? "" : "disabled"}>− 250</button></div>
     <form class="row" data-form="water-ml" data-date="${k}" style="margin-top:8px;flex-wrap:nowrap;gap:6px"><input class="inp num" id="wml" inputmode="numeric" placeholder="z. B. 770" aria-label="Eigene Menge in ml" style="width:110px;min-height:38px;padding:5px 10px"><span class="small muted">ml</span><button class="btn" type="submit" style="min-height:38px">Eintragen</button></form>
     ${water7(k)}
@@ -1660,6 +1668,7 @@ function viewEssen(){
     ${burnRow(curDate)}
     ${proteinMeals(d)}
     ${calcLine()}
+    ${healthFoodHint()}
     ${neatHint()}
     ${macroCheck()}
   </section>
@@ -1713,7 +1722,7 @@ function viewCalendar(){
     if (i >= 35 && dd.getMonth() !== m - 1) break;
     const ws = byDate[k] || [];
     const marks = ws.slice(0, 3).map(w => `<span class="m ${w.kind === "activity" ? "act" : w.status === "done" ? "" : "plan"}"></span>`).join("");
-    cells += `<button data-act="cal-sel" data-date="${k}" class="${dd.getMonth() !== m - 1 ? "out" : ""} ${k === todayKey() ? "today" : ""}" aria-pressed="${k === calSel}" aria-label="${fmtLong(k)}${ws.length ? ", " + ws.length + " Einträge" : ""}"><span>${dd.getDate()}</span><span class="marks">${marks}</span></button>`;
+    cells += `<button data-act="cal-sel" data-date="${k}" class="${dd.getMonth() !== m - 1 ? "out" : ""} ${k === todayKey() ? "today" : ""}" aria-pressed="${k === calSel}" aria-label="${fmtLong(k)}${ws.length ? ", " + ws.length + " Einträge" : ""}"><span>${dd.getDate()}${isSickDay(k) ? "<small>🤒</small>" : ""}</span><span class="marks">${marks}</span></button>`;
   }
   const sel = byDate[calSel] || [];
   const wk = weekSummary(calSel);
@@ -2251,6 +2260,7 @@ function plannerWarnings(){
     if (d.cardio === "vo2" && d.gym && legs(d.gym)) out.push(`${wd}: VO2max-Intervalle und Beintraining am selben Tag. Besser auf zwei Tage verteilen.`);
     if (d.cardio && d.gym) { const a = hmh(d.gymTime), b = hmh(d.cardioTime); if (a != null && b != null && Math.abs(a - b) < 6) out.push(`${wd}: Gym und ${d.cardio === "vo2" ? "Intervalle" : "Zone-2-Lauf"} nur ${fmtH(Math.abs(a - b))} auseinander. Wenn möglich zuerst Gym oder mehr Abstand.`); }
   });
+  { const hh = healthCfg(); if (hh.state === "sick") Object.keys(wp.days).forEach(k => { const end = hh.returnFrom ? addDays(hh.returnFrom, 5) : addDays(todayKey(), 6); if (wp.days[k].fb === "match" && k <= end) out.push(`${WDN[dateOf(k).getDay()]}: Spiel ${hh.returnFrom ? "in der Rückkehrphase" : "während du krank bist"}. Nach Fieber erst spielen, wenn die Rückkehr abgeschlossen ist.`); }); }
   const vo2n = Object.values(wp.days).filter(d => d.cardio === "vo2").length, hardFb = Object.values(wp.days).filter(d => d.fb).length;
   if (vo2n > 1) out.push(`${vo2n}× VO2max-Intervalle geplant. 1× pro Woche reicht, die anderen lieber als Zone-2-Lauf.`);
   else if (vo2n && hardFb >= 3) out.push(`Mit ${hardFb}× Fußball ist die Woche schon intensiv. Überleg, die Intervalle diese Woche durch einen lockeren Zone-2-Lauf zu ersetzen.`);
@@ -2417,7 +2427,8 @@ function cutFatigue(){
   return sig;
 }
 function cutPlateau(){
-  const c = cfgRaw(), t = todayKey(), at = autoTargets(); if (!at || !at.auto || at.auto.dietBreak) return null;
+  const c = cfgRaw(), t = todayKey(), at = autoTargets(); if (!at || !at.auto || at.auto.dietBreak || sickNow()) return null;
+  if (Array.from({length: 21}, (_, i) => addDays(t, -i)).some(isSickDay)) return null;
   const ser = weightSeries(), inWin = ser.filter(x => x.k >= addDays(t, -24)); if (inWin.length < 8) return null;
   const a0 = avgAt(ser, addDays(t, -21)), a1 = avgAt(ser, t); if (a0 == null || a1 == null || Math.abs(a1 - a0) > 0.3) return null;
   const days = Array.from({length: 21}, (_, i) => addDays(t, -i - 1)).filter(k => dayTotals(S.days[k]).kcal >= 1000);
@@ -2429,7 +2440,7 @@ function cutPlateau(){
   return {weeks: 3, diff: a1 - a0, hit, n: days.length};
 }
 function cutChecks(){
-  if (goalType() !== "cut") return "";
+  if (goalType() !== "cut" || sickNow()) return "";
   const c = cfgRaw(), t = todayKey(), out = [];
   if (!(c.cutFatigueSnooze && c.cutFatigueSnooze >= t)) { const sig = cutFatigue(); if (sig.length >= 2) out.push(`<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><div class="card-h"><h2>🧭 Zeit für eine Pause vom Cut?</h2></div>
     <p class="small ink2" style="margin:0 0 6px">Dein Körper zeigt Diät-Müdigkeit: ${esc(sig.join(", "))}. Eine Erhaltungsphase von 2–4 Wochen schützt Muskeln und Kopf. Danach geht der Cut leichter weiter.</p>
@@ -2462,7 +2473,7 @@ function lateSessionEnd(k){
   return end;
 }
 function bedPlanFor(k, wake){
-  const need = sleepNeed(k), w = hm2min(wake); if (w == null) return null;
+  const need = sleepNeed(k) + (k === todayKey() && sickNow() ? 1 : 0), w = hm2min(wake); if (w == null) return null;
   const bed = w + 24 * 60 - Math.round(need * 60) - FALL_ASLEEP; // Minuten ab heute 0:00 (kann nach Mitternacht liegen)
   const at = m => { const d = dateOf(k); d.setMinutes(m); return d; };
   const clock = m => String(Math.floor((m % 1440) / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
@@ -2479,6 +2490,7 @@ function bedPlanFor(k, wake){
   }
   { const dp = (weekPlanOf(mondayOf(k)) || {})[k] || {}, tt = [dp.gym && dp.gymTime, dp.fb && dp.fbTime, dp.cardio && dp.cardioTime].map(hm2min).filter(v => v != null && v >= 15 * 60);
     if (tt.length) steps.push([Math.min(...tt) - 45, "⚡", "Pre-Workout mit Koffein heute eher weglassen (wirkt bis in die Nacht)"]); }
+  if (k === todayKey() && sickNow()) steps.push([bed - 90, "🤒", "Schlaf ist jetzt das Wichtigste: 1 Stunde mehr Schlaf eingeplant"]);
   steps.sort((a, b) => a[0] - b[0]);
   return {need, bed: clock(bed), bedMin: bed, remindAt: at(bed - 30).toISOString(), late, steps: steps.map(([m, i, t]) => ({t: clock(((m % 1440) + 1440) % 1440), i, txt: t}))};
 }
@@ -3113,7 +3125,7 @@ function openReview(mon){
         ${hero("Training", wk.strength.length + "/" + c.strengthPerWeek, "", wk.acts.length ? "+ " + wk.acts.length + "× Sport" : "")}
         ${hero("Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", "Ø der Woche")}
       </div></div>
-    ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>${(() => { const a = fitnessAge(addDays(mon, 6) > todayKey() ? todayKey() : addDays(mon, 6)), b = fitnessAge(addDays(mon, -1)); return a.ok ? `<div class="small" style="margin-top:10px">🎂 Fitnessalter: <b>${fmt(a.age, 1)}</b>${b.ok ? ` (${a.age - b.age <= 0 ? "−" : "+"}${fmt(Math.abs(a.age - b.age), 1)} zur Vorwoche)` : ""}</div>` : ""; })()}
+    ${card("Deine Woche", `<div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px">${strip}</div>${(() => { const a = fitnessAge(addDays(mon, 6) > todayKey() ? todayKey() : addDays(mon, 6)), b = fitnessAge(addDays(mon, -1)); const sd = Array.from({length: 7}, (_, i) => addDays(mon, i)).filter(isSickDay).length; return (sd ? `<div class="small" style="margin-top:10px">🤒 ${sd} Krankheitstag${sd > 1 ? "e" : ""}</div>` : "") + (a.ok ? `<div class="small" style="margin-top:10px">🎂 Fitnessalter: <b>${fmt(a.age, 1)}</b>${b.ok ? ` (${a.age - b.age <= 0 ? "−" : "+"}${fmt(Math.abs(a.age - b.age), 1)} zur Vorwoche)` : ""}</div>` : ""); })()}
       <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
       ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
       ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${fmt(n, n % 1 ? 1 : 0)}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
@@ -3163,7 +3175,7 @@ function startRest(ei){
 }
 let restPushWarned = false;
 function schedulePushRest(secs){
-  if (mode !== "db" || !sb) return;
+  if (mode !== "db" || !sb || sickNow()) return;
   const nxt = nextSetLabel();
   sb.rpc("start_rest_timer", {p_seconds: Math.round(secs), p_title: "Pause vorbei 💪", p_body: nxt ? "Weiter mit " + nxt + "." : "Weiter geht's mit dem nächsten Satz."})
     .then(({data, error}) => { if ((error || !data) && !restPushWarned) { restPushWarned = true; toast(error ? "Die Pausen-Mitteilung konnte nicht geplant werden." : "Pausen-Mitteilung: Mitteilungen sind auf diesem Gerät noch nicht aktiv (Erholung → Supplements)."); } })
@@ -3422,6 +3434,120 @@ function isSickDay(k){
   const h = healthCfg();
   if ((h.ranges || []).some(r => r.from <= k && (!r.to || r.to >= k))) return true;
   return h.state === "sick" && h.since && h.since <= k && (!h.returnFrom || k < h.returnFrom);
+}
+const SYM = [
+  ["Kopf und Hals (leicht)", [["schnupfen", "Schnupfen / verstopfte Nase"], ["hals", "Halskratzen / Halsschmerzen"], ["niesen", "Niesen"], ["husten", "Leichter Husten"]]],
+  ["Ganzer Körper", [["fieber", "Fieber (ab 38 °C)"], ["schuettel", "Schüttelfrost"], ["glieder", "Glieder- / Muskelschmerzen"], ["erschoepft", "Starke Erschöpfung"], ["kopf", "Kopfschmerzen"]]],
+  ["Brust", [["husten_tief", "Husten mit Auswurf / tiefer Husten"], ["enge", "Engegefühl in der Brust"]]],
+  ["Magen-Darm", [["uebel", "Übelkeit / Erbrechen"], ["durchfall", "Durchfall"]]],
+  ["Warnzeichen", [["atemnot", "Atemnot"], ["brustschmerz", "Brustschmerz"], ["herzrasen", "Herzrasen / Herzstolpern"], ["verwirrt", "Verwirrtheit / starke Benommenheit"], ["kein_urin", "Kaum oder kein Wasserlassen"], ["rueckfall", "Erneute deutliche Verschlechterung nach Besserung"]]]
+];
+const SYM_WARN = ["atemnot", "brustschmerz", "herzrasen", "verwirrt", "kein_urin", "rueckfall"], SYM_RED = ["fieber", "schuettel", "glieder", "erschoepft", "husten_tief", "enge", "uebel", "durchfall"];
+const symName = id => { for (const [, l] of SYM) for (const [i, n] of l) if (i === id) return n; return id; };
+const hasFever = h => (h.symptoms || []).includes("fieber") || num(h.temp) >= 38;
+/* Ampel: warn > red > yellow; während der Rückkehr "green" (mit Phase), sonst null = gesund */
+function healthLevel(){
+  const h = healthCfg(); if (h.state !== "sick") return null;
+  const t = todayKey();
+  if (h.returnFrom && t >= h.returnFrom) return "green";
+  const sy = h.symptoms || [];
+  const feverDays = new Set((h.log || []).filter(x => (x.symptoms || []).includes("fieber") || num(x.temp) >= 38).map(x => x.d)).size;
+  if (sy.some(x => SYM_WARN.includes(x)) || num(h.temp) > 39.5 || feverDays > 3) return "warn";
+  if (sy.some(x => SYM_RED.includes(x)) || num(h.temp) >= 38) return "red";
+  return "yellow";
+}
+const sickNow = () => ["warn", "red", "yellow"].includes(healthLevel());
+/* Rückkehr nach IOC/Snyders: Tag 1–2 locker, 3–4 ca. 50 % Sätze und −15 % Gewicht, 5–6 ca. 75 % Sätze, dann normal */
+function returnPhase(){
+  const h = healthCfg(); if (h.state !== "sick" || !h.returnFrom) return null;
+  const d = diffDays(h.returnFrom, todayKey()) + 1; if (d < 1) return null;
+  return d <= 2 ? {day: d, sets: 0, kg: 1, txt: "Rückkehr Tag " + d + "/6: nur locker (Spaziergang, Rad, Zone 1–2), höchstens 30 Minuten."}
+    : d <= 4 ? {day: d, sets: 0.5, kg: 0.85, txt: "Rückkehr Tag " + d + "/6: Krafttraining mit ca. 50 % der Sätze und 10–20 % weniger Gewicht, keine Intervalle."}
+    : d <= 6 ? {day: d, sets: 0.75, kg: 1, txt: "Rückkehr Tag " + d + "/6: ca. 75 % der Sätze mit normalem Gewicht."} : {day: d, done: true};
+}
+/* Rückkehr abgeschlossen → automatisch gesund */
+function healthDaily(){
+  const h = healthCfg(), rp = returnPhase();
+  if (rp && rp.done) { const ranges = (h.ranges || []).concat([{from: h.since, to: addDays(h.returnFrom, -1)}]); saveCfg({health: {state: "ok", checkTime: h.checkTime, ranges, returnFrom: h.returnFrom, returnEnd: addDays(h.returnFrom, 5)}}); toast("Rückkehr abgeschlossen: Du stehst wieder auf „Gesund“. Gute Besserung gehabt!"); }
+}
+function trainingHealthNote(){
+  const lvl = healthLevel(); if (!lvl) return "";
+  if (lvl === "green") { const rp = returnPhase(); return rp && rp.txt ? `<div class="hint" style="margin-bottom:10px">💚 ${esc(rp.txt)}${autoOn() && rp.sets ? " Die Automatik hat die Sätze in deinen Plänen schon angepasst." : ""}</div>` : ""; }
+  return `<div class="hint" style="margin-bottom:10px;border:1.5px solid var(--bad)">⏸️ <b>Training pausiert (krank).</b> ${lvl === "yellow" ? "Nur Schnupfen oder Halskratzen: höchstens 20–30 Min. lockerer Spaziergang, wenn es sich gut anfühlt. Kein Gym und kein Mannschaftstraining, damit du niemanden ansteckst." : "Heute kein Training, Ruhe hat Vorrang."}</div>`;
+}
+function healthFoodHint(){
+  if (!sickNow()) return "";
+  const gi = (healthCfg().symptoms || []).some(x => x === "uebel" || x === "durchfall");
+  return `<div class="hint" style="margin-top:8px">🤒 Kalorien auf Erhaltung, der ${goalType() === "cut" ? "Cut" : "Plan"} pausiert. Eiweiß bleibt. Kleine, gut verträgliche Mahlzeiten sind okay. Jetzt geht Gesundheit vor Abnehmen.${gi ? " Bei Magen-Darm: leichte Kost wie Reis, Banane, Zwieback und Brühe." : ""}</div>`;
+}
+let healthAsked = false;
+function healthOnOpen(){
+  if (healthAsked || $("#sheet").innerHTML) return;
+  const h = healthCfg(); healthAsked = true;
+  healthDaily();
+  if (h.state !== "sick" || h.returnFrom) { if (location.hash === "#gesundheit") history.replaceState(null, "", "#heute"); return; }
+  const viaPush = location.hash === "#gesundheit";
+  if (viaPush) history.replaceState(null, "", "#heute");
+  if (h.lastCheck !== todayKey() && (viaPush || new Date().getHours() >= 12)) setTimeout(() => openHealthSheet("check"), 500);
+}
+function healthSettings(){
+  const h = healthCfg(), sick = h.state === "sick";
+  return `<div class="eyebrow" style="margin-bottom:6px">Gesundheit</div>
+    <div class="seg" role="group" aria-label="Gesundheitszustand" style="margin-bottom:8px"><button type="button" data-act="health-set" data-v="ok" aria-pressed="${!sick}">💪 Gesund</button><button type="button" data-act="health-set" data-v="sick" aria-pressed="${sick}">🤒 Krank</button></div>
+    ${sick ? `<div class="row small" style="flex-wrap:nowrap;gap:8px;margin-bottom:6px"><label for="hct" style="flex:1">Tägliche Abfrage um</label><input class="inp num" type="time" id="hct" value="${esc(h.checkTime || "17:00")}" style="width:120px;min-height:38px;padding:4px 8px"></div><button type="button" class="btn ghost" data-act="health-check">Symptome aktualisieren</button>` : `<p class="small muted" style="margin:0">Bist du krank, stell hier auf „Krank“. Dann passen sich Training, Essen, Trinken und Schlaf an, und die App fragt einmal am Tag nach, wie es dir geht.</p>`}
+    <div style="height:14px"></div>`;
+}
+let hs = null;
+function openHealthSheet(mode){
+  const h = healthCfg();
+  hs = {mode, feel: mode === "check" ? null : "", symptoms: (h.symptoms || []).slice(), temp: h.temp || "", note: h.note || "", ask: false};
+  openSheet(mode === "start" ? "Krank: Symptome" : "Wie geht's dir heute?", "", null, () => { hs = null; });
+  renderHealthSheet();
+}
+function renderHealthSheet(){
+  if (!hs) return;
+  if (hs.ask) { $("#sheet-b").innerHTML = `<p style="margin:0 0 12px;font-size:16px">Schön, dass es besser geht. <b>Wieder fit genug für die Rückkehr?</b></p><p class="small muted" style="margin:0 0 12px">Rückkehr heißt: seit 24 Stunden fieberfrei ohne Fiebersenker und der Alltag geht gut. Dann geht es über 6 Tage stufenweise zurück ins Training.</p><div class="row"><button class="btn primary" data-act="health-return">Ja, Rückkehr starten</button><button class="btn ghost" data-act="health-noreturn">Noch nicht</button></div>`; return; }
+  const feel = hs.mode === "check" ? `<div class="eyebrow" style="margin-bottom:6px">Im Vergleich zu gestern</div><div class="seg" role="group" style="margin-bottom:12px">${[["better", "😊 Besser"], ["same", "😐 Gleich"], ["worse", "😣 Schlechter"]].map(([v, l]) => `<button data-act="hs-feel" data-v="${v}" aria-pressed="${hs.feel === v}">${l}</button>`).join("")}</div>` : "";
+  $("#sheet-b").innerHTML = `${feel}<p class="small muted" style="margin:0 0 10px">Die App stellt keine Diagnose. Sie passt Training, Essen und Trinken an deine Symptome an.</p>
+    ${SYM.map(([g, l]) => `<div class="eyebrow" style="margin:10px 0 6px${g === "Warnzeichen" ? ";color:var(--bad)" : ""}">${g}</div><div class="stack" style="gap:4px">${l.map(([id, n]) => `<label class="row small" style="gap:8px;min-height:32px${g === "Warnzeichen" ? ";color:var(--bad)" : ""}"><input type="checkbox" data-hs-sym="${id}" ${hs.symptoms.includes(id) ? "checked" : ""}> ${n}</label>`).join("")}</div>`).join("")}
+    <div class="fields" style="margin-top:12px"><div class="field"><label for="hst">Temperatur °C (optional)</label><input class="inp num" id="hst" inputmode="decimal" value="${esc(hs.temp)}" placeholder="z. B. 37,8"></div></div>
+    <div class="field"><label for="hsn">Notiz (optional)</label><input class="inp" id="hsn" value="${esc(hs.note)}"></div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" data-act="health-save">Speichern</button></div>
+    <p class="small muted" style="margin:10px 0 0">Mehr dazu: <span class="chip" data-act="tip" data-id="sicktrain" style="cursor:pointer">🚦 Training bei Erkältung</span> <span class="chip" data-act="tip" data-id="sleepcold" style="cursor:pointer">🤧 Schlaf schützt</span> <span class="chip" data-act="tip" data-id="coldsupps" style="cursor:pointer">🍊 Zink & Vitamin C</span></p>`;
+}
+function saveHealthSheet(){
+  if (!hs) return;
+  if (hs.mode === "check" && !hs.feel) { toast("Wähle kurz: besser, gleich oder schlechter."); return; }
+  const h = healthCfg(), t = todayKey(), temp = num(String(hs.temp).replace(",", "."));
+  const log = (h.log || []).filter(x => x.d !== t).concat([{d: t, feel: hs.feel || "", symptoms: hs.symptoms, temp: temp > 30 ? temp : undefined}]).slice(-30);
+  const nh = Object.assign({}, h, {state: "sick", since: h.state === "sick" && h.since ? h.since : t, symptoms: hs.symptoms, temp: temp > 30 ? temp : "", note: hs.note, checkTime: h.checkTime || "17:00", lastCheck: t, log});
+  if (h.state !== "sick") { delete nh.returnFrom; delete nh.returnEnd; }
+  if (hs.feel === "worse" && nh.returnFrom) delete nh.returnFrom; // Rückfall: zurück auf krank
+  saveCfg({health: nh});
+  const lvl = healthLevel();
+  if (hs.mode === "check" && hs.feel === "better" && !["warn", "red"].includes(lvl) && !nh.returnFrom) { hs.ask = true; renderHealthSheet(); return; }
+  hs = null; sheetClose = null; closeSheet();
+  toast(lvl === "warn" ? "Gespeichert. Bitte ärztlich abklären lassen." : lvl === "red" ? "Gespeichert. Heute kein Training, Erholung hat Vorrang." : "Gespeichert. Training pausiert, Essen und Trinken sind angepasst.");
+  render();
+}
+/* Band oben auf Heute (solange krank oder in der Rückkehr) */
+function healthBand(){
+  const h = healthCfg(), lvl = healthLevel();
+  if (!lvl) return sickHintCard();
+  const wd = WDL[dateOf(h.since || todayKey()).getDay()].slice(0, 2), rp = returnPhase();
+  const log = h.log || [], worse2 = log.length >= 2 && log.slice(-2).every(x => x.feel === "worse"), long = h.since && diffDays(h.since, todayKey()) >= 7 && !log.some(x => x.feel === "better");
+  const col = lvl === "warn" ? "var(--bad)" : lvl === "red" ? "var(--bad)" : lvl === "yellow" ? "var(--warn)" : "var(--good)";
+  const txt = lvl === "green" ? `💚 Rückkehr ${rp ? "Tag " + rp.day + "/6" : ""} · ${esc(rp && rp.txt ? rp.txt.split(": ")[1] : "")}`
+    : `🤒 Krank seit ${wd} · ${lvl === "yellow" ? "nur lockere Bewegung" : "Training pausiert"} · Tippen zum Aktualisieren`;
+  return `${lvl === "warn" || worse2 || long ? `<section class="card" style="margin-bottom:10px;border:2px solid var(--bad)"><b style="color:var(--bad)">Bitte ärztlich abklären.</b><div class="small ink2" style="margin-top:4px">${lvl === "warn" ? "Bei Atemnot, Brustschmerz oder Verwirrtheit: 112." : worse2 ? "Es geht dir seit zwei Tagen schlechter." : "Du bist seit über 7 Tagen krank, ohne dass es besser wird."}</div></section>` : ""}
+    <button class="card" data-act="health-check" style="display:block;width:100%;text-align:left;margin-bottom:12px;cursor:pointer;border:1.5px solid ${col};padding:10px 14px"><span class="small"><b>${txt}</b></span></button>`;
+}
+/* Optionaler Hinweis aus den Uhrwerten (höchstens 1× pro Woche, keine Diagnose) */
+function sickHintCard(){
+  const c = cfgRaw(), t = todayKey(); if (c.sickHintAt && c.sickHintAt > addDays(t, -7)) return "";
+  const chk = k => { const sl = (S.days[k] || {}).sleep || {}, rr = Array.from({length: 30}, (_, i) => num(((S.days[addDays(k, -i - 1)] || {}).sleep || {}).rhr)).filter(v => v > 25); if (rr.length < 10 || !(num(sl.rhr) > 0)) return false; const ra = rr.reduce((a, b) => a + b, 0) / rr.length, hb = baseline(k, "hrv"); return num(sl.rhr) >= ra + 5 && hb && num(sl.hrv) > 0 && num(sl.hrv) < hb * 0.9; };
+  if (!(chk(t) && chk(addDays(t, -1)))) return "";
+  return `<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><p class="small ink2" style="margin:0 0 8px">Deine Werte sehen nach Belastung oder einem beginnenden Infekt aus (Ruhepuls erhöht, HRV niedrig). <b>Fühlst du dich krank?</b></p><div class="row"><button class="btn" data-act="health-set" data-v="sick">Ja, krank eintragen</button><button class="btn ghost" data-act="sick-hint-no">Nein</button></div></section>`;
 }
 function isReturnDay(k){ const h = healthCfg(); return !!(h.returnFrom && k >= h.returnFrom && k < addDays(h.returnFrom, 6) && (h.state === "sick" || (h.returnEnd && k <= h.returnEnd))); }
 
@@ -4213,7 +4339,7 @@ function openPlanDay(k){
 /* ----- Einstellungen ----- */
 function openSettings(){
   const c = cfg();
-  openSheet("Einstellungen", `<form class="stack" data-form="settings">
+  openSheet("Einstellungen", `${healthSettings()}<form class="stack" data-form="settings">
     <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps, Hinweise und den Kalorienrechner an.</span></div>
     <div class="eyebrow" style="margin-top:6px">Automatik</div>
     <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung & Training automatisch</b><br><span class="muted">Kalorien und Makros passen sich täglich an Gewicht, Sport und Fortschritt an. In deinen eigenen Trainingsplänen stehen Empfehlungen für Sätze, Wiederholungen und Gewicht, passend zu Ziel, Ernährung und Erholung. Deine Pläne selbst ändern sich nie.</span></span></label>
@@ -4428,7 +4554,7 @@ document.addEventListener("click", async e => {
     case "cal-sel": calSel = D.date; if (calSel.slice(0, 7) !== calMonth) calMonth = calSel.slice(0, 7); render(); break;
     case "plan-day": openPlanDay(D.date); break;
     case "plan-template": { if (autoOn()) autoPlanSync(); const w = newWorkoutFromTemplate(D.id, D.date); put("workouts", uid("w"), w); closeSheet(); toast(w.title + " für " + fmtShort(D.date) + " geplant."); break; }
-    case "start-template": { if (autoOn()) autoPlanSync(); const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
+    case "start-template": { if (sickNow() && !b.dataset.confirm) { b.dataset.confirm = "1"; toast("Du bist als krank eingetragen. Training ist gerade nicht empfohlen. Nochmal tippen, um trotzdem zu starten."); break; } if (autoOn()) autoPlanSync(); const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
     case "open-workout": closeSheet(); openWorkout(D.id); break;
     case "wk-preview": openWorkoutPreview(D.id); break;
     case "workout-del": del("workouts", D.id); toast("Gelöscht."); break;
@@ -4467,6 +4593,13 @@ document.addEventListener("click", async e => {
     case "sleep-detail": openSleepDetail(D.date || todayKey()); break;
     case "tip": openTip(D.id); break;
     case "tips-cat": tipsCat = D.c; render(); break;
+    case "health-set": { if (D.v === "sick") { closeSheet(); setTimeout(() => openHealthSheet("start"), 80); } else { const h = healthCfg(); if (h.state === "sick") { const ranges = (h.ranges || []).concat([{from: h.since, to: addDays(todayKey(), -1) >= h.since ? addDays(todayKey(), -1) : h.since}]); saveCfg({health: {state: "ok", checkTime: h.checkTime, ranges}}); toast("Gesund eingetragen. Keine Abfragen mehr."); } closeSheet(); render(); } break; }
+    case "health-check": closeSheet(); setTimeout(() => openHealthSheet(healthCfg().state === "sick" ? "check" : "start"), 80); break;
+    case "hs-feel": if (hs) { hs.feel = D.v; renderHealthSheet(); } break;
+    case "health-save": saveHealthSheet(); break;
+    case "health-return": { const h = healthCfg(); saveCfg({health: Object.assign({}, h, {returnFrom: todayKey()})}); hs = null; sheetClose = null; closeSheet(); toast("Rückkehr gestartet: 6 Tage stufenweise zurück ins Training."); if (autoOn()) setTimeout(() => { autoPlanSync(); render(); }, 50); else render(); break; }
+    case "health-noreturn": hs = null; sheetClose = null; closeSheet(); toast("Gespeichert. Gute Besserung!"); render(); break;
+    case "sick-hint-no": saveCfg({sickHintAt: todayKey()}); render(); break;
     case "fa-open": openFitnessAge(); break;
     case "fa-row": faOpenKey = faOpenKey === D.k ? null : D.k; renderFitnessAge(); break;
     case "cut-pause": { saveCfg({goalType: "maintain", cutPausedAt: todayKey(), calc: Object.assign({}, cfgRaw().calc, {pace: 0})}); toast("Ziel: Gewicht halten. Wechsle in 2–4 Wochen im Kalorienrechner wieder auf Cut."); render(); break; }
@@ -4497,6 +4630,8 @@ document.addEventListener("click", async e => {
 });
 
 document.addEventListener("input", e => {
+  if (hs && e.target.id === "hst") { hs.temp = e.target.value; return; }
+  if (hs && e.target.id === "hsn") { hs.note = e.target.value; return; }
   if (e.target.dataset && e.target.dataset.wsPain != null && ws) { const ei = +e.target.dataset.wsPain, v = +e.target.value; ws.exercises[ei].pain = v; const l = document.getElementById("wsp-" + ei); if (l) l.textContent = v; saveWs(); if ((v >= 4) !== !!e.target.dataset.hi) { e.target.dataset.hi = v >= 4 ? "1" : ""; renderWs(); } return; }
   if (ie && (e.target.id === "ieq" || e.target.id === "ieg")) { const v = num(e.target.value); if (e.target.id === "ieq") ie.qty = v > 0 ? v : ie.qty; else ie.g = v > 0 ? v : ie.g; const sc = itemScaled(); const kv = $("#sheet-b .kv"); if (kv) kv.querySelectorAll(".v").forEach((el, j) => { el.firstChild.nodeValue = fmt([sc.kcal, sc.p, sc.c, sc.f][j]); }); return; }
   const t = e.target;
@@ -4520,6 +4655,8 @@ document.addEventListener("change", e => {
   if (t.id === "hevyfile" && t.files[0]) { importHevy(t.files[0]).catch(() => { $("#hevymsg").textContent = "Die Datei konnte nicht gelesen werden."; }); return; }
   if (t.dataset.suppTime) { const list = (cfg().supplements || []).map(x => x.id === t.dataset.suppTime ? Object.assign({}, x, {time: t.value}) : x); saveCfg({supplements: list}); toast(t.value ? "Erinnerung um " + t.value + " Uhr gespeichert." : "Erinnerung entfernt."); return; }
   if (t.id === "bpw" || t.id === "bpr") { saveBedPlan(); return; }
+  if (hs && t.dataset.hsSym) { const id = t.dataset.hsSym; hs.symptoms = t.checked ? hs.symptoms.concat(id) : hs.symptoms.filter(x => x !== id); return; }
+  if (t.id === "hct") { saveCfg({health: Object.assign({}, healthCfg(), {checkTime: t.value || "17:00"})}); toast("Tägliche Abfrage um " + (t.value || "17:00") + " Uhr."); return; }
   if (t.dataset.wptime && wp) { wp.days[t.dataset.wptime][t.dataset.f] = t.value; return; }
   if (t.dataset.wpgym && wp) { wp.days[t.dataset.wpgym].gym = t.value; renderPlanner(); return; }
   if (t.id === "sld") { sleepDate = t.value || todayKey(); pendingRender = false; render(); return; }
