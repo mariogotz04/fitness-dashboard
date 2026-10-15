@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "14.10.2026 21:32";
+const APP_VERSION = "15.10.2026 19:21";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1540,7 +1540,7 @@ function workoutMinutes(w){
    DACH-Referenzwerte: Erwachsene nehmen etwa 0,8–0,9 l Wasser pro Tag über feste Nahrung auf. */
 function foodWater(d){
   let ml = 0;
-  MEALS.forEach(([m]) => ((d && d.meals && d.meals[m]) || []).forEach(it => { const g = num(it.g); if (g > 0) ml += Math.max(0, g * 0.97 - num(it.p) - num(it.c) - num(it.f)); }));
+  MEALS.forEach(([m]) => ((d && d.meals && d.meals[m]) || []).forEach(it => { if (num(it.water) > 0) { ml += num(it.water); return; } const g = num(it.g); if (g > 0) ml += Math.max(0, g * 0.97 - num(it.p) - num(it.c) - num(it.f)); }));
   return Math.round(ml / 10) * 10;
 }
 function waterGoal(k){
@@ -1631,7 +1631,7 @@ function viewEssen(){
     return `<div class="section-title spread"><span>${label}${items.length ? ` <span class="small num" style="font-weight:500;text-transform:none;letter-spacing:0;color:${pm >= 30 ? "var(--good)" : "var(--ink-2)"}">${pm >= 30 ? "✓ " : ""}${fmt(pm)} g Eiweiß</span>` : ""}</span><span class="num">${fmt(sum)} kcal</span></div>
     <section class="card" style="padding-block:8px">
       <div class="list">${items.map((it, i) => `<div class="li"><div class="grow" data-act="item-edit" data-meal="${m}" data-i="${i}" role="button" tabindex="0" style="cursor:pointer"><div class="title">${esc(it.name)}</div>
-        <div class="sub num">${it.qty ? fmt(it.qty, it.qty % 1 ? 1 : 0) + " " + esc(it.qty <= 1 ? it.qu1 || it.qu : it.qu) + " (" + fmt(it.g) + " " + unitOfItem(it) + ") · " : it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}</div></div>
+        <div class="sub num">${it.qty ? fmt(it.qty, it.qty % 1 ? 1 : 0) + " " + esc(it.qty <= 1 ? it.qu1 || it.qu : it.qu) + " (" + fmt(it.g) + " " + unitOfItem(it) + ") · " : it.g ? fmt(it.g) + " " + unitOfItem(it) + " · " : ""}${fmt(it.kcal)} kcal · <span style="color:var(--p)">P</span> ${fmt(it.p, 0)} · <span style="color:var(--c)">K</span> ${fmt(it.c, 0)} · <span style="color:var(--f)">F</span> ${fmt(it.f, 0)}${num(it.water) > 0 ? ` · 💧 ${fmt(num(it.water))} ml` : ""}</div></div>
         <button class="x" data-act="item-del" data-meal="${m}" data-i="${i}" aria-label="${esc(it.name)} entfernen">×</button></div>`).join("") || '<div class="empty" style="padding:10px">Noch nichts eingetragen.</div>'}</div>
       <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="add-food" data-meal="${m}">+ Hinzufügen</button>${hasY && !items.length ? `<button class="btn ghost" data-act="copy-meal" data-meal="${m}">Wie gestern</button>` : ""}</div>
     </section>`;
@@ -3633,6 +3633,7 @@ function renderAddFood(){
   } else if (af.mode === "schnell") {
     b += `<form class="stack" data-form="af-quick"><div class="field"><label for="qn">Bezeichnung</label><input class="inp" id="qn" placeholder="z. B. Proteinriegel" required></div>
       <div class="fields"><div class="field"><label for="qk">kcal</label><input class="inp num" id="qk" inputmode="decimal" required></div><div class="field"><label for="qp">Protein g</label><input class="inp num" id="qp" inputmode="decimal"></div><div class="field"><label for="qc">Kohlenhydr. g</label><input class="inp num" id="qc" inputmode="decimal"></div><div class="field"><label for="qf">Fett g</label><input class="inp num" id="qf" inputmode="decimal"></div></div>
+      <div class="field"><label for="qw">Flüssigkeit ml (optional)</label><input class="inp num" id="qw" inputmode="numeric" placeholder="z. B. 250"><span class="small muted">Zählt bei „Aus Lebensmitteln“, nicht bei „Getrunken“.</span></div>
       <button class="btn primary" type="submit">Hinzufügen</button></form>`;
   } else {
     b += `<form class="stack" data-form="af-new"><div class="field"><label for="nn">Name</label><input class="inp" id="nn" placeholder="z. B. Skyr natur (Milbona)" required></div>
@@ -4336,7 +4337,7 @@ document.addEventListener("submit", async e => {
       document.activeElement && document.activeElement.blur(); toast("Schlaf gespeichert: " + fmtH(mins / 60) + "."); break;
     }
     case "ai-food": runQuickFood(v("aiq")); break;
-    case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
+    case "af-quick": { const it = {name: v("qn").trim(), kcal: Math.round(num(v("qk")) || 0), p: num(v("qp")) || 0, c: num(v("qc")) || 0, f: num(v("qf")) || 0}; const wml = Math.round(num(v("qw"))); if (wml > 0) it.water = wml; addItems(af.meal, [it]); toast(it.name + " hinzugefügt."); closeSheet(); break; }
     case "ean": lookupBarcode(v("eanin")); break;
     case "af-new": { const id = uid("f"); const food = {name: v("nn").trim(), kcal: num(v("nk")) || 0, p: num(v("np")) || 0, c: num(v("nc")) || 0, f: num(v("nf")) || 0, uses: 0}; if (af.newEan) { food.ean = af.newEan; af.newEan = null; } const po = num(v("npo")); if (po > 0) food.portion = po; put("foods", id, food); af.mode = "suchen"; af.pick = id; af.g = ""; renderAddFood(); break; }
     case "activity": { const k = f.dataset.date; const title = v("acn"); const min = parseInt(v("acm"), 10); put("workouts", uid("a"), {date: k, title, kind: "activity", status: "done", minutes: min > 0 ? min : null}); closeSheet(); toast(title + " eingetragen."); break; }
