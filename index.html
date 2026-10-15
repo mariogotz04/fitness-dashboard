@@ -315,7 +315,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 19:56";
+const APP_VERSION = "15.10.2026 19:58";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -544,13 +544,6 @@ function movePattern(x){
   if (/Bankdr|Brustpresse|Schulterdr|Schulterpresse|Dips|Liegest|Drücken|Press/i.test(n) && !/Bein|Waden|Trizeps/i.test(n)) return "press";
   return null;
 }
-/* Schmerz je Übung (0–10), nur auf Wunsch nach dem letzten Satz. Ab 4 oder steigend: Übung tauschen? */
-function painHistory(exId){
-  const h = workoutsSorted().filter(w => w.status === "done").flatMap(w => (w.exercises || []).filter(e => e.exId === exId && e.pain != null).map(e => ({k: w.date, v: num(e.pain)}))).slice(-6);
-  if (!h.length) return "";
-  const last = h[h.length - 1].v, rising = h.length >= 3 && h[h.length - 1].v > h[h.length - 3].v;
-  return `<div class="section-title" style="margin-top:12px">Schmerz bei dieser Übung</div><div class="small num ink2">${h.map(x => fmtShort(x.k) + ": " + x.v).join(" · ")}</div>${last >= 4 || rising ? `<div class="hint" style="margin-top:6px">Die Übung tut dir ${last >= 4 ? "deutlich" : "zunehmend"} weh. Tausch sie im Plan mit „⇄ Tauschen“ gegen eine schonendere Variante und sprich bei anhaltenden Schmerzen mit Arzt oder Physio.</div>` : ""}`;
-}
 function exGuide(x, ownId){
   if (!x) return "";
   const mp = movePattern(x);
@@ -559,7 +552,6 @@ function exGuide(x, ownId){
     <div class="section-title" style="margin-top:12px">So geht's</div>
     <ol class="steps">${x.s.map(t => `<li>${esc(t)}</li>`).join("")}</ol>
     ${mp ? `<div class="section-title" style="margin-top:12px">Häufige Fehler</div><ul class="small ink2" style="margin:0;padding-left:18px">${MOVE_ERR[mp].map(t => `<li style="margin-bottom:4px">${esc(t)}</li>`).join("")}</ul>` : ""}
-    ${ownId ? painHistory(ownId) : ""}
     <a class="btn" style="margin-top:12px;text-decoration:none" href="${ytLink(x.n)}" target="_blank" rel="noopener">▶ Video auf YouTube ansehen</a>
     <p class="small muted" style="margin:8px 0 0">Bilder: Free Exercise DB (gemeinfrei).</p>`;
 }
@@ -4181,7 +4173,7 @@ function renderWs(){
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls && num(ls.w) ? esc(ls.w) : isBw(e.exId) ? "KG" : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
         <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
         <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button></div>`; }).join("")}</div>
-      ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}${!done && exDone ? `<div style="margin-top:8px">${e.pain == null && !wsPainOpen[ei] ? `<button class="btn ghost" data-act="ws-pain-open" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">Schmerz eintragen?</button>` : `<label class="small ink2" style="display:flex;align-items:center;gap:10px">Schmerz <input type="range" min="0" max="10" step="1" value="${num(e.pain) || 0}" data-ws-pain="${ei}" style="flex:1"><b class="num" id="wsp-${ei}">${num(e.pain) || 0}</b></label>${num(e.pain) >= 4 ? `<div class="hint" style="margin-top:6px">Tut weh? <button class="chip" data-act="swap-open" data-kind="ws" data-i="${ei}" style="border:0;cursor:pointer">⇄ Übung tauschen</button></div>` : ""}`}</div>` : ""}${swapFor && swapFor.kind === "ws" && swapFor.i === ei ? swapPanel(e.exId) : ""}</div>`;
+      ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}${swapFor && swapFor.kind === "ws" && swapFor.i === ei ? swapPanel(e.exId) : ""}</div>`;
   }).join("") + `</div>`;
   if (!done) b += `<div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="wsadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="ws-ex-add">Hinzufügen</button></div>`;
   b += `<div class="field" style="margin-top:14px"><label for="wsn">Notiz</label><textarea class="inp" id="wsn" data-ws="note" ${done ? "readonly" : ""} placeholder="Wie lief's? Schmerzen, Energie, Technik …">${esc(ws.note || "")}</textarea></div>`;
@@ -4276,7 +4268,7 @@ document.addEventListener("mouseup", dragEnd);
 document.addEventListener("contextmenu", e => { if (drag) e.preventDefault(); });
 
 /* ---------- Übung tauschen: Alternativen für dieselbe Muskelgruppe ---------- */
-let swapFor = null, wsPainOpen = {};
+let swapFor = null;
 function swapOptions(exId){
   const e = S.exercises[exId] || {}, x = exRef(exId), g = e.group || (x && x.g) || "";
   const pm = x ? x.pm || [] : [], comp = x ? x.mc === "c" : null;
@@ -4500,7 +4492,6 @@ document.addEventListener("click", async e => {
     case "swap-open": swapFor = {kind: D.kind, i: +D.i}; if (D.kind === "ws") renderWs(); else renderTe(); break;
     case "swap-close": { const k = swapFor && swapFor.kind; swapFor = null; if (k === "ws") renderWs(); else if (k === "te") renderTe(); break; }
     case "swap-pick": swapApply(D.ex); break;
-    case "ws-pain-open": wsPainOpen[+D.ei] = true; renderWs(); break;
     case "copy-meal": { const y = S.days[addDays(curDate, -1)]; if (y && y.meals && y.meals[D.meal]) { addItems(D.meal, clone(y.meals[D.meal])); toast("Von gestern übernommen."); } break; }
     case "add-food": openAddFood(D.meal); break;
     case "af-mode": stopScan(); if (af.mode === "ki") af.aiText = ($("#aiq") || {}).value || af.aiText; af.mode = D.m; af.pick = null; renderAddFood(); break;
@@ -4651,7 +4642,6 @@ document.addEventListener("click", async e => {
 document.addEventListener("input", e => {
   if (hs && e.target.id === "hst") { hs.temp = e.target.value; return; }
   if (hs && e.target.id === "hsn") { hs.note = e.target.value; return; }
-  if (e.target.dataset && e.target.dataset.wsPain != null && ws) { const ei = +e.target.dataset.wsPain, v = +e.target.value; ws.exercises[ei].pain = v; const l = document.getElementById("wsp-" + ei); if (l) l.textContent = v; saveWs(); if ((v >= 4) !== !!e.target.dataset.hi) { e.target.dataset.hi = v >= 4 ? "1" : ""; renderWs(); } return; }
   if (ie && (e.target.id === "ieq" || e.target.id === "ieg")) { const v = num(e.target.value); if (e.target.id === "ieq") ie.qty = v > 0 ? v : ie.qty; else ie.g = v > 0 ? v : ie.g; const sc = itemScaled(); const kv = $("#sheet-b .kv"); if (kv) kv.querySelectorAll(".v").forEach((el, j) => { el.firstChild.nodeValue = fmt([sc.kcal, sc.p, sc.c, sc.f][j]); }); return; }
   const t = e.target;
   if (t.closest && t.closest('form[data-form="calc"]')) { const r = calcRead(); if (t.id === "cg") { const p = Object.assign({}, cfgRaw().calc || {}, r.p, {pace: null, pkg: null}); $("#sheet-b").innerHTML = calcForm(p, r.goal); return; } $("#calcres").innerHTML = calcExplain(calcTargets(r.p, r.goal), r.goal); return; }
