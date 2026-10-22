@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "15.10.2026 21:11";
+const APP_VERSION = "22.10.2026 10:52";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -511,6 +511,7 @@ function dynRec(x, ownId){
   return {sets, reps: sc.reps, rir: sc.rir, rest: sc.rest, target: tg.v, planned: pl.sets, notes: tg.notes, diet, g};
 }
 function recBox(x, ownId){
+  return ""; // Empfehlungen für Sätze/Wiederholungen gibt es nicht mehr, du trägst alles selbst ein
   if (!x || !autoOn()) return "";
   const r = dynRec(x, ownId), wk = weekSummary(todayKey()), done = wk.groups[r.g] || 0;
   const plan = ownId ? templatesSorted().filter(t => !t.coach).flatMap(t => (t.items || []).filter(it => it.exId === ownId).map(it => ({t: t.short || t.name, it}))) : [];
@@ -523,7 +524,7 @@ function recBox(x, ownId){
 }
 /* Kurze Zeile unter jeder Übung in deinen Plänen */
 function planRecLine(it){
-  if (!autoOn()) return "";
+  return "";
   const e = S.exercises[it.exId], x = e && e.ref ? EXDBI[e.ref] : null; if (!x) return "";
   const r = dynRec(x, it.exId), diff = (num(it.sets) || 0) - r.sets;
   return `<div class="small" style="color:var(--accent);margin-top:2px">Empfehlung: ${r.sets} × ${esc(r.reps)}${diff >= 2 ? " · eher weniger Sätze" : diff <= -2 ? " · eher mehr Sätze" : ""}</div>`;
@@ -1245,8 +1246,7 @@ function setsWeeks(k){
   return `<div class="eyebrow" style="margin:16px 0 4px">Sätze pro Woche · letzte 8 Wochen</div>${weekBars(vals, {h: 100, label: "Sätze pro Woche", fmt: v => fmt(v) + " Sätze", short: v => fmt(v), xlabels: mons.map(m => fmtShort(m).replace(/\.$/, "")), today: 7, color: (v, i) => i === 7 ? "var(--accent)" : "color-mix(in srgb,var(--accent) 45%,var(--surface))"})}`;
 }
 /* ---------- Automatik in den eigenen Plänen ----------
-   Ist „Ernährung & Training automatisch“ an, trägt die App Sätze, Wiederholungen, Pausen und das Gewicht direkt in deine Pläne ein
-   (Übungen bleiben gleich, gilt für alle eigenen Pläne). Die ursprünglichen Werte werden gemerkt (orig) und beim Ausschalten zurückgesetzt. */
+   Abgeschaltet (22.10.2026): Sätze, Wiederholungen, Pausen und Gewicht trägst du selbst ein. */
 function suggestKg(exId, reps){
   const last = lastPerformance(exId, todayKey()); if (!last) return null;
   const top = Math.max(...last.sets.map(q => num(q.w) || 0)); if (!(top > 0)) return null;
@@ -1255,44 +1255,21 @@ function suggestKg(exId, reps){
   return all ? Math.round((top + (comp ? 2.5 : 1.25)) * 4) / 4 : top;
 }
 const autoTemplate = t => t && !t.coach && !t.inactive;
+/* Die Pläne gehören dir: die App schreibt keine Sätze, Wiederholungen, Pausen oder Gewichte mehr hinein.
+   Einmalig werden nur die alten Automatik-Markierungen (orig, upAt, userSets) entfernt, die Werte bleiben, wie sie gerade sind. */
 function autoPlanSync(){
-  if (!loaded || mode !== "db" || !EXDB) return 0;
-  if (sickNow()) return 0; // krank: die Automatik erhöht nichts
-  const on = autoOn(), today = todayKey(); let n = 0;
-  templatesSorted().filter(t => !t.inactive).forEach(t => {
-    let changed = false;
-    const items = (t.items || []).map(it => {
-      const x = clone(it);
-      if (!on || !autoTemplate(t)) {
-        if (x.orig) { Object.assign(x, x.orig); delete x.orig; delete x.kg; changed = true; }
-        return x;
-      }
-      const e = S.exercises[x.exId], rx = e && e.ref ? EXDBI[e.ref] : null; if (!rx) return x;
-      const r = dynRec(rx, x.exId), kg = suggestKg(x.exId, r.reps);
-      if (x.userSets) { delete x.userSets; changed = true; }
-      const rp = returnPhase(), rs = rp && !rp.done && rp.sets ? rp : null;
-      const nv = {sets: rs ? Math.max(1, Math.round(r.sets * rs.sets)) : r.sets, reps: r.reps, rest: r.rest, kg: kg ? (rs && rs.kg < 1 ? Math.round(kg * rs.kg / 1.25) * 1.25 : kg) : undefined};
-      // Volumen langsam steigern: höchstens 1 Satz mehr pro Übung und Woche (ca. 5–10 %), außer direkt nach einer Entlastungswoche
-      const dl = cfgRaw().deload || {}, hh = healthCfg(), after = (dl.to && dl.to < today && diffDays(dl.to, today) <= 7) || (hh.returnEnd && hh.returnEnd < today && diffDays(hh.returnEnd, today) <= 7) || !!returnPhase();
-      if (num(x.sets) > 0 && nv.sets > num(x.sets) && !after) { if (x.upAt && diffDays(x.upAt, today) < 7) nv.sets = num(x.sets); else { nv.sets = num(x.sets) + 1; x.upAt = today; } }
-      if (x.sets !== nv.sets || x.reps !== nv.reps || x.rest !== nv.rest || (x.kg || undefined) !== nv.kg) {
-        if (!x.orig) x.orig = {sets: x.sets, reps: x.reps, rest: x.rest || ""};
-        Object.assign(x, nv); if (!nv.kg) delete x.kg; changed = true;
-      }
-      return x;
-    });
-    if (changed) { const {id, ...data} = t; put("templates", id, Object.assign(clone(data), {items})); n++; }
-  });
-  // geplante, noch nicht gestartete Trainings aus diesen Plänen ebenfalls aktualisieren
-  if (n) workoutsSorted().filter(w => w.status === "planned" && w.templateId && S.templates[w.templateId] && w.date >= todayKey()).forEach(w => {
-    const t = S.templates[w.templateId], nw = newWorkoutFromTemplate(w.templateId, w.date);
-    const {id, ...data} = w; put("workouts", w.id, Object.assign(clone(data), {exercises: nw.exercises, title: t.name}));
+  if (!loaded || mode !== "db") return 0;
+  let n = 0;
+  templatesSorted().forEach(t => {
+    if (!(t.items || []).some(it => it.orig || it.upAt || it.userSets)) return;
+    const items = (t.items || []).map(it => { const x = clone(it); delete x.orig; delete x.upAt; delete x.userSets; return x; });
+    const {id, ...data} = t; put("templates", id, Object.assign(clone(data), {items})); n++;
   });
   return n;
 }
-/* Was du im Training an Übungen und Satzzahl änderst, übernimmt der Plan für die nächsten Male:
+/* Was du im Training an Übungen änderst, übernimmt der Plan für die nächsten Male:
    Reihenfolge und Übungen wie im Training, entfernte Übungen fliegen raus, neue kommen dazu.
-   Die Satzzahl steuert danach wie gewohnt die Automatik (wenn sie an ist). */
+   Sätze, Wiederholungen, Pausen und Gewicht bestehender Übungen bleiben so, wie du sie im Plan eingetragen hast. */
 function syncPlanFromWorkout(w){
   if (!w || !w.templateId || w.status !== "done") return false;
   const t = S.templates[w.templateId]; if (!t) return false;
@@ -1301,16 +1278,13 @@ function syncPlanFromWorkout(w){
     const n = (e.sets || []).filter(q => q.type !== "warmup").length; if (!n || items.some(x => x.exId === e.exId)) return;
     const it = old.find(x => x.exId === e.exId);
     if (it) {
-      const x = clone(it), tgt = num(e.target && e.target.sets) || num(it.sets);
-      if (n !== tgt) x.sets = n; // die Automatik passt die Satzzahl danach wie gewohnt weiter an
-      items.push(x);
+      items.push(clone(it));
     } else {
-      const rx = exRef(e.exId), r = rx && autoOn() ? dynRec(rx, e.exId) : null;
-      items.push({exId: e.exId, sets: n, reps: r ? r.reps : "8–12", rest: r ? r.rest : "2 min"});
+      items.push({exId: e.exId, sets: n, reps: (e.target && e.target.reps) || "8–12", rest: (e.target && e.target.rest) || "2 min"});
     }
   });
   if (!items.length) return false;
-  const same = items.length === old.length && items.every((x, i) => x.exId === old[i].exId && num(x.sets) === num(old[i].sets));
+  const same = items.length === old.length && items.every((x, i) => x.exId === old[i].exId);
   if (same) { if (!w.planSynced) put("workouts", w.id, Object.assign(clone(S.workouts[w.id] || {}), {planSynced: true})); return false; }
   put("templates", w.templateId, Object.assign(clone(t), {items}));
   put("workouts", w.id, Object.assign(clone(S.workouts[w.id] || {}), {planSynced: true}));
@@ -1319,7 +1293,7 @@ function syncPlanFromWorkout(w){
 /* Beim Öffnen: zuletzt abgeschlossene Trainings (heute/gestern), die noch nicht übernommen wurden */
 function syncRecentPlans(){
   const t = addDays(todayKey(), -1); let n = 0;
-  workoutsSorted().filter(w => w.status === "done" && w.templateId && !w.planSynced && w.date >= t).forEach(w => { if (syncPlanFromWorkout(Object.assign({}, w))) { n++; toast(`Plan „${(S.templates[w.templateId] || {}).name || "Training"}“ an dein Training angepasst.`); } });
+  workoutsSorted().filter(w => w.status === "done" && w.templateId && !w.planSynced && w.date >= t).forEach(w => { if (syncPlanFromWorkout(Object.assign({}, w))) { n++; toast(`Übungen im Plan „${(S.templates[w.templateId] || {}).name || "Training"}“ wie im Training übernommen.`); } });
   return n;
 }
 let autoPlanDay = null;
@@ -1335,7 +1309,7 @@ function openWorkoutPreview(id){
   const rows = (w.exercises || []).map(e => {
     const x = exRef(e.exId), last = lastPerformance(e.exId, w.date, id), t = e.target;
     const doneSets = (e.sets || []).filter(q => q.type !== "warmup" && num(q.r) > 0);
-    const rec = !done && autoOn() && x ? dynRec(x, e.exId) : null;
+    const rec = null;
     return `<button class="pick" data-act="open-ex" data-id="${e.exId}" style="align-items:flex-start">${x ? exAnim(x, "48px") : ""}<span style="flex:1;min-width:0"><span style="display:block;font-weight:600">${esc(exName(e.exId) || e.name)}</span>
       <span class="small muted num" style="display:block">${done ? esc(setsStr(doneSets, isBw(e.exId))) || "keine Sätze" : t ? `${t.sets} × ${esc(t.reps)}${t.rest ? " · Pause " + esc(t.rest) : ""}` : (e.sets || []).length + " Sätze"}</span>
       ${!done && last ? `<span class="small ink2 num" style="display:block">Letztes Mal: ${esc(setsStr(last.sets, isBw(e.exId)))}</span>` : ""}
@@ -1864,9 +1838,9 @@ function viewCalendar(){
 }
 function viewTemplates(){
   const tpls = templatesSorted();
-  return (autoOn() ? `<div class="hint" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Gewicht und Pausen werden in deinen Plänen automatisch eingetragen und laufend an Ziel, Ernährung, Erholung und deine letzten Leistungen angepasst. Die Übungen bleiben, wie du sie gewählt hast.</div>` : "") + (tpls.map(t => `<section class="card" style="margin-bottom:12px">
+  return (tpls.map(t => `<section class="card" style="margin-bottom:12px">
     <div class="card-h"><h2>${esc(t.name)}</h2><span class="row" style="gap:6px">${t.inactive ? '<span class="chip warn">Pausiert</span>' : ""}<span class="chip">${(t.items || []).length} Übungen</span></span></div>
-    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${isBw(it.exId) ? "KG + " : ""}${fmtKg(it.kg)} kg</b>` : isBw(it.exId) ? " · Körpergewicht" : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}${it.orig ? ' <span class="chip acc" style="padding:1px 7px;font-size:11px">🤖 auto</span>' : ""}</div>${it.orig ? "" : planRecLine(it)}</div></div>`).join("")}</div>
+    <div class="list">${(t.items || []).map(it => `<div class="li"><div class="grow"><div class="title">${esc(exName(it.exId))}</div><div class="sub num">${it.sets} × ${esc(it.reps)}${it.kg ? ` · <b style="color:var(--ink)">${isBw(it.exId) ? "KG + " : ""}${fmtKg(it.kg)} kg</b>` : isBw(it.exId) ? " · Körpergewicht" : ""}${it.rest ? " · Pause " + esc(it.rest) : ""}</div></div></div>`).join("")}</div>
     <div class="row" style="margin-top:10px"><button class="btn primary" data-act="start-template" data-id="${t.id}" data-date="${todayKey()}">Heute starten</button><button class="btn" data-act="edit-template" data-id="${t.id}">Bearbeiten</button><button class="btn ghost" data-act="te-toggle" data-id="${t.id}">${t.inactive ? "Aktivieren" : "Pausieren"}</button></div>
   </section>`).join("") || '<section class="card"><div class="empty">Noch keine Trainingspläne angelegt.</div></section>') +
   `<button class="btn block" data-act="edit-template" data-id="">+ Neuen Plan anlegen</button>`;
@@ -3068,12 +3042,12 @@ const deloadOn = () => { const dl = cfgRaw().deload || {}, t = todayKey(); retur
 function deloadCard(){
   const dl = deloadState();
   if (dl.active) return `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>🪫 Entlastungswoche</h2><span class="chip">bis ${fmtShort(dl.to)}</span></div>
-    <p class="small ink2" style="margin:0 0 10px">${autoOn() ? "Die Automatik hat in deinen Plänen etwa ⅓ weniger Sätze eingetragen. Gewichte bleiben gleich." : "Mach diese Woche etwa ⅓ weniger Sätze (z. B. 3 → 2), die Gewichte bleiben gleich."} Danach geht es automatisch normal weiter.</p>
+    <p class="small ink2" style="margin:0 0 10px">Mach diese Woche etwa ⅓ weniger Sätze (z. B. 3 → 2), die Gewichte bleiben gleich. Deine Pläne bleiben unverändert.</p>
     <button class="btn ghost" data-act="deload-stop">Entlastungswoche beenden</button></section>`;
   if (!dl.suggest) return "";
   return `<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><div class="card-h"><h2>🪫 Zeit für eine Entlastungswoche?</h2></div>
     <p class="small ink2" style="margin:0 0 6px">${dl.since >= 16 ? "Über 15" : dl.since} Wochen ohne leichtere Woche, und dein Körper sendet Signale: ${esc(dl.signals.join(", "))}.</p>
-    <p class="small muted" style="margin:0 0 10px">7 Tage etwa ⅓ weniger Sätze, gleiche Gewichte. Das baut Ermüdung ab, danach geht es oft stärker weiter.${autoOn() ? " Die Automatik trägt das in deine Pläne ein und stellt danach selbst zurück." : ""}</p>
+    <p class="small muted" style="margin:0 0 10px">7 Tage etwa ⅓ weniger Sätze, gleiche Gewichte. Das baut Ermüdung ab, danach geht es oft stärker weiter.</p>
     <div class="row"><button class="btn primary" data-act="deload-start">Entlastungswoche starten</button><button class="btn ghost" data-act="tip" data-id="deload">Mehr dazu</button></div></section>`;
 }
 let tipsCat = "";
@@ -3665,7 +3639,7 @@ function healthDaily(){
 }
 function trainingHealthNote(){
   const lvl = healthLevel(); if (!lvl) return "";
-  if (lvl === "green") { const rp = returnPhase(); return rp && rp.txt ? `<div class="hint" style="margin-bottom:10px">💚 ${esc(rp.txt)}${autoOn() && rp.sets ? " Die Automatik hat die Sätze in deinen Plänen schon angepasst." : ""}</div>` : ""; }
+  if (lvl === "green") { const rp = returnPhase(); return rp && rp.txt ? `<div class="hint" style="margin-bottom:10px">💚 ${esc(rp.txt)}</div>` : ""; }
   return `<div class="hint" style="margin-bottom:10px;border:1.5px solid var(--bad)">⏸️ <b>Training pausiert (krank).</b> ${lvl === "yellow" ? "Nur Schnupfen oder Halskratzen: höchstens 20–30 Min. lockerer Spaziergang, wenn es sich gut anfühlt. Kein Gym und kein Mannschaftstraining, damit du niemanden ansteckst." : "Heute kein Training, Ruhe hat Vorrang."}</div>`;
 }
 function healthFoodHint(){
@@ -4355,7 +4329,7 @@ function renderWs(){
     const work = (e.sets || []).filter(q => q.type !== "warmup"), exDone = work.length > 0 && work.every(q => q.done);
     return `<div class="ex${exDone ? " exdone" : ""}" ${done ? "" : `data-sort="ws" data-i="${ei}"`}><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
       <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets, isBw(e.exId)))}</div>` : ""}${done || !autoOn() || (e.target && e.target.kg) ? (e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">🤖 Heute: ${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : "") : weightSuggestion(e.exId, e.target, ws.date, ws.id)}
+      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets, isBw(e.exId)))}</div>` : ""}${e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">Plan: ${isBw(e.exId) ? "KG + " : ""}${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : ""}
       <div class="row" style="gap:8px;margin-top:2px">${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}${done ? "" : `<button class="chip" data-act="swap-open" data-kind="ws" data-i="${ei}" style="cursor:pointer;border:0">⇄ Tauschen</button>`}${done ? "" : `<button class="chip${isBw(e.exId) ? " acc" : ""}" data-act="ws-bw" data-id="${e.exId}" aria-pressed="${isBw(e.exId)}" style="cursor:pointer;border:0">🧍 Körpergewicht${isBw(e.exId) ? " ✓" : ""}</button>`}</div></div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
@@ -4411,11 +4385,11 @@ function openTemplateEdit(id){
 }
 function renderTe(){
   const exOpts = Object.entries(S.exercises).sort((a, b) => a[1].name.localeCompare(b[1].name, "de")).map(([id, e]) => `<option value="${id}">${esc(e.name)}</option>`).join("");
-  $("#sheet-b").innerHTML = `${autoOn() && autoTemplate(te) ? `<div class="hint small" style="margin-bottom:12px">🤖 Automatik ist an: Sätze, Wiederholungen, Pausen und Gewicht setzt die App selbst. Hier legst du die Übungen und ihre Reihenfolge fest.</div>` : ""}<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
+  $("#sheet-b").innerHTML = `<div class="fields"><div class="field"><label for="ten">Name</label><input class="inp" id="ten" data-te="name" value="${esc(te.name)}" placeholder="z. B. Oberkörper A"></div><div class="field"><label for="tes">Kurzname</label><input class="inp" id="tes" data-te="short" value="${esc(te.short || "")}" placeholder="OK A"></div></div>
     <div class="section-title">Übungen</div>
     <p class="small muted" style="margin:0 0 8px">Übung lange gedrückt halten und ziehen, um sie zu verschieben.</p><div class="sortlist">
     ${te.items.map((it, i) => `<div class="ex" data-sort="te" data-i="${i}"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="chip" data-act="swap-open" data-kind="te" data-i="${i}" style="border:0;cursor:pointer">⇄ Tauschen</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>${swapFor && swapFor.kind === "te" && swapFor.i === i ? swapPanel(it.exId) : ""}
-      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 4 : 3},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
+      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 5 : 4},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}" placeholder="8–12"></div><div class="field"><label>${isBw(it.exId) ? "+ kg" : "kg"}</label><input class="inp num" inputmode="decimal" data-te-i="${i}" data-k="kg" value="${esc(it.kg != null ? it.kg : "")}" placeholder="–"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
     </div>
     <div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="teadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="te-add">Hinzufügen</button></div>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="te-save">Plan speichern</button>${te.id ? '<button class="btn ghost danger" data-act="te-remove">Plan löschen</button>' : ""}</div>`;
@@ -4487,7 +4461,7 @@ function swapApply(key){
     swapFor = null; saveWs(); renderWs(); toast("Getauscht: " + exName(id));
   } else if (swapFor.kind === "te" && te) {
     const it = te.items[swapFor.i]; if (!it) return;
-    it.exId = id; delete it.kg; delete it.orig;
+    it.exId = id; delete it.kg;
     swapFor = null; renderTe(); toast("Getauscht. Speichern nicht vergessen.");
   }
 }
@@ -4544,8 +4518,8 @@ function openSettings(){
   openSheet("Einstellungen", `${healthSettings()}<form class="stack" data-form="settings">
     <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps, Hinweise und den Kalorienrechner an.</span></div>
     <div class="eyebrow" style="margin-top:6px">Automatik</div>
-    <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung & Training automatisch</b><br><span class="muted">Kalorien und Makros passen sich täglich an Gewicht, Sport und Fortschritt an. In deinen eigenen Trainingsplänen stehen Empfehlungen für Sätze, Wiederholungen und Gewicht, passend zu Ziel, Ernährung und Erholung. Deine Pläne selbst ändern sich nie.</span></span></label>
-    <div class="field"><label for="gxp">Trainingserfahrung</label><select class="inp" id="gxp">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Bestimmt die Empfehlungen: Einsteiger mehr Wiederholungen mit Puffer, Erfahrene bei schweren Grundübungen auch 5–8 Wiederholungen.</span></div>
+    <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung automatisch</b><br><span class="muted">Kalorien und Makros passen sich täglich an Gewicht, Sport und Fortschritt an. Sätze, Wiederholungen und Gewicht in deinen Trainingsplänen trägst du selbst ein.</span></span></label>
+    <div class="field"><label for="gxp">Trainingserfahrung</label><select class="inp" id="gxp">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Bestimmt beim Aufbau, wie schnell du zunehmen solltest.</span></div>
     <div class="eyebrow">Tagesziele Ernährung</div>
     ${c.calc && c.calc.on ? `<div class="hint">Werden automatisch vom Kalorienrechner berechnet. <button class="btn ghost" type="button" data-act="calc-open" style="min-height:32px">Rechner öffnen</button></div>` : `<button class="btn" type="button" data-act="calc-open">🧮 Mit dem Kalorienrechner berechnen</button>`}
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}" ${c.calc && c.calc.on ? "readonly" : ""}></div></div>
@@ -4754,8 +4728,8 @@ document.addEventListener("click", async e => {
     case "cal-prev": case "cal-next": { const [y, m] = calMonth.split("-").map(Number); const d = new Date(y, m - 1 + (a === "cal-next" ? 1 : -1), 1); calMonth = keyOf(d).slice(0, 7); render(); break; }
     case "cal-sel": calSel = D.date; if (calSel.slice(0, 7) !== calMonth) calMonth = calSel.slice(0, 7); render(); break;
     case "plan-day": openPlanDay(D.date); break;
-    case "plan-template": { if (autoOn()) autoPlanSync(); const w = newWorkoutFromTemplate(D.id, D.date); put("workouts", uid("w"), w); closeSheet(); toast(w.title + " für " + fmtShort(D.date) + " geplant."); break; }
-    case "start-template": { if (sickNow() && !b.dataset.confirm) { b.dataset.confirm = "1"; toast("Du bist als krank eingetragen. Training ist gerade nicht empfohlen. Nochmal tippen, um trotzdem zu starten."); break; } if (autoOn()) autoPlanSync(); const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
+    case "plan-template": { const w = newWorkoutFromTemplate(D.id, D.date); put("workouts", uid("w"), w); closeSheet(); toast(w.title + " für " + fmtShort(D.date) + " geplant."); break; }
+    case "start-template": { if (sickNow() && !b.dataset.confirm) { b.dataset.confirm = "1"; toast("Du bist als krank eingetragen. Training ist gerade nicht empfohlen. Nochmal tippen, um trotzdem zu starten."); break; } const id = uid("w"); const w = newWorkoutFromTemplate(D.id, D.date || todayKey()); put("workouts", id, w); openWorkout(id); break; }
     case "open-workout": closeSheet(); openWorkout(D.id); break;
     case "wk-preview": openWorkoutPreview(D.id); break;
     case "workout-del": del("workouts", D.id); toast("Gelöscht."); break;
@@ -4812,7 +4786,7 @@ document.addEventListener("click", async e => {
     case "health-check": closeSheet(); setTimeout(() => openHealthSheet(healthCfg().state === "sick" ? "check" : "start"), 80); break;
     case "hs-feel": if (hs) { hs.feel = D.v; renderHealthSheet(); } break;
     case "health-save": saveHealthSheet(); break;
-    case "health-return": { const h = healthCfg(); saveCfg({health: Object.assign({}, h, {returnFrom: todayKey()})}); hs = null; sheetClose = null; closeSheet(); toast("Rückkehr gestartet: 6 Tage stufenweise zurück ins Training."); if (autoOn()) setTimeout(() => { autoPlanSync(); render(); }, 50); else render(); break; }
+    case "health-return": { const h = healthCfg(); saveCfg({health: Object.assign({}, h, {returnFrom: todayKey()})}); hs = null; sheetClose = null; closeSheet(); toast("Rückkehr gestartet: 6 Tage stufenweise zurück ins Training."); render(); break; }
     case "health-noreturn": hs = null; sheetClose = null; closeSheet(); toast("Gespeichert. Gute Besserung!"); render(); break;
     case "sick-hint-no": saveCfg({sickHintAt: todayKey()}); render(); break;
     case "fa-open": openFitnessAge(); break;
@@ -4821,8 +4795,8 @@ document.addEventListener("click", async e => {
     case "cut-continue": saveCfg({cutFatigueSnooze: addDays(todayKey(), 7)}); render(); break;
     case "break-now": { const t = todayKey(), to = addDays(t, 6); saveCfg({calc: Object.assign({}, cfgRaw().calc, {breakFrom: t, breakTo: to, cutStart: addDays(t, 7)})}); toast(`Diätpause bis ${fmtShort(to)}: diese Woche Erhaltungskalorien.`); render(); break; }
     case "plateau-snooze": saveCfg({plateauSnooze: addDays(todayKey(), 7)}); render(); break;
-    case "deload-start": { const t = todayKey(); saveCfg({deload: {from: t, to: addDays(t, 6)}}); if (autoOn()) autoPlanSync(); toast(autoOn() ? "Entlastungswoche gestartet. Deine Pläne haben jetzt etwa ⅓ weniger Sätze." : "Entlastungswoche gestartet. Mach 7 Tage etwa ⅓ weniger Sätze."); render(); break; }
-    case "deload-stop": { const dl = cfgRaw().deload || {}; saveCfg({deload: Object.assign({}, dl, {to: addDays(todayKey(), -1)})}); if (autoOn()) autoPlanSync(); toast("Entlastungswoche beendet."); render(); break; }
+    case "deload-start": { const t = todayKey(); saveCfg({deload: {from: t, to: addDays(t, 6)}}); toast("Entlastungswoche gestartet. Mach 7 Tage etwa ⅓ weniger Sätze."); render(); break; }
+    case "deload-stop": { const dl = cfgRaw().deload || {}; saveCfg({deload: Object.assign({}, dl, {to: addDays(todayKey(), -1)})}); toast("Entlastungswoche beendet."); render(); break; }
     case "ws-info": wsInfo[+D.ei] = !wsInfo[+D.ei]; renderWs(); break;
     case "ws-bw": { const ex = S.exercises[D.id]; if (ex) { put("exercises", D.id, Object.assign({}, ex, {bw: !isBw(D.id)})); toast(!isBw(D.id) ? "Wieder mit Gewicht." : "Körpergewicht: Trag nur Zusatzgewicht ein, sonst leer lassen."); } renderWs(); break; }
     case "edit-ex": openExEdit(D.id); break;
@@ -4832,7 +4806,7 @@ document.addEventListener("click", async e => {
     case "te-add": { const v = $("#teadd").value; if (!v) break; te.items.push({exId: v, sets: 3, reps: "8–12", rir: "1–2", rest: "2 min"}); renderTe(); break; }
     case "te-del": te.items.splice(+D.i, 1); renderTe(); break;
     case "te-up": { const i = +D.i; if (i > 0) { const t = te.items[i]; te.items[i] = te.items[i - 1]; te.items[i - 1] = t; } renderTe(); break; }
-    case "te-save": { if (!te.name.trim()) { toast("Gib dem Plan einen Namen."); break; } const {id, ...data} = te; put("templates", id || uid("t"), data); te = null; sheetClose = null; closeSheet(); const n = autoOn() ? autoPlanSync() : 0; toast(n ? "Plan gespeichert. Die Automatik hat Sätze, Wiederholungen und Gewicht eingetragen." : "Plan gespeichert."); break; }
+    case "te-save": { if (!te.name.trim()) { toast("Gib dem Plan einen Namen."); break; } const {id, ...data} = te; (data.items || []).forEach(x => { delete x.orig; delete x.upAt; delete x.userSets; }); put("templates", id || uid("t"), data); te = null; sheetClose = null; closeSheet(); toast("Plan gespeichert."); break; }
     case "te-remove": if (b.dataset.confirm) { del("templates", te.id); te = null; sheetClose = null; closeSheet(); } else { b.dataset.confirm = "1"; b.textContent = "Wirklich löschen?"; } break;
     case "w-range": weightRange = +D.r; render(); break;
     case "weight-del": { const d = getDay(D.date); delete d.weight; delete d.waist; saveDay(D.date, d); break; }
@@ -4860,7 +4834,7 @@ document.addEventListener("input", e => {
     saveWs(); return;
   }
   if (t.dataset.te && te) { te[t.dataset.te] = t.value; return; }
-  if (t.dataset.teI != null && te) { const it = te.items[+t.dataset.teI]; it[t.dataset.k] = t.dataset.k === "sets" ? (parseInt(t.value, 10) || "") : t.value; return; }
+  if (t.dataset.teI != null && te) { const it = te.items[+t.dataset.teI]; if (t.dataset.k === "kg") { const kv = num(String(t.value).replace(",", ".")); if (kv > 0) it.kg = kv; else delete it.kg; return; } it[t.dataset.k] = t.dataset.k === "sets" ? (parseInt(t.value, 10) || "") : t.value; return; }
 });
 document.addEventListener("change", e => {
   const t = e.target;
