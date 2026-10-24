@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "22.10.2026 10:52";
+const APP_VERSION = "24.10.2026 17:54";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -367,6 +367,10 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
 };
 
+/* Ernährung ohne Tracking (seit 24.10.2026, Wunsch von Mario): kein Eintragen von Essen, Kalorien, Makros oder Gramm mehr.
+   Stattdessen Hinweise aus dem Gewichtstrend (Wochenschnitt), eine Tages-Checkliste zum Antippen und Trinken.
+   Alte Essenseinträge bleiben gespeichert. Auf true setzen bringt das alte Tracking zurück. */
+const FOOD_TRACK = false;
 const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["tipps","Tipps"],["koerper","Körper"],["routine","Erholung"],["freunde","Freunde"]];
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
@@ -901,7 +905,7 @@ function recoveryTips(k){
   if (z === "bad") tips.push(["Heute zurückschalten", "Deine Erholung ist niedrig. Mach heute Pause oder nur ein leichtes Training, bei dem du 3 Wiederholungen vor dem Versagen aufhörst, ohne neue Rekordversuche. Ein schweres Unterkörpertraining verschiebst du besser."]);
   if (z === "warn" && !tips.length) tips.push(["Normal trainieren, nicht übertreiben", "Trainiere nach Plan, aber lass bei den schweren Übungen eher 2 Wiederholungen in Reserve. Gönn dir ein gutes Warm-up von 12–15 Minuten."]);
   if (z === "good") tips.push(["Grünes Licht", "Gute Voraussetzungen: Heute kannst du an die Progression gehen und bei sauberer Technik das Gewicht erhöhen, wenn du den Wiederholungsbereich schaffst."]);
-  if (Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). ${({cut: "Im Defizit ist Protein der wichtigste Hebel, damit du Muskeln behältst.", bulk: "Für den Muskelaufbau ist Protein der wichtigste Hebel bei der Ernährung.", maintain: "Protein ist der wichtigste Ernährungs-Hebel für die Regeneration."})[goalType()]}`]);
+  if (FOOD_TRACK && Object.keys(y).length && y.meals && yt.p > 0 && yt.p < c.p * 0.8) tips.push(["Mehr Protein", `Gestern waren es nur ${fmt(yt.p)} g Protein (Ziel ${c.p} g). ${({cut: "Im Defizit ist Protein der wichtigste Hebel, damit du Muskeln behältst.", bulk: "Für den Muskelaufbau ist Protein der wichtigste Hebel bei der Ernährung.", maintain: "Protein ist der wichtigste Ernährungs-Hebel für die Regeneration."})[goalType()]}`]);
   if (!tips.length) tips.push(["Check-in machen", "Trag deinen Schlaf ein und sag kurz, wie du dich fühlst. Dann berechne ich deine Erholung und gebe dir passende Tipps."]);
   return tips.slice(0, 1);
 }
@@ -1056,12 +1060,12 @@ function viewHeute(){
   const taken = d.supps || {};
   const sl = d.sleep;
 
-  return `${healthBand()}${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst deine Ziele fest: Kalorien, Makros und Wunschgewicht. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
+  return `${healthBand()}${!S.settings.main ? `<div class="banner spread" style="flex-wrap:wrap">Lege zuerst dein Ziel und dein Wunschgewicht fest. <button class="btn primary" data-act="settings">Ziele festlegen</button></div>` : ""}<div class="grid two">
   ${plannerPrompt(curDate)}
   ${recoverySection(curDate)}
   ${footballCard(curDate)}
   ${mealPlanCard(curDate)}
-  <section class="card">
+  ${FOOD_TRACK ? `<section class="card">
     <div class="card-h"><h2>Kalorien</h2><button class="btn ghost" data-act="tab" data-tab="essen">Essen eintragen</button></div>
     <div class="row" style="gap:18px;flex-wrap:nowrap">${kcalRing(t, c)}
       <div class="stack" style="flex:1;min-width:0;gap:4px">
@@ -1070,12 +1074,16 @@ function viewHeute(){
       </div></div>
     <div class="stack" style="margin-top:14px">${macroRows(t, c)}${waterRow(curDate)}</div>
     ${kcal7(curDate)}
-  </section>
+  </section>` : `<section class="card">
+    <div class="card-h"><h2>Ernährung</h2><button class="btn ghost" data-act="tab" data-tab="essen">Details</button></div>
+    ${trendHint(weightTrend(), true)}
+    <div class="stack" style="margin-top:12px">${ncList(curDate)}${waterRow(curDate)}</div>
+  </section>`}
 
   <section class="card">
     <div class="card-h"><h2>Gewicht</h2><button class="btn ghost" data-act="tab" data-tab="koerper">Verlauf</button></div>
     <div class="kv">
-      <div><span class="eyebrow">${lastW ? (lastW.k === todayKey() ? "Heute" : "Zuletzt " + fmtShort(lastW.k)) : "Zuletzt"}</span><div class="v">${lastW ? fmt(lastW.v, 1) : "–"}<span class="unit">kg</span></div></div>
+      ${FOOD_TRACK ? `<div><span class="eyebrow">${lastW ? (lastW.k === todayKey() ? "Heute" : "Zuletzt " + fmtShort(lastW.k)) : "Zuletzt"}</span><div class="v">${lastW ? fmt(lastW.v, 1) : "–"}<span class="unit">kg</span></div></div>` : ""}
       <div><span class="eyebrow">Ø 7 Tage</span><div class="v">${avg ? fmt(avg, 1) : "–"}<span class="unit">kg</span></div></div>
       <div><span class="eyebrow">Tempo</span><div class="v">${rate == null ? "–" : (rate > 0 ? "+" : "") + fmt(rate, 2)}<span class="unit">kg/Wo</span></div></div>
     </div>
@@ -1202,13 +1210,13 @@ async function runTipsAI(k){
   const wsT = workoutsSorted().filter(w => w.date === k).map(w => `${w.title} (${w.status === "done" ? "erledigt" : "geplant"})`);
   const yt = dayTotals(S.days[y]);
   const facts = [
-    `Ziel: ${GOALS[goalType()]}, Zielgewicht ${c.goalLo} kg, ${c.kcal} kcal und ${c.p} g Protein pro Tag, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
+    `Ziel: ${GOALS[goalType()]}, Zielgewicht ${c.goalLo} kg${FOOD_TRACK ? `, ${c.kcal} kcal und ${c.p} g Protein pro Tag` : ", Ernährung wird bewusst nicht getrackt"}, Training Oberkörper/Unterkörper 3× pro Woche, dazu Fußball und ca. 10.000 Schritte.`,
     `Erholung heute: ${r ? r.score + " % (" + r.parts.map(p => p.label + " " + Math.round(p.score)).join(", ") + ")" : "unbekannt"}.`,
     `Schlaf letzte Nacht: ${d.sleep && d.sleep.h ? fmtH(d.sleep.h) + "" + (d.sleep.q ? ", Qualität " + d.sleep.q + "/5" : "") + (d.sleep.hrv ? ", HRV " + d.sleep.hrv + " ms" : "") + (d.sleep.rhr ? ", Ruhepuls " + d.sleep.rhr : "") : "nicht eingetragen"}. Bedarf heute Nacht etwa ${fmtH(sleepNeed(k))}.`,
     `Journal: ${d.journal ? Object.entries(d.journal).map(([q, v]) => q + "=" + (v ? "ja" : "nein")).join(", ") : "keins"}.`,
     `Belastung gestern: ${fmt(strainOf(y), 1)} von 21${wsY.length ? " durch " + wsY.join("; ") : ""}.`,
     `Heute im Kalender: ${wsT.join("; ") || "nichts"}.`,
-    `Gestern gegessen: ${fmt(yt.kcal)} kcal, ${fmt(yt.p)} g Protein.`,
+    FOOD_TRACK ? `Gestern gegessen: ${fmt(yt.kcal)} kcal, ${fmt(yt.p)} g Protein.` : `Ernährungs-Checkliste gestern: ${ncItems(y).filter(([id]) => ncDone(y, id)).map(x => x[2]).join(", ") || "nichts abgehakt"}.`,
     `Bekannte Beschwerden: Schulterprellung im Juli 2026, Knieschwellung links nach dem Laufen im August 2026.`
   ].join("\n");
   tipsBusy = true; render();
@@ -1357,7 +1365,7 @@ function intensityOf(k){
 let drinkRes = "";
 function fuelBox(k){
   const lvl = intensityOf(k); if (lvl == null) return "";
-  const snack = [["locker", "1 Stück Obst, z. B. 2 Kiwis oder ein Apfel"], ["mittel", "Obst plus Eiweiß, z. B. Banane mit 250 ml Milch oder 125 g Quark"], ["hart", "Obst, Getreide und Eiweiß, z. B. Banane, Müsliriegel und 2 Eier oder Putenbrust"]][lvl];
+  const snack = [["locker", "1 Stück Obst, z. B. 2 Kiwis oder ein Apfel"], ["mittel", "Obst plus Eiweiß, z. B. Banane mit einem Glas Milch oder einem Becher Quark"], ["hart", "Obst, Getreide und Eiweiß, z. B. Banane, Müsliriegel und 2 Eier oder Putenbrust"]][lvl];
   const done = workoutsSorted().some(w => w.date === k && w.status === "done");
   return `<div class="hint" style="margin-top:10px"><b>Snack rund ums Training (${snack[0]}):</b> ${snack[1]}.</div>
     ${done ? `<form class="row" data-form="drink" style="margin-top:8px;gap:6px;flex-wrap:wrap"><span class="small ink2" style="flex-basis:100%">Trink-Rechner: Gewicht vor und nach dem Training</span><input class="inp num" id="dv" inputmode="decimal" placeholder="vorher kg" style="width:96px;min-height:36px;padding:5px 8px"><input class="inp num" id="dn" inputmode="decimal" placeholder="nachher kg" style="width:96px;min-height:36px;padding:5px 8px"><button class="btn" type="submit" style="min-height:36px">Berechnen</button>${drinkRes ? `<span class="small" style="flex-basis:100%"><b>${esc(drinkRes)}</b></span>` : ""}</form>` : ""}`;
@@ -1749,6 +1757,7 @@ function waterCard(k){
 
 /* ----- Essen ----- */
 function viewEssen(){
+  if (!FOOD_TRACK) { const hf = healthFoodHint(), mp = mealPlanCard(curDate); return `${hf ? `<section class="card" style="margin-bottom:12px;padding-top:6px">${hf}</section>` : ""}${trendCard()}${ncCard(curDate)}${waterCard(curDate)}${mp ? '<div style="height:12px"></div>' + mp : ""}`; }
   const c = cfg(), d = S.days[curDate] || {}, t = dayTotals(d);
   const yd = S.days[addDays(curDate, -1)] || {};
   return `<section class="card">
@@ -1776,6 +1785,78 @@ function viewEssen(){
       <div class="row" style="padding-block:6px 4px"><button class="btn primary" data-act="add-food" data-meal="${m}">+ Hinzufügen</button>${hasY && !items.length ? `<button class="btn ghost" data-act="copy-meal" data-meal="${m}">Wie gestern</button>` : ""}</div>
     </section>`;
   }).join("")}`;
+}
+
+/* ---------- Ernährung ohne Tracking ----------
+   Gewichtstrend: Wochenschnitt (Ø der letzten 7 Tage) und Trend der letzten 2 Wochen (weeklyRate, Ausreißer gefiltert).
+   Passt der Trend nicht zum Ziel, gibt es einen freundlichen Hinweis mit ein paar Ideen, ganz ohne Zahlen zum Abwiegen.
+   Im Cut warnt die App bei sehr schnellem Abnehmen (über ca. 0,75 % pro Woche): zu wenig Energie erhöht das Risiko für Zerrungen. */
+const sgn = (v, d) => (v > 0 ? "+" : v < 0 ? "−" : "") + fmt(Math.abs(v), d);
+const TIPS_LESS = ["Zu jeder Mahlzeit Eiweiß und viel Gemüse, das macht lange satt", "Süße Getränke und Snacks nebenbei weglassen", "Langsam essen und aufhören, wenn du satt bist", "Abends keine zweite Portion nachlegen"];
+const TIPS_MORE = ["Vor und nach Fußball und Gym richtig essen", "Kohlenhydrate rund ums Training nicht weglassen", "Ein Snack mehr am Tag, z. B. Skyr mit Haferflocken und Obst"];
+function weightTrend(){
+  const ser = weightSeries(), t = todayKey(), gt = goalType(), c = cfg();
+  const cnt = (a, b) => ser.filter(p => p.k > a && p.k <= b).length;
+  const now = cnt(addDays(t, -7), t) ? avgAt(ser, t) : null, prev = cnt(addDays(t, -21), addDays(t, -14)) ? avgAt(ser, addDays(t, -14)) : null;
+  const rate = weeklyRate(ser), goal = num(c.goalLo) || null;
+  const out = (kind, title, text, tips) => ({kind, title, text, tips: tips || [], now, prev, rate});
+  if (sickNow()) return out("info", "Du bist gerade krank", "Jetzt zählt nur, dass du gesund wirst. Iss normal und genug, der Trend ist gerade nicht wichtig.");
+  if (rate == null || now == null) return out("none", "Noch kein Trend", "Wieg dich jeden Morgen nach dem Aufstehen. Nach 1–2 Wochen siehst du hier, ob dein Gewicht zu deinem Ziel passt.");
+  const pct = rate / now * 100;
+  if (gt === "cut") {
+    if (goal && now <= goal + 0.3) return out("good", "Zielgewicht erreicht 🎉", "Dein Wochenschnitt ist bei deinem Zielgewicht. Wenn du magst, stell dein Ziel auf „Gewicht halten“.");
+    if (rate > 0.1) return out("warn", "Du nimmst gerade zu", "Dein Ziel ist Abnehmen, aber dein Gewicht geht nach oben. Achte wieder etwas mehr auf deine Ernährung.", TIPS_LESS);
+    if (rate >= -0.1) return out("info", "Dein Gewicht steht gerade", "Für dein Ziel Abnehmen darf es langsam nach unten gehen. Achte etwas bewusster auf deine Ernährung, ohne zu hungern.", TIPS_LESS.slice(0, 3));
+    if (pct < -0.75) return out("warn", "Du nimmst gerade sehr schnell ab", "Das ist schneller als nötig. Gerade mit Fußball steigt dann das Risiko für Zerrungen und Faserrisse. Iss an Sporttagen ruhig mehr.", TIPS_MORE);
+    return out("good", "Passt: du nimmst langsam ab", "Genau so soll es sein. An Fußball- und Gymtagen trotzdem genug essen, das schützt deine Muskeln.");
+  }
+  if (gt === "bulk") {
+    if (pct > 0.5) return out("warn", "Du nimmst schneller zu als nötig", "Für Muskelaufbau reicht ein langsamer Anstieg. Achte etwas mehr darauf, nicht zu viel nebenbei zu essen.", TIPS_LESS.slice(1));
+    if (rate < 0.05) return out("info", "Kaum Zunahme", "Für Muskelaufbau darf das Gewicht langsam steigen. Iss etwas mehr, vor allem rund ums Training.", TIPS_MORE);
+    return out("good", "Passt: sauberer Aufbau", "Dein Gewicht steigt langsam, genau richtig für Muskelaufbau.");
+  }
+  if (rate > 0.2) return out("warn", "Du nimmst gerade zu", "Dein Ziel ist Gewicht halten, aber dein Gewicht geht nach oben. Achte wieder etwas mehr auf deine Ernährung.", TIPS_LESS);
+  if (rate < -0.2) return out("info", "Du nimmst gerade ab", "Dein Ziel ist Gewicht halten. Iss etwas mehr, gerade an Fußball- und Gymtagen.", TIPS_MORE);
+  return out("good", "Passt: dein Gewicht ist stabil", "Genau so soll es sein. Nichts ändern.");
+}
+function trendHint(tr, small){
+  return `<div class="hint${tr.kind === "good" ? " good" : ""}" style="${tr.kind === "warn" ? "border:1.5px solid var(--warn)" : ""}"><b>${esc(tr.title)}</b><br>${esc(tr.text)}${!small && tr.tips.length ? `<ul style="margin:6px 0 0;padding-left:18px">${tr.tips.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}</div>`;
+}
+function trendCard(){
+  const tr = weightTrend(), c = cfg(), gt = goalType(), ser = weightSeries();
+  const wk = Array.from({length: 8}, (_, i) => mondayOf(addDays(todayKey(), -7 * (7 - i))));
+  const pts = wk.map(m => { const xs = ser.filter(p => p.k >= m && p.k <= addDays(m, 6)).map(p => p.v); return {v: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null}; });
+  const line = weekLine(pts, {label: "Wochenschnitt Gewicht der letzten 8 Wochen", xlabels: wk.map(m => fmtShort(m))});
+  return `<section class="card"><div class="card-h"><h2>⚖️ Dein Trend</h2><button class="btn ghost" data-act="settings" style="min-height:30px">Ziel ändern</button></div>
+    <div class="small muted" style="margin:-4px 0 10px">Ziel: ${esc(GOALS[gt])}${gt !== "maintain" && c.goalLo ? ` · Zielgewicht ${fmt(c.goalLo, 1)} kg` : ""}</div>
+    ${trendHint(tr)}
+    <div class="kv" style="margin-top:12px">
+      <div><span class="eyebrow">Ø 7 Tage</span><div class="v">${tr.now ? fmt(tr.now, 1) : "–"}<span class="unit">kg</span></div></div>
+      <div><span class="eyebrow">Vor 2 Wochen</span><div class="v">${tr.prev ? fmt(tr.prev, 1) : "–"}<span class="unit">kg</span></div></div>
+      <div><span class="eyebrow">Trend</span><div class="v">${tr.rate == null ? "–" : sgn(tr.rate, 1)}<span class="unit">kg/Wo</span></div></div></div>
+    ${line ? `<div class="eyebrow" style="margin:14px 0 4px">Wochenschnitt, letzte 8 Wochen</div>${line}` : ""}
+    <p class="small muted" style="margin:8px 0 0">Der Trend vergleicht deinen Wochenschnitt mit dem von vor 2 Wochen. Einzelne Tage schwanken durch Wasser, Salz und Essen im Bauch um 1–2 kg. Es zählt nur der Wochenschnitt.</p>
+  </section>`;
+}
+/* Tages-Checkliste: nur antippen, nichts zählen. „Genug getrunken“ hakt sich selbst ab, wenn das Trinkziel erreicht ist;
+   „Vor und nach dem Sport gegessen“ gibt es nur an Tagen mit Fußball, Gym oder Cardio. */
+const NC = [["prot", "🥚", "Eiweiß zu jeder Mahlzeit"], ["veg", "🥦", "2× Obst oder Gemüse"], ["drink", "💧", "Genug getrunken"], ["fuel", "⚽", "Vor und nach dem Sport gegessen"]];
+function sportDay(k){ const p = dayPlanOf(k); return !!(p && (p.fb || p.gym || p.cardio)) || workoutsSorted().some(w => w.date === k && w.status === "done"); }
+const ncItems = k => NC.filter(([id]) => id !== "fuel" || sportDay(k));
+const ncOf = k => (S.days[k] || {}).nc || {};
+function ncDone(k, id){ if (ncOf(k)[id]) return true; if (id !== "drink") return false; const g = waterGoal(k); return g.total > 0 && g.have >= g.total; }
+function ncList(k){
+  return ncItems(k).map(([id, ic, lbl]) => { const on = ncDone(k, id), auto = on && !ncOf(k)[id];
+    return `<button class="supp" data-act="nc-toggle" data-id="${id}" data-date="${k}" aria-pressed="${on ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${ic} ${esc(lbl)}</b>${auto ? '<span class="muted small"> · Trinkziel erreicht</span>' : ""}</span></button>`; }).join("");
+}
+function ncCard(k){
+  const its = ncItems(k), n = its.filter(([id]) => ncDone(k, id)).length;
+  const week = last7(k).map(x => { const it = ncItems(x), d = it.filter(([id]) => ncDone(x, id)).length; return {x, f: it.length ? d / it.length : 0}; });
+  return `<section class="card" style="margin-top:12px"><div class="card-h"><h2>✅ Heute im Blick</h2><span class="small muted num">${n} / ${its.length}</span></div>
+    <div class="stack">${ncList(k)}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:14px" aria-label="Checkliste der letzten 7 Tage">${week.map(o => `<div style="text-align:center"><div class="small muted">${WDS1[dateOf(o.x).getDay()]}</div><div title="${Math.round(o.f * 100)} %" style="margin:4px auto 0;width:22px;height:22px;border-radius:50%;background:${o.f >= 1 ? "var(--good)" : o.f > 0 ? "color-mix(in srgb,var(--good) " + Math.round(25 + o.f * 45) + "%,var(--surface-2))" : "var(--surface-2)"}"></div></div>`).join("")}</div>
+    <p class="small muted" style="margin:10px 0 0">Tipp einfach an, was heute gepasst hat. Kein Zählen, kein Abwiegen.</p>
+  </section>`;
 }
 
 /* ----- Training ----- */
@@ -2076,7 +2157,7 @@ function plateauTips(p){
   const recs = [1, 2, 3, 4, 5, 6, 7].map(i => recoveryOf(addDays(todayKey(), -i))).filter(Boolean); const ra = recs.length ? recs.reduce((a, r) => a + r.score, 0) / recs.length : null;
   if (ra != null && ra < 55) tips.push(`Deine Erholung lag zuletzt bei Ø ${Math.round(ra)} %. Mehr Schlaf bringt hier vermutlich mehr als mehr Training.`);
   const days = [1, 2, 3, 4, 5, 6, 7].map(i => dayTotals(S.days[addDays(todayKey(), -i)])).filter(t => t.kcal > 800); const pa = days.length ? days.reduce((a, t) => a + t.p, 0) / days.length : null;
-  if (pa != null && pa < c.p * 0.85) tips.push(`Eiweiß lag zuletzt bei Ø ${fmt(pa)} g, Ziel ${c.p} g. Ohne genug Eiweiß wächst wenig.`);
+  if (FOOD_TRACK && pa != null && pa < c.p * 0.85) tips.push(`Eiweiß lag zuletzt bei Ø ${fmt(pa)} g, Ziel ${c.p} g. Ohne genug Eiweiß wächst wenig.`);
   if (gt === "cut") tips.push("Im Kaloriendefizit ist es schon ein Erfolg, die Kraft zu halten. Echte Steigerungen kommen oft erst wieder im Aufbau.");
   return tips.slice(0, 4);
 }
@@ -2112,7 +2193,7 @@ function insights(){
   const a3 = keys.filter(k => num((S.days[k] || {}).steps) >= 10000).map(k => num(nextSleep(k).score)).filter(v => v > 0), b3 = keys.filter(k => num((S.days[k] || {}).steps) > 0 && num(S.days[k].steps) < 6000).map(k => num(nextSleep(k).score)).filter(v => v > 0);
   if (a3.length >= 4 && b3.length >= 4) { const d = avg(a3) - avg(b3); if (Math.abs(d) >= 3) out.push(["👟", "Schritte und Schlaf", `An Tagen mit über 10.000 Schritten ist dein Schlafwert im Schnitt ${fmt(Math.abs(d))} Punkte ${d > 0 ? "besser" : "schlechter"} als an Tagen unter 6.000.`, `${a3.length} vs. ${b3.length} Nächte`, Math.abs(d) / 3]); }
   // 4) Wochenende und Kalorien
-  const tracked = keys.filter(k => dayTotals(S.days[k]).kcal >= 1000), wkend = k => [0, 6].includes(dateOf(k).getDay());
+  const tracked = FOOD_TRACK ? keys.filter(k => dayTotals(S.days[k]).kcal >= 1000) : [], wkend = k => [0, 6].includes(dateOf(k).getDay());
   const a4 = tracked.filter(wkend).map(k => dayTotals(S.days[k]).kcal), b4 = tracked.filter(k => !wkend(k)).map(k => dayTotals(S.days[k]).kcal);
   if (a4.length >= 3 && b4.length >= 5) { const d = avg(a4) - avg(b4); if (Math.abs(d) >= 200) out.push(["🍕", "Wochenende und Essen", `Am Wochenende isst du im Schnitt ${fmt(Math.abs(d))} kcal ${d > 0 ? "mehr" : "weniger"} als unter der Woche.${d > 0 && goalType() === "cut" ? " Das bremst deinen Cut, plan dafür bewusst Spielraum ein." : ""}`, `${a4.length} vs. ${b4.length} Tage`, Math.abs(d) / 200]); }
   // 5) Kurzer Schlaf und Essen am Folgetag
@@ -2437,7 +2518,7 @@ function mealTimeline(k){
       if (!(i > 0 && e.t - ev[i - 1].t < 4 * 60)) add(e.t - 150, "🍽️", "Mahlzeit vor dem Gym", "Kohlenhydrate und Eiweiß, wenig Fett, z. B. Haferflocken mit Skyr und Banane oder Reis mit Hähnchen.");
       add(e.t - 45, "🍌", "Kleiner Snack (optional)", "Wenn die letzte Mahlzeit länger her ist: eine Banane oder ein Riegel.");
       add(e.t, "🏋️", name, "Während des Trainings Wasser trinken.");
-      add(e.t + e.dur + 45, "🥩", "Nach dem Gym", `Mindestens 30 g Eiweiß mit Kohlenhydraten.${late(e) ? " Am späten Abend z. B. Skyr oder Magerquark mit Obst." : " Z. B. Reis mit Hähnchen, Skyr-Bowl oder Kartoffeln mit Ei."}`);
+      add(e.t + e.dur + 45, "🥩", "Nach dem Gym", `Eine gute Portion Eiweiß mit Kohlenhydraten.${late(e) ? " Am späten Abend z. B. Skyr oder Magerquark mit Obst." : " Z. B. Reis mit Hähnchen, Skyr-Bowl oder Kartoffeln mit Ei."}`);
     }
   });
   if (ev.length > 1) { const a = ev[0], b = ev[1]; if (b.t - (a.t + a.dur) < 3 * 60) add(a.t + a.dur + 5, "⚠︎", "Zwei Einheiten kurz hintereinander", "Iss dazwischen etwas Leichtes mit Kohlenhydraten und trink viel. Mach das Gym kürzer, wenn du merkst, dass die Kraft fehlt."); }
@@ -2448,7 +2529,7 @@ function mealTimeline(k){
 function mealPlanCard(k){
   const tl = mealTimeline(k); if (!tl) return "";
   const head = {match: "🏆 Spieltag: dein Essensplan", train: "⚽ Trainingstag: dein Essensplan", gym: "🏋️ Gym-Tag: dein Essensplan"}[tl.kind];
-  const extra = tl.kind === "gym" ? "" : `<p class="small muted" style="margin:10px 0 0">An ${tl.kind === "match" ? "Spieltagen" : "Trainingstagen"} lieber mehr Kohlenhydrate und etwas weniger Fett. Dein Kalorienziel steigt durch die Trainingskalorien von Garmin automatisch.</p>`;
+  const extra = tl.kind === "gym" ? "" : `<p class="small muted" style="margin:10px 0 0">An ${tl.kind === "match" ? "Spieltagen" : "Trainingstagen"} lieber mehr Kohlenhydrate und etwas weniger Fett.</p>`;
   const now = new Date(), nowMin = k === todayKey() ? now.getHours() * 60 + now.getMinutes() : -1;
   return `<section class="card" style="border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>${head}</h2><button class="btn ghost" data-act="planner" style="min-height:30px">Zeiten ändern</button></div>
     <div class="stack" style="gap:2px">${tl.items.map(x => { const past = nowMin >= 0 && x.t + 30 < nowMin;
@@ -2491,8 +2572,8 @@ const TRENDS = [
   ["fat", "Körperfett", "%", 1, k => num(((S.days[k] || {}).body || {}).fat) || null],
   ["vo2", "VO2max", "", 1, k => num((S.days[k] || {}).vo2) || null],
   ["fa", "Fitnessalter", "Jahre", 1, k => { const x = fitnessAgeAt(k); return x.ok ? x.age : null; }],
-  ["kcal", "Kalorien", "kcal", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.kcal : null; }],
-  ["prot", "Eiweiß", "g", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.p : null; }]
+  ...(FOOD_TRACK ? [["kcal", "Kalorien", "kcal", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.kcal : null; }],
+  ["prot", "Eiweiß", "g", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.p : null; }]] : [])
 ];
 let trendSel = {m: "rec", d: 30};
 function openTrends(){ openSheet("Trends", ""); renderTrends(); }
@@ -2587,7 +2668,7 @@ function cutChecks(){
   if (!(c.cutFatigueSnooze && c.cutFatigueSnooze >= t)) { const sig = cutFatigue(); if (sig.length >= 2) out.push(`<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--warn) 45%,transparent)"><div class="card-h"><h2>🧭 Zeit für eine Pause vom Cut?</h2></div>
     <p class="small ink2" style="margin:0 0 6px">Dein Körper zeigt Diät-Müdigkeit: ${esc(sig.join(", "))}. Eine Erhaltungsphase von 2–4 Wochen schützt Muskeln und Kopf. Danach geht der Cut leichter weiter.</p>
     <div class="row"><button class="btn primary" data-act="cut-pause">Auf Gewicht halten wechseln</button><button class="btn ghost" data-act="cut-continue">Weiter im Cut</button></div></section>`); }
-  const pl = !(c.plateauSnooze && c.plateauSnooze >= t) && autoOn() && (c.calc || {}).pace === "auto" ? cutPlateau() : null;
+  const pl = FOOD_TRACK && !(c.plateauSnooze && c.plateauSnooze >= t) && autoOn() && (c.calc || {}).pace === "auto" ? cutPlateau() : null;
   if (pl) out.push(`<section class="card" style="margin-bottom:12px;border:1.5px solid color-mix(in srgb,var(--accent) 35%,transparent)"><div class="card-h"><h2>⏸️ Plateau: Diätpause vorziehen?</h2></div>
     <p class="small ink2" style="margin:0 0 6px">Dein Gewicht steht seit 3 Wochen still (${pl.diff >= 0 ? "+" : "−"}${fmt(Math.abs(pl.diff), 1)} kg), obwohl du dein Kalorienziel an ${pl.hit} von ${pl.n} Tagen getroffen hast und dein Defizit schon an der Obergrenze ist. Statt weiter zu kürzen: 1 Woche auf Erhaltungskalorien. Das hilft beim Durchhalten und beim Muskelerhalt, danach startet der Cut neu.</p>
     <div class="row"><button class="btn primary" data-act="break-now">Diätpause jetzt starten</button><button class="btn ghost" data-act="plateau-snooze">Noch nicht</button></div></section>`);
@@ -2946,9 +3027,11 @@ const KB = [
   {id: "omega3", cat: "supps", icon: "🐟", title: "Omega-3: über 1.000 mg EPA", short: "Gemeint ist der EPA-Anteil, nicht die Kapselmenge.", why: "Omega-3-Fettsäuren wirken entzündungshemmend und unterstützen die Regeneration. Viele Kapseln enthalten pro Stück nur wenig EPA.", how: ["Auf der Packung den EPA-Gehalt pro Tagesdosis prüfen.", "Zusätzlich 1–2 Fischmahlzeiten pro Woche (Lachs, Hering)."], src: "N"},
   {id: "magnesium", cat: "supps", icon: "🌙", title: "Magnesium abends", short: "Hilft vor allem bei Mangel. Für besseren Schlaf ist es nur schwach belegt.", why: "Magnesium ist an Muskel- und Nervenfunktion beteiligt. Abends genommen kann es Entspannung und Schlaf unterstützen. Eine Auswertung fand aber nur 3 kleine Studien mit älteren Menschen (ca. 17 Min. schneller eingeschlafen). Für junge Sportler ist das nicht gesichert.", how: ["Form auf der Packung prüfen: Bisglycinat oder Threonat.", "Lebensmittel: Haferflocken, Bananen, dunkle Schokolade, Kürbiskerne."], src: "N"}
 ];
+if (!FOOD_TRACK) ["deficit", "surplus", "fat", "fiber", "watch"].forEach(id => { const i = KB.findIndex(t => t.id === id); if (i >= 0) KB.splice(i, 1); });
 const KBI = Object.fromEntries(KB.map(t => [t.id, t]));
 /* Persönliche Daten zu einem Tipp: kurze Zeile „Bei dir“ und ob er gerade wichtig ist */
 function tipPersonal(id){
+  if (!FOOD_TRACK && ["protein", "protein30", "satiety", "fiber", "watch"].includes(id)) return null;
   const c = cfg(), today = todayKey(), w = curWeight();
   const d7 = Array.from({length: 7}, (_, i) => addDays(today, -i - 1));
   const eat = d7.map(k => S.days[k]).filter(d => d && dayTotals(d).kcal > 800);
@@ -3230,13 +3313,13 @@ function weekBars(vals, o){
 function weekLine(pts, o){
   const W = 320, H = 120, l = 34, r = 10, top = 12, bot = 20;
   const vs = pts.filter(p => p.v != null).map(p => p.v); if (vs.length < 2) return "";
-  const lo = Math.min(...vs) - 0.3, hi = Math.max(...vs) + 0.3, X = i => l + (W - l - r) * i / 6, Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo));
+  const lo = Math.min(...vs) - 0.3, hi = Math.max(...vs) + 0.3, X = i => l + (W - l - r) * i / Math.max(1, pts.length - 1), Y = v => top + (H - top - bot) * (1 - (v - lo) / (hi - lo)), lab = i => o.xlabels ? o.xlabels[i] : WDS[i];
   let d = "", svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${esc(o.label)}" style="display:block">`;
   [lo + 0.3, hi - 0.3].forEach(v => svg += `<line x1="${l}" x2="${W - r}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${l - 5}" y="${Y(v) + 3}" text-anchor="end" font-size="9.5" fill="var(--muted)">${fmt(v, 1)}</text>`);
   pts.forEach((p, i) => { if (p.v != null) d += (d ? "L" : "M") + X(i).toFixed(1) + " " + Y(p.v).toFixed(1); });
   svg += `<path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
-  pts.forEach((p, i) => { svg += `<text x="${X(i)}" y="${H - 5}" text-anchor="middle" font-size="10.5" fill="var(--muted)">${WDS[i]}</text>`;
-    if (p.v != null) svg += `<g><title>${WDS[i]}: ${fmt(p.v, 1)} kg</title><circle cx="${X(i)}" cy="${Y(p.v)}" r="4.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></g>`; });
+  pts.forEach((p, i) => { svg += `<text x="${X(i)}" y="${H - 5}" text-anchor="middle" font-size="${o.xlabels ? 9.5 : 10.5}" fill="var(--muted)">${lab(i)}</text>`;
+    if (p.v != null) svg += `<g><title>${lab(i)}: ${fmt(p.v, 1)} kg</title><circle cx="${X(i)}" cy="${Y(p.v)}" r="4.5" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"/></g>`; });
   return svg + `</svg>`;
 }
 function delta(cur, prev, unit, digits, goodUp){
@@ -3269,8 +3352,8 @@ function openReview(mon){
     if (inW.length && before.length) { const best = Math.max(...inW.map(x => x.v)), prev = Math.max(...before.map(x => x.v)); if (best > prev) prs.push([exName(id), best, best - prev]); } });
   prs.sort((a, b) => b[2] - a[2]);
   const dW = st.wEnd != null && st.wStart != null ? st.wEnd - st.wStart : null;
-  const verdict = dW == null ? "Trag regelmäßig dein Gewicht ein, dann bekommst du hier eine Einschätzung." : gt === "cut" ? (dW <= -0.3 ? "Starke Woche für deinen Cut." : dW < 0 ? "Es geht in die richtige Richtung, bleib dran." : "Diese Woche ging das Gewicht nicht runter. Schau auf Kalorien und Schritte.")
-    : gt === "bulk" ? (dW >= 0.1 && dW <= 0.4 ? "Sauberer Aufbau, genau im Plan." : dW > 0.4 ? "Etwas schnell zugenommen. Eventuell 150 kcal weniger." : "Kaum Zunahme. Für Muskelaufbau etwas mehr essen.")
+  const verdict = dW == null ? "Trag regelmäßig dein Gewicht ein, dann bekommst du hier eine Einschätzung." : gt === "cut" ? (dW <= -0.3 ? "Starke Woche für deinen Cut." : dW < 0 ? "Es geht in die richtige Richtung, bleib dran." : "Diese Woche ging das Gewicht nicht runter. Achte wieder etwas mehr auf deine Ernährung und deine Schritte.")
+    : gt === "bulk" ? (dW >= 0.1 && dW <= 0.4 ? "Sauberer Aufbau, genau im Plan." : dW > 0.4 ? "Etwas schnell zugenommen. Achte etwas mehr darauf, nicht zu viel nebenbei zu essen." : "Kaum Zunahme. Für Muskelaufbau etwas mehr essen.")
     : (Math.abs(dW) <= 0.3 ? "Gewicht stabil, so soll es sein." : "Dein Gewicht hat sich etwas bewegt. Behalte es im Blick.");
   const hero = (label, val, unit, sub) => `<div style="min-width:0"><div style="font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85">${label}</div><div style="font-size:26px;font-weight:700;letter-spacing:-.02em;line-height:1.1">${val}<span style="font-size:13px;font-weight:600;opacity:.85;margin-left:3px">${unit}</span></div>${sub ? `<div style="font-size:12px;opacity:.85">${sub}</div>` : ""}</div>`;
   const tile = (label, val, unit, sub) => `<div><span class="eyebrow">${label}</span><div class="v">${val}${unit ? `<span class="unit">${unit}</span>` : ""}</div>${sub ? `<div>${sub}</div>` : ""}</div>`;
@@ -3294,11 +3377,12 @@ function openReview(mon){
       <div class="kv" style="margin-top:14px">${tile("Sätze", fmt(sets), "", delta(sets, setsOf(wkPrev), "", 0, true))}${tile("Bewegt", fmt(vol), "kg", delta(vol, volOf(wkPrev), " kg", 0, true))}</div>
       ${prs.length ? `<div class="hint good" style="margin-top:12px"><b>🏆 Neue Bestwerte:</b> ${prs.slice(0, 3).map(p => esc(p[0]) + " (" + fmt(p[1], 1) + " kg geschätztes 1RM)").join(", ")}</div>` : ""}
       ${groups.length ? `<div class="eyebrow" style="margin:14px 0 6px">Sätze pro Muskelgruppe · Ziel 10–20 · Strich = Erhalt (5)</div><div class="stack" style="gap:6px">${groups.map(([g, n]) => `<div class="macro" style="grid-template-columns:86px 1fr 28px"><span class="lbl">${esc(g)}</span><div class="bar" style="position:relative"><i style="width:${Math.min(100, n / 20 * 100)}%${n < 5 && g !== "Sonstiges" ? ";background:var(--warn)" : ""}"></i>${g !== "Sonstiges" ? '<b class="mk5" aria-hidden="true"></b>' : ""}</div><span class="num small" style="text-align:right"><b>${fmt(n, n % 1 ? 1 : 0)}</b></span></div>`).join("")}</div>${(() => { const gm = Object.fromEntries(groups), low = MAIN_GROUPS.filter(x => (gm[x] || 0) < 5); return low.length ? `<p class="small" style="margin:8px 0 0;color:var(--warn)">Unter 5 Sätzen (Erhalt-Grenze): ${esc(low.join(", "))}.</p>` : ""; })()}` : ""}`)}
-    ${card("Kalorien pro Tag", `${weekBars(kcalVals, {label: "Kalorien pro Tag", goal: i => kcalGoal(days[i]), fmt: v => fmt(v) + " kcal", short: v => fmt(v / 1000, 1) + "k", color: (v, i) => v > kcalGoal(days[i]) * 1.05 ? "var(--warn)" : "var(--accent)"})}
+    ${FOOD_TRACK ? card("Kalorien pro Tag", `${weekBars(kcalVals, {label: "Kalorien pro Tag", goal: i => kcalGoal(days[i]), fmt: v => fmt(v) + " kcal", short: v => fmt(v / 1000, 1) + "k", color: (v, i) => v > kcalGoal(days[i]) * 1.05 ? "var(--warn)" : "var(--accent)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø gegessen", st.kcal ? fmt(st.kcal) : "–", "kcal", delta(st.kcal, pv.kcal, " kcal", 0, null))}${tile("Eingetragen", st.tracked, "von 7", "")}</div>
-      <p class="small muted" style="margin:6px 0 0">Gestrichelt: dein Tagesziel inkl. Sport. Orange: mehr als 5 % drüber.</p>`)}
-    ${card("Protein pro Tag", `${weekBars(protVals, {label: "Protein pro Tag", goal: c.p, fmt: v => fmt(v) + " g", color: v => v >= c.p * 0.9 ? "var(--good)" : "var(--p)"})}
-      <div class="kv" style="margin-top:8px">${tile("Ø Protein", st.prot ? fmt(st.prot) : "–", "g", delta(st.prot, pv.prot, " g", 0, true))}${st.water ? tile("Ø Trinken", fmt(st.water, 1), "l", "") : ""}</div>`)}
+      <p class="small muted" style="margin:6px 0 0">Gestrichelt: dein Tagesziel inkl. Sport. Orange: mehr als 5 % drüber.</p>`) + card("Protein pro Tag", `${weekBars(protVals, {label: "Protein pro Tag", goal: c.p, fmt: v => fmt(v) + " g", color: v => v >= c.p * 0.9 ? "var(--good)" : "var(--p)"})}
+      <div class="kv" style="margin-top:8px">${tile("Ø Protein", st.prot ? fmt(st.prot) : "–", "g", delta(st.prot, pv.prot, " g", 0, true))}${st.water ? tile("Ø Trinken", fmt(st.water, 1), "l", "") : ""}</div>`) : card("Ernährung", (() => { const f = days.map(k => { const it = ncItems(k); return it.length ? it.filter(([id]) => ncDone(k, id)).length / it.length : 0; });
+      return `${weekBars(f.map(v => Math.round(v * 100)), {label: "Checkliste pro Tag", fmt: v => v + " %", color: v => v >= 100 ? "var(--good)" : "var(--accent)"})}
+      <div class="kv" style="margin-top:8px">${tile("Checkliste", Math.round(f.reduce((a, b) => a + b, 0) / 7 * 100), "%", "Ø der Woche")}${st.water ? tile("Ø Trinken", fmt(st.water, 1), "l", "") : ""}</div>`; })())}
     ${weekLine(wPts, {label: "Gewicht"}) ? card("Gewicht", weekLine(wPts, {label: "Gewicht"}) + `<div class="kv" style="margin-top:8px">${tile("Ø 7 Tage", st.wEnd ? fmt(st.wEnd, 1) : "–", "kg", delta(st.wEnd, pv.wEnd, " kg", 1, gt === "bulk" ? true : gt === "cut" ? false : null))}</div>`) : ""}
     ${card("Erholung", `${weekBars(recVals, {label: "Erholung pro Tag", fmt: v => v + " %", color: v => v >= 67 ? "var(--good)" : v >= 34 ? "var(--warn)" : "var(--bad)"})}
       <div class="kv" style="margin-top:8px">${tile("Ø Erholung", st.rec ? Math.round(st.rec) : "–", st.rec ? "%" : "", delta(st.rec, pv.rec, " %", 0, true))}${tile("Ø Schlaf", st.sleepH ? fmtHs(st.sleepH, true) : "–", "h", delta(st.sleepH, pv.sleepH, " h", 1, true))}</div>`)}
@@ -3546,6 +3630,7 @@ function viewKoerper(){
   // Bei automatischem Tempo regelt der Rechner selbst nach, statt dass du etwas umstellen musst
   const apT = gt !== "maintain" && c.calc && c.calc.on && c.calc.pace === "auto" ? autoTargets() : null;
   if (status && apT && apT.auto) status = status.replace(/(Reduziere|Erhöhe|Für Muskelaufbau erhöhe|Zum Halten (reduziere|erhöhe)) um etwa [^<]*/, "Der Rechner gleicht das automatisch über deinen gelernten Verbrauch aus.").replace(/\(Ziel [^)]*kg Abnahme pro Woche\)/, "(Ziel etwa " + fmt(apT.auto.rate, 2) + " kg pro Woche)");
+  if (!FOOD_TRACK) status = rate != null ? trendHint(weightTrend()) : "";
   const recent = weightSeriesAll().slice().reverse().slice(0, 30);
   const waist = Object.keys(S.days).filter(k => typeof S.days[k].waist === "number").sort();
   const lastWaist = waist.length ? waist[waist.length - 1] : null;
@@ -3645,7 +3730,7 @@ function trainingHealthNote(){
 function healthFoodHint(){
   if (!sickNow()) return "";
   const gi = (healthCfg().symptoms || []).some(x => x === "uebel" || x === "durchfall");
-  return `<div class="hint" style="margin-top:8px">🤒 Kalorien auf Erhaltung, der ${goalType() === "cut" ? "Cut" : "Plan"} pausiert. Eiweiß bleibt. Kleine, gut verträgliche Mahlzeiten sind okay. Jetzt geht Gesundheit vor Abnehmen.${gi ? " Bei Magen-Darm: leichte Kost wie Reis, Banane, Zwieback und Brühe." : ""}</div>`;
+  return `<div class="hint" style="margin-top:8px">🤒 Iss normal und genug, der ${goalType() === "cut" ? "Cut" : "Plan"} pausiert. Eiweiß bleibt wichtig. Kleine, gut verträgliche Mahlzeiten sind okay. Jetzt geht Gesundheit vor Abnehmen.${gi ? " Bei Magen-Darm: leichte Kost wie Reis, Banane, Zwieback und Brühe." : ""}</div>`;
 }
 let healthAsked = false;
 function healthOnOpen(){
@@ -4516,7 +4601,8 @@ function openPlanDay(k){
 function openSettings(){
   const c = cfg();
   openSheet("Einstellungen", `${healthSettings()}<form class="stack" data-form="settings">
-    <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Passt Tipps, Hinweise und den Kalorienrechner an.</span></div>
+    <div class="field"><label for="gt">Mein Ziel</label><select class="inp" id="gt">${Object.entries(GOALS).map(([k, l]) => `<option value="${k}" ${goalType() === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">${FOOD_TRACK ? "Passt Tipps, Hinweise und den Kalorienrechner an." : "Danach richten sich die Hinweise zu deinem Gewichtstrend."}</span></div>
+    <div ${FOOD_TRACK ? "" : "hidden"}>
     <div class="eyebrow" style="margin-top:6px">Automatik</div>
     <label class="row small" style="align-items:flex-start;flex-wrap:nowrap"><input type="checkbox" id="gaN" ${c.calc && c.calc.on ? "checked" : ""} style="margin-top:3px"><span><b>Ernährung automatisch</b><br><span class="muted">Kalorien und Makros passen sich täglich an Gewicht, Sport und Fortschritt an. Sätze, Wiederholungen und Gewicht in deinen Trainingsplänen trägst du selbst ein.</span></span></label>
     <div class="field"><label for="gxp">Trainingserfahrung</label><select class="inp" id="gxp">${EXPERIENCE.map(([k, l]) => `<option value="${k}" ${(c.experience || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Bestimmt beim Aufbau, wie schnell du zunehmen solltest.</span></div>
@@ -4525,6 +4611,7 @@ function openSettings(){
     <div class="fields"><div class="field"><label for="gk">kcal</label><input class="inp num" id="gk" inputmode="numeric" value="${c.kcal}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gp">Protein g</label><input class="inp num" id="gp" inputmode="numeric" value="${c.p}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gc">Kohlenhydr. g</label><input class="inp num" id="gc" inputmode="numeric" value="${c.c}" ${c.calc && c.calc.on ? "readonly" : ""}></div><div class="field"><label for="gf">Fett g</label><input class="inp num" id="gf" inputmode="numeric" value="${c.f}" ${c.calc && c.calc.on ? "readonly" : ""}></div></div>
     <div class="field"><label for="gbm">Verbrannte Kalorien anrechnen</label><select class="inp" id="gbm">${[["workouts","Nur Trainings von Garmin (empfohlen)"],["active","Alle aktiven Kalorien inkl. Schritte"],["off","Nicht anrechnen"]].map(([k, l]) => `<option value="${k}" ${(c.burnMode || "workouts") === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Verbrannte Kalorien kommen zu deinem Tagesziel dazu. Manuell eingetragene zählen immer.</span></div>
     <div class="field"><label for="gbs">Davon anrechnen</label><select class="inp" id="gbs">${[[100,"100 % (alles)"],[75,"75 %"],[50,"50 % (vorsichtig)"]].map(([k, l]) => `<option value="${k}" ${(num(c.burnShare) || 100) === k ? "selected" : ""}>${l}</option>`).join("")}</select><span class="small muted">Uhren schätzen den Verbrauch oft zu hoch. Mit 50 oder 75 % isst du die Trainingskalorien nicht komplett zurück, das hilft vor allem beim Abnehmen.</span></div>
+    </div>
     <div class="eyebrow" style="margin-top:6px">Gewichtsziel</div>
     <div class="fields"><div class="field"><label for="gl">Zielgewicht (kg)</label><input class="inp num" id="gl" inputmode="decimal" value="${fmt(c.goalLo, 1)}"></div></div>
     <div class="eyebrow" style="margin-top:6px">Training & Schlaf</div>
@@ -4636,6 +4723,7 @@ document.addEventListener("click", async e => {
     case "day-today": curDate = todayKey(); render(); break;
     case "settings": openSettings(); break;
     case "sheet-close": closeSheet(); break;
+    case "nc-toggle": { const d = getDay(D.date); d.nc = Object.assign({}, d.nc); if (d.nc[D.id]) delete d.nc[D.id]; else d.nc[D.id] = 1; saveDay(D.date, d); break; }
     case "supp-toggle": { const d = getDay(D.date); d.supps = d.supps || {}; if (d.supps[D.id]) delete d.supps[D.id]; else d.supps[D.id] = new Date().toTimeString().slice(0, 5); saveDay(D.date, d); break; }
     case "push-on": enablePush(); break;
     case "push-reconnect": {
