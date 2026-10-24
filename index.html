@@ -316,7 +316,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "24.10.2026 17:54";
+const APP_VERSION = "24.10.2026 18:00";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -371,6 +371,8 @@ const ICON = {
    Stattdessen Hinweise aus dem Gewichtstrend (Wochenschnitt), eine Tages-Checkliste zum Antippen und Trinken.
    Alte Essenseinträge bleiben gespeichert. Auf true setzen bringt das alte Tracking zurück. */
 const FOOD_TRACK = false;
+/* Trinken wird nicht mehr eingetragen (24.10.2026): die App zeigt nur das Trinkziel des Tages (Grundbedarf + Sport + ggf. krank). */
+const WATER_TRACK = false;
 const TABS = [["heute","Heute"],["essen","Essen"],["training","Training"],["tipps","Tipps"],["koerper","Körper"],["routine","Erholung"],["freunde","Freunde"]];
 const MEALS = [["fruehstueck","Frühstück"],["mittag","Mittagessen"],["abend","Abendessen"],["snack","Snacks"]];
 const GROUPS = ["Brust","Rücken","Schultern","Bizeps","Trizeps","Beine","Waden","Bauch","Sonstiges"];
@@ -768,7 +770,7 @@ function autoJournal(k){
   }
   const t = dayTotals(dy);
   if (t.kcal >= 1000) { out.a_prot = t.p >= cfg().p * 0.9; out.a_kcal = t.kcal > kcalGoal(y) * 1.1; }
-  if (dy) { const g = waterGoal(y); if (g.have > 0) out.a_water = g.have >= g.total; if (num(dy.steps) > 0) out.a_steps = num(dy.steps) >= stepGoal(); }
+  if (dy) { const g = waterGoal(y); if (WATER_TRACK && g.have > 0) out.a_water = g.have >= g.total; if (num(dy.steps) > 0) out.a_steps = num(dy.steps) >= stepGoal(); }
   const bed = hm2min(((S.days[k] || {}).sleep || {}).bed); if (bed != null) out.a_mid = bed < 12 * 60;
   return out;
 }
@@ -1717,7 +1719,7 @@ const fmtHs = (h, bare) => { const m = Math.round(num(h) * 60); return Math.floo
 const fmtL = ml => fmt(ml / 1000, ml % 1000 === 0 ? 0 : ml % 100 === 0 ? 1 : 2) + " l";
 function waterTip(k, g){
   if (g.sick) { const sym = healthCfg().symptoms || []; return sym.includes("uebel") || sym.includes("durchfall") ? ["Krank: Flüssigkeit und Salze", "Bei Erbrechen oder Durchfall verlierst du viel Wasser und Salz. Trink in kleinen Schlucken, gut sind eine Elektrolytlösung aus der Apotheke oder Brühe. Kaum Wasserlassen ist ein Warnzeichen: ärztlich abklären."] : ["Krank: mehr trinken", "Bei Fieber verlierst du mehr Wasser. Warme Getränke, Tee und Brühe zählen mit."]; }
-  if (k === todayKey() && new Date().getHours() < 11 && g.drunk < 300) return ["Gut in den Tag starten", "Starte mit einem großen Glas (ca. 0,5 l). Morgens vorne trinken, dann musst du abends nicht nachholen und schläfst ohne nächtliche Toilettengänge."];
+  if (k === todayKey() && new Date().getHours() < 11 && (!WATER_TRACK || g.drunk < 300)) return ["Gut in den Tag starten", "Starte mit einem großen Glas (ca. 0,5 l). Morgens vorne trinken, dann musst du abends nicht nachholen und schläfst ohne nächtliche Toilettengänge."];
   const n = Math.floor(dateOf(k) / 864e5), long = g.parts.some(p => p.min >= 60 && p.ml >= 450);
   if (g.sweat) return ["Nach dem Training auffüllen", `Du hast etwa ${fmt(num((S.days[k] || {}).sweatLoss), 1)} kg verloren. Trink dafür über die nächsten Stunden etwa ${fmtL(g.sweat)}. Am besten mit etwas Salz oder als Saftschorle, so bleibt das Wasser besser im Körper.`];
   if (long) return [pickN(n, ["Elektrolyte bei langem Sport", "Iso-Getränk selbst gemacht"]), pickN(n, [
@@ -1735,6 +1737,7 @@ function pickN(n, arr){ return arr[n % arr.length]; }
 /* Kurzüberblick fürs „Heute“-Dashboard, gleiche Optik wie die Makro-Zeilen */
 function waterRow(k){
   const g = waterGoal(k), pct = Math.min(100, g.have / g.total * 100);
+  if (!WATER_TRACK) return `<div class="spread" style="margin-top:4px;padding-top:12px;border-top:1px solid var(--line)"><span class="small"><span class="dot" style="background:#38BDF8"></span> Trinkziel heute</span><span class="num"><b>ca. ${fmtL(g.total)}</b>${g.sport ? '<span class="small muted"> inkl. Sport</span>' : ""}</span></div>`;
   return `<div class="macro m2" style="margin-top:4px;padding-top:12px;border-top:1px solid var(--line)"><span class="lbl"><span class="dot" style="background:#38BDF8"></span>Trinken</span>
     <span class="num small"><b>${fmtL(g.have).replace(" l", "")}</b><span class="muted"> / ${fmtL(g.total)}</span></span>
     <div class="bar" role="img" aria-label="Flüssigkeit: ${fmtL(g.have)} von ${fmtL(g.total)}, davon ${fmtL(g.food)} aus Lebensmitteln"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i></div></div>`;
@@ -1742,6 +1745,12 @@ function waterRow(k){
 function waterCard(k){
   const g = waterGoal(k), pct = Math.min(100, g.have / g.total * 100), fpct = Math.min(pct, g.food / g.total * 100), tip = waterTip(k, g);
   const glasses = Math.ceil(g.total / 250), full = Math.floor(g.have / 250);
+  const mineral = tip[0] === "Mineralwasser nutzen" ? "" : `<div style="margin-top:6px">💡 <b>Mineralwasser nutzen:</b> Nimm am besten eins mit viel Magnesium (und Natrium), das füllt Mineralstoffe nebenbei auf, besonders an Sporttagen.</div>`;
+  if (!WATER_TRACK) return `<section class="card" style="margin-top:12px">
+    <div class="spread" style="margin-bottom:6px"><span class="eyebrow">💧 Trinkziel heute</span><span class="num"><b style="font-size:22px">ca. ${fmtL(g.total)}</b></span></div>
+    <div class="small muted">Grundbedarf ${fmtL(g.base)}${g.sick ? ` + krank ${fmtL(g.sick)}` : ""}${g.sport ? ` + Sport ${fmtL(g.sport)} (${g.sweat ? "gewogener Verlust × 1,5" : "geschätzt aus " + g.parts.map(p => esc(p.title) + " " + p.min + " min").join(", ")})` : ". Machst du heute Sport, steigt das Ziel, sobald die Einheit erledigt ist."}</div>
+    <div class="hint" style="margin-top:10px"><b>${esc(tip[0])}:</b> ${esc(tip[1])}${mineral}</div>
+  </section>`;
   return `<section class="card" style="margin-top:12px">
     <div class="spread" style="margin-bottom:8px"><span class="eyebrow">💧 Trinken</span><span class="num"><b style="font-size:20px">${fmtL(g.have)}</b><span class="muted"> / ${fmtL(g.total)}</span></span></div>
     <div class="bar" style="height:12px;position:relative"><i style="width:${pct}%;background:linear-gradient(90deg,#38BDF8,#14B8A6)"></i>${g.food ? `<i style="position:absolute;left:0;top:0;bottom:0;width:${fpct}%;background:#7DD3FC;border-radius:inherit"></i>` : ""}</div>
@@ -1751,7 +1760,7 @@ function waterCard(k){
     <div class="row" style="margin-top:10px;gap:6px">${WATER_STEPS.map(ml => `<button class="btn" data-act="water" data-ml="${ml}" data-date="${k}">+ ${ml} ml</button>`).join("")}<button class="btn ghost" data-act="water" data-ml="-250" data-date="${k}" ${g.drunk ? "" : "disabled"}>− 250</button></div>
     <form class="row" data-form="water-ml" data-date="${k}" style="margin-top:8px;flex-wrap:nowrap;gap:6px"><input class="inp num" id="wml" inputmode="numeric" placeholder="z. B. 770" aria-label="Eigene Menge in ml" style="width:110px;min-height:38px;padding:5px 10px"><span class="small muted">ml</span><button class="btn" type="submit" style="min-height:38px">Eintragen</button></form>
     ${water7(k)}
-    <div class="hint" style="margin-top:10px"><b>${esc(tip[0])}:</b> ${esc(tip[1])}</div>
+    <div class="hint" style="margin-top:10px"><b>${esc(tip[0])}:</b> ${esc(tip[1])}${mineral}</div>
   </section>`;
 }
 
@@ -1844,10 +1853,10 @@ const NC = [["prot", "🥚", "Eiweiß zu jeder Mahlzeit"], ["veg", "🥦", "2× 
 function sportDay(k){ const p = dayPlanOf(k); return !!(p && (p.fb || p.gym || p.cardio)) || workoutsSorted().some(w => w.date === k && w.status === "done"); }
 const ncItems = k => NC.filter(([id]) => id !== "fuel" || sportDay(k));
 const ncOf = k => (S.days[k] || {}).nc || {};
-function ncDone(k, id){ if (ncOf(k)[id]) return true; if (id !== "drink") return false; const g = waterGoal(k); return g.total > 0 && g.have >= g.total; }
+function ncDone(k, id){ if (ncOf(k)[id]) return true; if (id !== "drink" || !WATER_TRACK) return false; const g = waterGoal(k); return g.total > 0 && g.have >= g.total; }
 function ncList(k){
   return ncItems(k).map(([id, ic, lbl]) => { const on = ncDone(k, id), auto = on && !ncOf(k)[id];
-    return `<button class="supp" data-act="nc-toggle" data-id="${id}" data-date="${k}" aria-pressed="${on ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${ic} ${esc(lbl)}</b>${auto ? '<span class="muted small"> · Trinkziel erreicht</span>' : ""}</span></button>`; }).join("");
+    return `<button class="supp" data-act="nc-toggle" data-id="${id}" data-date="${k}" aria-pressed="${on ? "true" : "false"}"><span class="chk">${ICON.check}</span><span><b>${ic}&nbsp; ${esc(lbl)}</b>${auto ? '<span class="muted small"> · Trinkziel erreicht</span>' : ""}</span></button>`; }).join("");
 }
 function ncCard(k){
   const its = ncItems(k), n = its.filter(([id]) => ncDone(k, id)).length;
@@ -3063,7 +3072,7 @@ function tipPersonal(id){
     case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
     case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
     case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
-    case "drink": { const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.have < g.total * 0.7; return {note: `Gestern ${fmtL(g.have)} von ${fmtL(g.total)} (davon ${fmtL(g.food)} aus Lebensmitteln).`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
+    case "drink": { if (!WATER_TRACK) return null; const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.have < g.total * 0.7; return {note: `Gestern ${fmtL(g.have)} von ${fmtL(g.total)} (davon ${fmtL(g.food)} aus Lebensmitteln).`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
     case "prematch": return footballDay(today) === "pre" ? {note: "Morgen ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Morgen ist Spieltag."} : null;
     case "matchday": return footballDay(today) === "match" ? {note: "Heute ist laut deinem Wochenplan Spieltag.", hot: 10, why: "Heute ist Spieltag."} : null;
     case "watch": { const c2 = cfgRaw(); return (num(c2.burnShare) || 100) === 100 && goalType() === "cut" ? {note: "Du rechnest Trainingskalorien gerade zu 100 % an.", hot: 2, why: "Im Cut rechnest du Uhr-Kalorien voll an."} : null; }
