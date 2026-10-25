@@ -161,7 +161,11 @@ input.inp[type="date"]::-webkit-date-and-time-value,input.inp[type="time"]::-web
 .ex{border:1px solid var(--line);border-radius:16px;padding:12px;background:var(--surface)}
 .ex + .ex{margin-top:10px}
 .sets{display:flex;flex-direction:column;gap:4px;margin-top:8px}
-.setrow{display:grid;grid-template-columns:28px 1fr 1fr 44px;gap:6px;align-items:center;padding:3px;margin:0 -3px;border-radius:13px;transition:background .2s}
+.exround{width:52px;height:52px;border-radius:50%;overflow:hidden;flex:none;display:grid;place-items:center;background:var(--surface-2);font-size:22px}
+.exround .exanim{width:100% !important;height:100%;border-radius:50%;border:0}
+.setrow .prev{font-size:12.5px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.setrow.h4 .h{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.setrow{display:grid;grid-template-columns:28px 1fr 1fr 1fr 40px;gap:6px;align-items:center;padding:3px;margin:0 -3px;border-radius:13px;transition:background .2s}
 .setrow.done{background:color-mix(in srgb,var(--good) 24%,transparent)}
 .setrow.done .inp{background:color-mix(in srgb,var(--good) 10%,var(--surface));border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
 .setrow.done .idx{color:var(--good)}
@@ -316,7 +320,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "25.10.2026 15:18";
+const APP_VERSION = "25.10.2026 17:46";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -2098,6 +2102,36 @@ function openEval(id){
    Quelle: VO2max ist der stärkste Einzelwert für ein langes Leben. Einstufung wie bei Garmin (Cooper Institute). */
 const VO2_NORMS = {m: [[20, [41.7, 45.4, 51.1, 55.2]], [30, [40.5, 44.0, 48.3, 52.5]], [40, [38.5, 42.4, 46.4, 50.4]], [50, [35.6, 39.2, 43.4, 48.2]]],
                    w: [[20, [36.1, 39.5, 43.9, 49.6]], [30, [34.4, 37.8, 42.4, 47.4]], [40, [32.0, 35.9, 39.6, 45.3]], [50, [28.7, 32.0, 35.7, 41.1]]]};
+/* VO2max der App, nicht nur von Garmin (die Forerunner 165 schätzt sie nur bei Läufen draußen):
+   1) Jede Laufeinheit mit Puls und Strecke, auch Laufband und Läufe ohne GPS: Sauerstoffbedarf nach ACSM (0,2 × m/min + 3,5 ml/kg/min)
+      geteilt durch den Anteil der Herzfrequenzreserve (Swain 1997: %HFR ≈ %VO2-Reserve). Maximalpuls = höchster Puls aus ALLEN Einheiten (auch Fußball).
+   2) Der letzte Garmin-Wert. Alle Werte zählen nach Alter (Halbwertszeit 45 Tage), Garmin etwas stärker.
+   3) Korrektur über deinen Ruhepuls seit der letzten Messung (VO2max ~ Maximalpuls/Ruhepuls, Uth 2004), halb gewichtet, höchstens ± 5 %.
+      Der Ruhepuls spiegelt alles Training wider, auch Fußball, Gym und Rad. Krankheitstage zählen nicht. */
+const RUN_RE = /run|lauf|jog|treadmill|trail/i;
+let v2Memo = {};
+function rhrAround(k, n){ const xs = Array.from({length: n || 14}, (_, i) => addDays(k, -i)).filter(x => !isSickDay(x)).map(x => num(((S.days[x] || {}).sleep || {}).rhr)).filter(v => v > 25); return xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null; }
+function vo2Est(k){
+  k = k || todayKey();
+  if (v2Memo.d !== S.days || v2Memo.w !== S.workouts) v2Memo = {d: S.days, w: S.workouts};
+  if (v2Memo[k] !== undefined) return v2Memo[k];
+  const from = addDays(k, -120), hm = hrMax().v, parts = [];
+  workoutsSorted().filter(w => w.kind === "activity" && w.date <= k && w.date >= from && !isSickDay(w.date) && RUN_RE.test((w.garminType || "") + " " + (w.title || ""))).forEach(w => {
+    const km = num(w.km), min = num(w.minutes), hr = num(w.avgHR), rhr = rhrAround(w.date) || rhrAround(k, 30);
+    if (!(km >= 1.5 && min >= 15 && hr > 0 && rhr)) return;
+    const mpm = km * 1000 / min; if (mpm < 110) return; // unter ca. 6,6 km/h ist es eher Gehen
+    const f = (hr - rhr) / (hm - rhr); if (f < 0.5 || f > 0.97) return;
+    const v = (0.2 * mpm) / f + 3.5; if (v < 25 || v > 80) return;
+    parts.push({k: w.date, v, src: "run", w: Math.pow(0.5, diffDays(w.date, k) / 45)});
+  });
+  const gk = Array.from({length: 121}, (_, i) => addDays(k, -i)).find(x => num((S.days[x] || {}).vo2) > 0);
+  if (gk) parts.push({k: gk, v: num(S.days[gk].vo2), src: "garmin", w: 1.5 * Math.pow(0.5, diffDays(gk, k) / 45)});
+  if (!parts.length) return (v2Memo[k] = null);
+  const W = parts.reduce((a, p) => a + p.w, 0), base = parts.reduce((a, p) => a + p.v * p.w, 0) / W;
+  const ref = parts.map(p => p.k).sort().pop(), rRef = rhrAround(ref), rNow = rhrAround(k);
+  const fac = rRef && rNow && ref < addDays(k, -7) ? clamp(Math.sqrt(rRef / rNow), 0.95, 1.05) : 1;
+  return (v2Memo[k] = {v: base * fac, k, ref, fac, runs: parts.filter(p => p.src === "run").length, garmin: gk ? {k: gk, v: num(S.days[gk].vo2)} : null});
+}
 function vo2Class(v){
   const c = cfgRaw(), p = c.calc || {}, sex = p.sex === "w" ? "w" : "m", age = ageOf(p) || 25;
   const row = VO2_NORMS[sex].filter(r => age >= r[0]).pop() || VO2_NORMS[sex][0], t = row[1];
@@ -2121,7 +2155,8 @@ function trendSvg(pts, o){
 }
 function fitnessCard(){
   const keys = Object.keys(S.days).sort();
-  const vo2 = keys.filter(k => num(S.days[k].vo2) > 0).map(k => ({k, v: num(S.days[k].vo2)}));
+  const vo2 = Array.from({length: 53}, (_, i) => addDays(todayKey(), -7 * (52 - i))).map(k => { const e = vo2Est(k); return e ? {k, v: e.v} : null; }).filter(Boolean);
+  const est = vo2Est();
   const since = addDays(todayKey(), -90);
   const rhr = keys.filter(k => k >= since && num(((S.days[k] || {}).sleep || {}).rhr) > 0).map(k => ({k, v: num(S.days[k].sleep.rhr)}));
   if (!vo2.length && rhr.length < 5) return "";
@@ -2131,9 +2166,10 @@ function fitnessCard(){
   const rNow = avg(rhr.slice(-7)), rOld = avg(rhr.filter(p => p.k < addDays(todayKey(), -60)).slice(-14));
   return `<div class="section-title">Fitness-Werte</div>
   ${vNow ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>VO2max</h2><span class="chip" style="color:${cls.col}">${cls.label}</span></div>
-    <div class="kv"><div><span class="eyebrow">Aktuell</span><div class="v">${fmt(vNow.v, 1)}<span class="unit">ml/kg/min</span></div><div class="small muted">${fmtShort(vNow.k)}</div></div>
+    <div class="kv"><div><span class="eyebrow">Aktuell (App)</span><div class="v">${fmt(vNow.v, 1)}<span class="unit">ml/kg/min</span></div><div class="small muted">${est && est.garmin ? `Garmin: ${fmt(est.garmin.v, 1)} (${fmtShort(est.garmin.k)})` : "ohne Garmin-Wert"}</div></div>
     ${vOld && vOld.k !== vNow.k ? `<div><span class="eyebrow">Seit ${fmtShort(vOld.k)}</span><div class="v">${vNow.v - vOld.v >= 0 ? "+" : ""}${fmt(vNow.v - vOld.v, 1)}</div></div>` : ""}</div>
     <div style="margin-top:10px">${trendSvg(vo2.filter(p => p.k >= addDays(todayKey(), -365)), {label: "VO2max-Verlauf", dec: 0, unit: "ml/kg/min"})}</div>
+    ${est ? `<div class="hint small" style="margin-top:8px"><b>So rechnet die App:</b> Deine Uhr schätzt die VO2max nur bei Läufen draußen. Die App nimmt zusätzlich jede Laufeinheit mit Puls und Strecke (auch Laufband), deinen Maximalpuls aus allen Einheiten (auch Fußball, gerade ${hrMax().v}) und deinen Ruhepuls, der sich durch alles Training verändert.${est.runs ? ` Gerade fließen ${est.runs} Läufe ein.` : ""}${est.fac !== 1 ? ` Ruhepuls seit ${fmtShort(est.ref)}: ${est.fac > 1 ? "gesunken, +" : "gestiegen, −"}${fmt(Math.abs(est.fac - 1) * 100, 1)} %.` : ""} Fußball selbst taugt nicht für eine direkte Messung, weil Tempo und Puls dort ständig wechseln.</div>` : ""}
     <p class="small ink2" style="margin:8px 0 0">Die VO2max zeigt, wie viel Sauerstoff dein Körper maximal verwerten kann. Laut deiner Quelle ist sie der stärkste Einzelwert für ein langes Leben. ${cls.next ? `Bis zur nächsten Stufe fehlen dir ${fmt(cls.next - vNow.v, 1)} Punkte.` : ""} Sie steigt vor allem durch Zone-2-Einheiten plus einmal pro Woche etwas sehr Intensives wie Sprints oder Fußball. Die Uhr misst sie nur bei Läufen oder zügigen Gehrunden mit GPS.</p></section>` : ""}
   ${rhr.length >= 5 ? `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>Ruhepuls</h2><span class="chip">${fmt(rNow)} bpm Ø 7 Tage</span></div>
     ${trendSvg(rhr, {label: "Ruhepuls-Verlauf", dec: 0, unit: "bpm", smooth: true, color: "var(--p)", pad: 2})}
@@ -2579,7 +2615,7 @@ const TRENDS = [
   ["steps", "Schritte", "", 0, k => num((S.days[k] || {}).steps) || null],
   ["weight", "Gewicht", "kg", 1, k => { const p = weightSeries().find(x => x.k === k); return p ? p.v : null; }],
   ["fat", "Körperfett", "%", 1, k => num(((S.days[k] || {}).body || {}).fat) || null],
-  ["vo2", "VO2max", "", 1, k => num((S.days[k] || {}).vo2) || null],
+  ["vo2", "VO2max", "", 1, k => { const e = vo2Est(k); return e ? +e.v.toFixed(1) : null; }],
   ["fa", "Fitnessalter", "Jahre", 1, k => { const x = fitnessAgeAt(k); return x.ok ? x.age : null; }],
   ...(FOOD_TRACK ? [["kcal", "Kalorien", "kcal", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.kcal : null; }],
   ["prot", "Eiweiß", "g", 0, k => { const t = dayTotals(S.days[k]); return t.kcal >= 800 ? t.p : null; }]] : [])
@@ -3069,7 +3105,7 @@ function tipPersonal(id){
     case "progression": { const p = plateaus(); if (!p.length) return null; return {note: `Plateau bei: ${p.slice(0, 3).map(x => x.name).join(", ")}.`, hot: 6, why: `Bei ${p.length} Übung${p.length > 1 ? "en" : ""} geht es seit Wochen nicht voran.`}; }
     case "vo2int": { const v = (Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort().slice(-1)[0]); return {note: `Dein Puls für die harten Abschnitte: ${hrPct(0.9, 0.95)} (Maximalpuls ${hrMax().v}, ${hrMax().src})${v ? `. VO2max zuletzt ${fmt(num(S.days[v].vo2), 1)}` : ""}.`, hot: 0}; }
     case "zone2": { const mon = mondayOf(today), z2 = workoutsSorted().filter(x => x.kind === "activity" && x.date >= mon && Array.isArray(x.zones)).reduce((a, x) => a + (num(x.zones[1]) || 0), 0); return {note: `Diese Woche ${fmtMin(z2)} in Zone 2. Dein Zone-2-Puls: ${hrPct(0.6, 0.7)}.`, hot: z2 < 30 && dateOf(today).getDay() >= 4 ? 3 : 0, why: z2 < 30 ? "Diese Woche kaum Zeit in Zone 2." : ""}; }
-    case "vo2": { const ks = Object.keys(S.days).filter(k => num(S.days[k].vo2) > 0).sort(); if (!ks.length) return null; const v = num(S.days[ks[ks.length - 1]].vo2); return {note: `Deine VO2max: ${fmt(v, 1)} (${vo2Class(v).label}, Stand ${fmtShort(ks[ks.length - 1])}).`, hot: 0}; }
+    case "vo2": { const e = vo2Est(); if (!e) return null; return {note: `Deine VO2max (App, aus Garmin, Läufen und Puls): ${fmt(e.v, 1)} (${vo2Class(e.v).label}).`, hot: 0}; }
     case "deficit": { if (goalType() !== "cut") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r < -1 ? 8 : 0, why: r < -1 ? "Du nimmst gerade schneller als 1 kg pro Woche ab." : ""}; }
     case "surplus": { if (goalType() !== "bulk") return null; const r = weeklyRate(planSeries()); return r == null ? null : {note: `Dein Tempo: ${r > 0 ? "+" : ""}${fmt(r, 2)} kg pro Woche.`, hot: r > 0.5 ? 6 : 0, why: r > 0.5 ? "Du nimmst schneller zu als nötig." : ""}; }
     case "drink": { if (!WATER_TRACK) return null; const y = addDays(today, -1), g = waterGoal(y); if (!g.drunk) return null; const low = g.sport > 0 && g.have < g.total * 0.7; return {note: `Gestern ${fmtL(g.have)} von ${fmtL(g.total)} (davon ${fmtL(g.food)} aus Lebensmitteln).`, hot: low ? 5 : 0, why: low ? "Gestern hattest du Sport, aber deutlich zu wenig getrunken." : ""}; }
@@ -3409,8 +3445,12 @@ function restSeconds(txt){
   const v = parseFloat(m[1]);
   return Math.round(/s(ek|\b)/.test(t) && !/min/.test(t) ? v : v * 60);
 }
-function nextSetLabel(){
-  for (const e of (ws && ws.exercises) || []) { const i = (e.sets || []).findIndex(x => !x.done); if (i >= 0) return (exName(e.exId) || e.name) + " – Satz " + (i + 1); }
+/* Nächster Satz nach der Pause: zuerst die Übung, die du gerade machst (auch wenn du die Reihenfolge änderst),
+   ist sie fertig, die nächste offene Übung danach, sonst die erste offene davor. */
+function nextSetLabel(cur){
+  const ex = (ws && ws.exercises) || [], lab = e => { const i = (e.sets || []).findIndex(x => !x.done); return i >= 0 ? (exName(e.exId) || e.name) + " – Satz " + (i + 1) : null; };
+  const c = cur != null && ex[cur] ? cur : 0;
+  for (let n = 0; n < ex.length; n++) { const l = lab(ex[(c + n) % ex.length]); if (l) return l; }
   return null;
 }
 /* Ton am Pausenende: AudioContext wird beim Abhaken (Antippen) entsperrt, sonst spielt iOS keinen Ton ab */
@@ -3427,14 +3467,14 @@ function restBeep(){
 function startRest(ei){
   unlockAudio();
   const e = ws.exercises[ei]; const secs = restSeconds(e && e.target && e.target.rest);
-  rest = {end: Date.now() + secs * 1000};
+  rest = {end: Date.now() + secs * 1000, ei};
   clearInterval(restTick); restTick = setInterval(updateRestBar, 500); updateRestBar();
   schedulePushRest(secs);
 }
 let restPushWarned = false;
 function schedulePushRest(secs){
   if (mode !== "db" || !sb || sickNow()) return;
-  const nxt = nextSetLabel();
+  const nxt = nextSetLabel(rest && rest.ei);
   sb.rpc("start_rest_timer", {p_seconds: Math.round(secs), p_title: "Pause vorbei 💪", p_body: nxt ? "Weiter mit " + nxt + "." : "Weiter geht's mit dem nächsten Satz."})
     .then(({data, error}) => { if ((error || !data) && !restPushWarned) { restPushWarned = true; toast(error ? "Die Pausen-Mitteilung konnte nicht geplant werden." : "Pausen-Mitteilung: Mitteilungen sind auf diesem Gerät noch nicht aktiv (Erholung → Supplements)."); } })
     .catch(() => {});
@@ -3845,7 +3885,7 @@ function vo2CompAge(v, sex){
 function faInputs(k){
   const days = Array.from({length: 30}, (_, i) => addDays(k, -i)).filter(x => !isSickDay(x));
   const D = x => S.days[x] || {}, avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
-  const vk = Array.from({length: 61}, (_, i) => addDays(k, -i)).find(x => num(D(x).vo2) > 0);
+  const ve = vo2Est(k);
   const rhr = avg(days.map(x => num((D(x).sleep || {}).rhr)).filter(v => v > 25));
   const nights = days.map(x => D(x).sleep || {}).filter(q => num(q.h) >= 3);
   const sleepH = nights.length >= 7 ? avg(nights.map(q => num(q.h))) : null;
@@ -3861,7 +3901,7 @@ function faInputs(k){
   const bs = bodySeries().filter(x => x.k <= k && x.k >= addDays(k, -60) && x.w).slice(-3);
   const ffmi = bs.length && hm > 1 ? avg(bs.map(x => x.w * (1 - num(x.fat) / 100))) / (hm * hm) : null;
   const dataDays = days.filter(x => num(D(x).steps) > 0 || num((D(x).sleep || {}).h) > 0).length;
-  return {vo2: vk ? num(D(vk).vo2) : null, vo2At: vk || null, rhr, sleepH, reg, steps, mod, vig, strMin, ffmi, dataDays};
+  return {vo2: ve ? ve.v : null, vo2At: ve ? ve.ref : null, rhr, sleepH, reg, steps, mod, vig, strMin, ffmi, dataDays};
 }
 function faFactors(inp, real, sex){
   const f = [];
@@ -4421,16 +4461,16 @@ function renderWs(){
     if (last && hi) { const work = last.sets; const all = work.length >= (+(e.target && e.target.sets) || work.length) && work.every(s => num(s.r) >= hi); hint = all && done ? `<div class="hint good" style="margin-top:8px">Letztes Mal alle Sätze mit ${hi} Wdh. geschafft.</div>` : ""; }
     const rx = exRef(e.exId), open = wsInfo[ei];
     const work = (e.sets || []).filter(q => q.type !== "warmup"), exDone = work.length > 0 && work.every(q => q.done);
-    return `<div class="ex${exDone ? " exdone" : ""}" ${done ? "" : `data-sort="ws" data-i="${ei}"`}><div class="spread" style="align-items:flex-start">${rx ? `<button data-act="ws-info" data-ei="${ei}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}">${exAnim(rx, "60px")}</button>` : ""}<div style="min-width:0;flex:1"><div style="font-weight:600;font-size:16px">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
-      <div class="small muted num">${e.target ? `${e.target.sets} × ${esc(e.target.reps)}${showRIR() ? " · RIR " + esc(e.target.rir || "–") : ""}${e.target.rest ? " · Pause " + esc(e.target.rest) : ""}` : "Freie Übung"}</div>
-      ${last ? `<div class="small ink2 num">Letztes Mal (${fmtShort(last.date)}): ${esc(setsStr(last.sets, isBw(e.exId)))}</div>` : ""}${e.target && e.target.kg && !done ? `<div class="small num" style="margin-top:2px;color:var(--accent);font-weight:600">Plan: ${isBw(e.exId) ? "KG + " : ""}${fmtKg(e.target.kg)} kg × ${esc(e.target.reps)}</div>` : ""}
+    return `<div class="ex${exDone ? " exdone" : ""}" ${done ? "" : `data-sort="ws" data-i="${ei}"`}><div class="spread" style="align-items:flex-start"><button data-act="${rx ? "ws-info" : "open-ex"}" data-ei="${ei}" data-id="${e.exId}" style="border:0;background:none;padding:0;margin-right:10px;cursor:pointer" aria-label="Anleitung ${open ? "schließen" : "zeigen"}"><span class="exround">${rx ? exAnim(rx, "52px") : "🏋️"}</span></button><div style="min-width:0;flex:1"><div style="font-weight:700;font-size:16px;color:var(--accent)">${esc(exName(e.exId) || e.name)}${exDone ? ' <span class="exok" aria-label="Übung erledigt">✓</span>' : ""}</div>
+      <div class="small num" style="margin-top:2px">⏱ Pausentimer: <b>${e.target && e.target.rest ? esc(e.target.rest) : "aus"}</b>${showRIR() && e.target ? " · RIR " + esc(e.target.rir || "–") : ""}</div>
+      ${last ? `<div class="small muted num">Zuletzt ${fmtShort(last.date)}</div>` : ""}
       <div class="row" style="gap:8px;margin-top:2px">${rx ? `<button class="btn ghost" data-act="ws-info" data-ei="${ei}" style="min-height:28px;padding:2px 0;font-size:13px">${open ? "Anleitung schließen" : "So geht's ▸"}</button>` : ""}${done ? "" : `<button class="chip" data-act="swap-open" data-kind="ws" data-i="${ei}" style="cursor:pointer;border:0">⇄ Tauschen</button>`}${done ? "" : `<button class="chip${isBw(e.exId) ? " acc" : ""}" data-act="ws-bw" data-id="${e.exId}" aria-pressed="${isBw(e.exId)}" style="cursor:pointer;border:0">🧍 Körpergewicht${isBw(e.exId) ? " ✓" : ""}</button>`}</div></div>
       ${done ? "" : `<button class="x" data-act="ws-ex-del" data-ei="${ei}" aria-label="Übung entfernen">×</button>`}</div>
       ${rx && open ? `<div style="margin-top:10px">${exAnim(rx, "100%")}${recBox(rx, e.exId)}<ol class="steps" style="margin-top:10px">${rx.s.map(t => `<li class="small">${esc(t)}</li>`).join("")}</ol><a class="small" href="${ytLink(rx.n)}" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;color:var(--accent);font-weight:600">▶ Video auf YouTube</a></div>` : ""}${hint}
-      <div class="sets"><div class="setrow"><span class="h">Satz</span><span class="h" style="text-align:center">${isBw(e.exId) ? "+kg" : "kg"}</span><span class="h" style="text-align:center">Wdh.</span><span></span></div>
-      ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<div class="setrow${s.done ? " done" : ""}"><span class="idx">${s.type === "warmup" ? "W" : si + 1}</span>
+      <div class="sets"><div class="setrow h4"><span class="h">Satz</span><span class="h" style="text-align:center">Vorher</span><span class="h" style="text-align:center">${isBw(e.exId) ? "+kg" : "kg"}</span><span class="h" style="text-align:center">${e.target && /\D/.test(String(e.target.reps || "")) ? "Wdh.-Bereich" : "Wdh."}</span><span></span></div>
+      ${(e.sets || []).map((s, si) => { const ls = last && last.sets[si]; return `<div class="setrow${s.done ? " done" : ""}"><span class="idx">${s.type === "warmup" ? "W" : si + 1}</span><span class="prev num">${ls && num(ls.r) ? (num(ls.w) ? fmtKg(num(ls.w)) + " × " : isBw(e.exId) ? "KG × " : "") + esc(ls.r) : "–"}</span>
         <input class="inp num" inputmode="decimal" data-ws="w" data-ei="${ei}" data-si="${si}" value="${esc(s.w)}" placeholder="${e.target && e.target.kg && s.type !== "warmup" ? esc(e.target.kg) : ls && num(ls.w) ? esc(ls.w) : isBw(e.exId) ? "KG" : ls ? esc(ls.w) : "kg"}" aria-label="Satz ${si + 1} Gewicht" ${done ? "readonly" : ""}>
-        <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${ls ? esc(ls.r) : (e.target ? esc(e.target.reps) : "Wdh.")}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
+        <input class="inp num" inputmode="numeric" data-ws="r" data-ei="${ei}" data-si="${si}" value="${esc(s.r)}" placeholder="${e.target && e.target.reps && s.type !== "warmup" ? esc(e.target.reps) : ls ? esc(ls.r) : "Wdh."}" data-last="${ls && num(ls.r) ? esc(ls.r) : ""}" aria-label="Satz ${si + 1} Wiederholungen" ${done ? "readonly" : ""}>
         <button class="tick" data-act="ws-tick" data-ei="${ei}" data-si="${si}" aria-pressed="${s.done ? "true" : "false"}" aria-label="Satz ${si + 1} erledigt" ${done ? "disabled" : ""}>${ICON.check}</button></div>`; }).join("")}</div>
       ${done ? "" : `<div class="row" style="margin-top:8px"><button class="btn ghost" data-act="ws-set-add" data-ei="${ei}">+ Satz</button>${(e.sets || []).length ? `<button class="btn ghost" data-act="ws-set-del" data-ei="${ei}">− Satz</button>` : ""}</div>`}${swapFor && swapFor.kind === "ws" && swapFor.i === ei ? swapPanel(e.exId) : ""}</div>`;
   }).join("") + `</div>`;
@@ -4483,7 +4523,7 @@ function renderTe(){
     <div class="section-title">Übungen</div>
     <p class="small muted" style="margin:0 0 8px">Übung lange gedrückt halten und ziehen, um sie zu verschieben.</p><div class="sortlist">
     ${te.items.map((it, i) => `<div class="ex" data-sort="te" data-i="${i}"><div class="spread"><b>${esc(exName(it.exId))}</b><span class="row" style="gap:6px;flex-wrap:nowrap"><button class="chip" data-act="swap-open" data-kind="te" data-i="${i}" style="border:0;cursor:pointer">⇄ Tauschen</button><button class="x" data-act="te-del" data-i="${i}" aria-label="Entfernen">×</button></span></div>${swapFor && swapFor.kind === "te" && swapFor.i === i ? swapPanel(it.exId) : ""}
-      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 5 : 4},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}" placeholder="8–12"></div><div class="field"><label>${isBw(it.exId) ? "+ kg" : "kg"}</label><input class="inp num" inputmode="decimal" data-te-i="${i}" data-k="kg" value="${esc(it.kg != null ? it.kg : "")}" placeholder="–"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
+      <div class="fields" style="margin-top:8px;grid-template-columns:repeat(${showRIR() ? 5 : 4},minmax(0,1fr))"><div class="field"><label>Sätze</label><input class="inp num" inputmode="numeric" data-te-i="${i}" data-k="sets" value="${esc(it.sets)}"></div><div class="field"><label>Wdh.-Bereich</label><input class="inp num" data-te-i="${i}" data-k="reps" value="${esc(it.reps)}" placeholder="8–12"></div><div class="field"><label>${isBw(it.exId) ? "+ kg" : "kg"}</label><input class="inp num" inputmode="decimal" data-te-i="${i}" data-k="kg" value="${esc(it.kg != null ? it.kg : "")}" placeholder="–"></div>${showRIR() ? `<div class="field"><label>RIR</label><input class="inp num" data-te-i="${i}" data-k="rir" value="${esc(it.rir || "")}"></div>` : ""}<div class="field"><label>Pause</label><input class="inp num" data-te-i="${i}" data-k="rest" value="${esc(it.rest || "")}"></div></div></div>`).join("") || '<div class="empty">Noch keine Übungen.</div>'}
     </div>
     <div class="row" style="margin-top:12px;flex-wrap:nowrap"><select class="inp" id="teadd" aria-label="Übung hinzufügen"><option value="">Übung hinzufügen …</option>${exOpts}</select><button class="btn" data-act="te-add">Hinzufügen</button></div>
     <div class="row" style="margin-top:16px"><button class="btn primary" data-act="te-save">Plan speichern</button>${te.id ? '<button class="btn ghost danger" data-act="te-remove">Plan löschen</button>' : ""}</div>`;
@@ -4834,6 +4874,7 @@ document.addEventListener("click", async e => {
       if (s.done) { const row = b.parentElement; const wi = row.querySelector(`[data-ws="w"][data-ei="${D.ei}"][data-si="${D.si}"]`), ri = row.querySelector(`[data-ws="r"][data-ei="${D.ei}"][data-si="${D.si}"]`);
         if (s.w === "" && wi && wi.placeholder && wi.placeholder !== "kg" && wi.placeholder !== "KG") s.w = num(wi.placeholder);
         if (s.r === "" && ri && /^\d+$/.test(ri.placeholder)) s.r = +ri.placeholder;
+        else if (s.r === "" && ri && /^\d+$/.test(ri.dataset.last || "")) s.r = +ri.dataset.last;
         startRest(+D.ei); }
       saveWs(); renderWs(); break; }
     case "rest-plus": restAdjust(30); break;
