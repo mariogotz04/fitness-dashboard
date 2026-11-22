@@ -331,7 +331,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "22.11.2026 15:47";
+const APP_VERSION = "22.11.2026 15:48";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -1070,7 +1070,7 @@ function viewHeute(){
   let trainHtml = "";
   if (dayW.length) trainHtml = dayW.map(w => workoutLine(w)).join("");
   else trainHtml = `<p class="muted small" style="margin:0 0 10px">Für diesen Tag ist nichts eingetragen.${nextPlan ? ` Nächstes geplantes Training: <b>${esc(nextPlan.title)}</b> am ${fmtMid(nextPlan.date)}.` : ""}</p>`;
-  const tpls = templatesSorted();
+  const tpls = templatesSorted().filter(t => !t.inactive);
   const wk = weekSummary(curDate);
 
   const supps = suppsSorted();
