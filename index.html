@@ -331,7 +331,7 @@ a.btn{color:var(--accent)}
 /* Kein Zoomen: Pinch-Gesten und Doppeltipp-Zoom unterbinden (iOS ignoriert user-scalable allein). */
 ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, e => e.preventDefault(), {passive: false}));
 ["touchstart", "touchmove"].forEach(t => window.addEventListener(t, e => { if (e.touches.length > 1 || (e.scale && e.scale !== 1)) e.preventDefault(); }, {passive: false, capture: true}));
-const APP_VERSION = "03.11.2026 11:18";
+const APP_VERSION = "22.11.2026 15:27";
 /* Neue Version sofort laden statt bis zu 10 Minuten die zwischengespeicherte zu zeigen. */
 async function checkUpdate(){
   if (APP_VERSION.startsWith("__")) return;
@@ -2042,7 +2042,7 @@ function weightSuggestion(exId, target, date, wid){
 function dayFormHint(w){
   if (!w || w.date !== todayKey() || w.status === "done") return "";
   const r = recoveryOf(w.date); if (!r) return "";
-  const z = zoneOf(r.score), md = mdOf(w.date), mdt = md && md.label === "MD-1" ? " Heute ist MD-1: kurz und scharf, nichts bis zur Ermüdung." : "";
+  const z = zoneOf(r.score), md = mdOf(w.date), mdt = md && md.label === "MD-1" ? " Morgen ist Spiel: kurz und scharf, nichts bis zur Ermüdung." : "";
   if (z === "bad") return `<div class="hint" style="margin-bottom:12px;border:1.5px solid var(--warn)"><b>Tagesform niedrig (Erholung ${r.score} %):</b> Sprünge und Würfe heute nur 2 Sätze mit vollen Pausen, Kraft nur bis 2–3 Wdh. vor dem Versagen. Lieber ein Satz weniger als eine schlampige Wiederholung.${mdt}</div>`;
   if (z === "good") return `<div class="hint good" style="margin-bottom:12px"><b>Gut erholt (${r.score} %):</b> Guter Tag für Bestwerte bei Sprüngen und in den Kraftübungen.${mdt}</div>`;
   return `<div class="hint" style="margin-bottom:12px"><b>Erholung ${r.score} %:</b> Normal trainieren. Sprünge mit voller Qualität, Gewichte halten oder leicht steigern.${mdt}</div>`;
@@ -2323,29 +2323,17 @@ function footballDay(k){
   if (pf(k) === "train") return "training";
   return null;
 }
-/* ---------- Spieltags-Rhythmus (MD-Logik, PAA und High-Low) ----------
-   Jeder Tag bekommt sein Etikett relativ zum Spiel: MD (Spieltag), MD+1/+2 danach, MD-1 bis MD-4 davor.
-   MD+1 aktive Erholung, MD+2 schwerste Einheit, MD-1 nur Primer. Nur Hinweise, Pläne ändern sich nie. */
-function fbOfDay(d){ if (typeof wp !== "undefined" && wp && wp.days && wp.days[d]) return wp.days[d].fb || ""; const p = weekPlanOf(mondayOf(d)); return p ? ((p[d] || {}).fb || "") : ""; }
+/* ---------- Spieltag: Tag davor, Spieltag, Tag danach (nur Hinweise) ---------- */
 function mdOf(k){
-  if (fbOfDay(k) === "match") return {n: 0, label: "MD"};
-  const prev = [1, 2].find(i => fbOfDay(addDays(k, -i)) === "match");
-  if (prev) return {n: prev, label: "MD+" + prev};
-  const next = [1, 2, 3, 4].find(i => fbOfDay(addDays(k, i)) === "match");
-  if (next) return {n: -next, label: "MD-" + next};
-  const p3 = [3, 4].find(i => fbOfDay(addDays(k, -i)) === "match");
-  return p3 ? {n: p3, label: "MD+" + p3} : null;
+  if (fbOfDay(k) === "match") return {n: 0, label: "MD", name: "Spieltag"};
+  if (fbOfDay(addDays(k, 1)) === "match") return {n: -1, label: "MD-1", name: "Morgen ist Spiel"};
+  if (fbOfDay(addDays(k, -1)) === "match") return {n: 1, label: "MD+1", name: "Tag nach dem Spiel"};
+  return null;
 }
 const MD_TXT = {
   "MD+1": "Aktive Erholung: 20–30 Min. lockeres Rad, Mobility oder leichtes Auslaufen. Nicht komplett liegen bleiben.",
-  "MD+2": "Bester Tag für die schwere Einheit: Kraft & Power.",
-  "MD+3": "Normaler Trainingstag.",
-  "MD+4": "Normaler Trainingstag.",
-  "MD-4": "Normaler Trainingstag.",
-  "MD-3": "Gym eher leicht: Oberkörper & Rumpf.",
-  "MD-2": "Beine im Gym meiden, das Fußballtraining reicht.",
-  "MD-1": "Nur Primer: kurz und scharf, frisch rausgehen. Abends 5 Min. das Spiel im Kopf durchspielen.",
-  "MD": "Spieltag. Alles auf das Spiel ausrichten."
+  "MD-1": "Heute nichts Schweres für die Beine, frisch ins Spiel gehen. Abends 5 Min. das Spiel im Kopf durchspielen.",
+  "MD": "Alles auf das Spiel ausrichten."
 };
 /* Schweres Beintraining: mindestens 2 Bein-Übungen mit Zusatzgewicht und Bereich bis 8 Wdh. (Sprünge, Swings u. Ä. zählen nicht) */
 function tplHeavyLegs(id){
@@ -2373,7 +2361,7 @@ function athTestCard(){
   const rel = last && num(last.tb) > 0 && bw(last.d) ? num(last.tb) / bw(last.d) : null;
   return `<section class="card" style="margin-bottom:12px"><div class="card-h"><h2>🏃 Athletik-Profil</h2><button class="btn ghost" data-act="ath-test" style="min-height:30px">+ Test</button></div>
     ${last ? `<div class="small muted" style="margin:-4px 0 10px">Letzter Test: ${fmtShort(last.d)}${prev ? ` · verglichen mit ${fmtShort(prev.d)}` : ""}</div><div class="kv">${ATH_T.map(cell).join("")}${rel ? `<div><span class="eyebrow">Relative Kraft</span><div class="v">${fmt(rel, 2)}<span class="unit">× KG</span></div></div>` : ""}</div>` : `<p class="small ink2" style="margin:0">Noch kein Test. Alle 4–6 Wochen kurz testen: Weitsprung aus dem Stand, 10 m und 30 m Sprint (Handy-Stoppuhr), Trap-Bar-Kreuzheben (schwerster sauberer 3er) und wie weit du bei Nordics kontrolliert runter kommst.</p>`}
-    ${due && last ? `<div class="hint" style="margin-top:10px">Dein letzter Test ist über 5 Wochen her. Zeit für einen neuen, am besten an MD+2 ausgeruht nach dem Aufwärmen.</div>` : ""}
+    ${due && last ? `<div class="hint" style="margin-top:10px">Dein letzter Test ist über 5 Wochen her. Zeit für einen neuen, am besten ausgeruht mit 2 Tagen Abstand zum Spiel, nach dem Aufwärmen.</div>` : ""}
     ${L.length >= 2 ? `<details style="margin-top:10px"><summary class="small" style="cursor:pointer;color:var(--accent);font-weight:600">Verlauf ansehen</summary>${ATH_T.map(([key, lbl, unit, dec]) => { const pts = L.filter(x => num(x[key]) > 0).map(x => ({k: x.d, v: num(x[key])})); return pts.length >= 2 ? `<div class="eyebrow" style="margin-top:10px">${lbl}</div>${trendSvg(pts, {label: lbl, dec, unit, pad: dec ? 0.1 : 2})}` : ""; }).join("")}</details>` : ""}
   </section>`;
 }
@@ -2395,7 +2383,7 @@ const MD_ROUTINE = {
 function mdBanner(k){
   const m = mdOf(k); if (!m) return "";
   const r = MD_ROUTINE[m.label] || [], done = ((S.days[k] || {}).md || {});
-  return `<div class="hint" style="margin-bottom:12px"><span class="chip acc" style="margin-right:6px">${m.label}</span>${esc(MD_TXT[m.label] || "")}
+  return `<div class="hint" style="margin-bottom:12px"><b>${esc(m.name)}:</b> ${esc(MD_TXT[m.label] || "")}
     ${r.length ? `<div class="stack" style="gap:6px;margin-top:10px">${r.map(([id, l]) => `<button class="supp" data-act="md-tick" data-id="${id}" data-date="${k}" aria-pressed="${done[id] ? "true" : "false"}"><span class="chk">${ICON.check}</span><span>${esc(l)}</span></button>`).join("")}</div>` : ""}</div>`;
 }
 function footballCard(k){
@@ -2588,8 +2576,8 @@ function plannerWarnings(){
   const legs = id => !!tp(id) && tplHeavyLegs(id);
   Object.keys(wp.days).sort().forEach((k, i, ks) => {
     const d = wp.days[k], next = wp.days[ks[i + 1]] || {};
-    if (d.gym && legs(d.gym) && next.fb === "match") out.push(`${WDN[dateOf(k).getDay()]} (MD-1): schweres Beintraining am Tag vor dem Spiel. An MD-1 lieber nur den Primer.`);
-    if (d.gym && legs(d.gym) && fbOfDay(addDays(k, -1)) === "match") out.push(`${WDN[dateOf(k).getDay()]} (MD+1): schweres Beintraining am Tag nach dem Spiel. Besser aktive Erholung, die schwere Einheit an MD+2.`);
+    if (d.gym && legs(d.gym) && next.fb === "match") out.push(`${WDN[dateOf(k).getDay()]} : schweres Beintraining am Tag vor dem Spiel. Lieber nur etwas Leichtes.`);
+    if (d.gym && legs(d.gym) && fbOfDay(addDays(k, -1)) === "match") out.push(`${WDN[dateOf(k).getDay()]} : schweres Beintraining am Tag nach dem Spiel. Besser aktive Erholung und die Beine einen Tag später.`);
     if (d.gym && legs(d.gym) && d.fb) out.push(`${WDN[dateOf(k).getDay()]}: Beintraining und Fußball am selben Tag. Das belastet die Beine doppelt.`);
     if (d.gym && d.fb === "match") out.push(`${WDN[dateOf(k).getDay()]}: Krafttraining am Spieltag. Besser einen Tag früher oder später.`);
     else if (d.gym && d.fb) { const hm = x => { const m = String(x || "").match(/^(\d{1,2}):(\d{2})/); return m ? +m[1] + +m[2] / 60 : null; }, a = hm(d.gymTime), b = hm(d.fbTime);
@@ -2619,7 +2607,7 @@ function renderPlanner(){
       <button class="iconbtn" data-act="wp-week" data-d="7" aria-label="Nächste Woche">${ICON.right}</button></div>
     <p class="small muted" style="margin:0 0 10px">Trag ein, wann du Fußball hast und wann du ins Gym gehst. Spieltags-Tipps und Erinnerungen richten sich dann nur nach deinem Plan.</p>
     <div class="stack" style="gap:8px">${Object.keys(wp.days).sort().map(k => { const d = wp.days[k];
-      return `<div class="ex" style="padding:10px 12px"><div class="spread" style="margin-bottom:8px"><b>${WDN[dateOf(k).getDay()]}${(() => { const m = mdOf(k); return m ? ` <span class="chip acc" style="margin-left:4px;font-size:11px;padding:1px 7px">${m.label}</span>` : ""; })()}</b><span class="small muted">${fmtShort(k)}</span></div>
+      return `<div class="ex" style="padding:10px 12px"><div class="spread" style="margin-bottom:8px"><b>${WDN[dateOf(k).getDay()]}</b><span class="small muted">${fmtShort(k)}</span></div>
         <div class="filt" style="margin:0 0 8px">${[["", "Kein Fußball"], ["train", "⚽ Training"], ["match", "🏆 Spiel"]].map(([v, l]) => `<button data-act="wp-fb" data-date="${k}" data-v="${v}" aria-pressed="${(d.fb || "") === v}">${l}</button>`).join("")}</div>
         ${d.fb ? `<label class="row small" style="margin:0 0 8px;flex-wrap:nowrap">${d.fb === "match" ? "Anpfiff" : "Trainingsbeginn"} <input class="inp num" type="time" data-wptime="${k}" data-f="fbTime" value="${esc(d.fbTime || "")}" style="width:120px;min-height:36px;padding:4px 8px"></label>` : ""}
         <div class="row" style="flex-wrap:nowrap;gap:6px"><select class="inp" data-wpgym="${k}" aria-label="Gym am ${WDN[dateOf(k).getDay()]}" style="min-height:38px;padding:6px 10px;flex:1;min-width:0"><option value="">🏋️ Kein Gym</option>${tpls.map(t => `<option value="${t.id}" ${d.gym === t.id ? "selected" : ""}>🏋️ ${esc(t.name)}</option>`).join("")}</select>
@@ -3145,10 +3133,10 @@ async function runExport(){
 const SRC = {H: "Hessmann, Sporternährung für jeden Tag", N: "Zusammenfassung NotebookLM", S: "Spieltagsvorbereitung Fußball (Ronaldo/Lewandowski)", C: "Quellen für Claude (Huberman, Norton, Galpin, Attia u. a.)", K: "Briefing Körperfettreduktion", P: "Huberman, Protocols (Diary of a CEO)", E: "Evidenz-Wissensbasen 15.10. (Training, Ernährung, Schlaf, Infekte, Fitnessalter)", W: "WHOOP-Funktionsanalyse", A: "Prime Athlete Academy (Scheder & Kehl)"};
 const TIP_CATS = [["", "Alle"], ["ernaehrung", "🍽️ Ernährung"], ["training", "🏋️ Training"], ["erholung", "🌿 Erholung"], ["schlaf", "😴 Schlaf"], ["trinken", "💧 Trinken"], ["fussball", "⚽ Fußball"], ["supps", "💊 Supplements"]];
 const KB = [
-  {id: "inseason", cat: "training", icon: "🎯", title: "In der Saison: wenig Volumen, hohe Intensität", short: "Wenige, aber maximal explosive Sätze geben dem Nervensystem scharfe Reize, ohne die Beine zu ermüden.", why: "Neben 3× Fußball pro Woche ist Ermüdung der größte Feind. Wenige harte Sätze halten Kraft und Schnelligkeit, viele Sätze machen müde und erhöhen das Verletzungsrisiko.", how: ["2–3 Sätze pro Übung reichen in der Saison.", "Sprünge und Würfe immer frisch, mit voller Pause.", "Kraft nur bis 1–2 Wdh. vor dem Versagen.", "Die schwerste Einheit an MD+2, an MD-1 nur der Primer."], src: "A"},
+  {id: "inseason", cat: "training", icon: "🎯", title: "In der Saison: wenig Volumen, hohe Intensität", short: "Wenige, aber maximal explosive Sätze geben dem Nervensystem scharfe Reize, ohne die Beine zu ermüden.", why: "Neben 3× Fußball pro Woche ist Ermüdung der größte Feind. Wenige harte Sätze halten Kraft und Schnelligkeit, viele Sätze machen müde und erhöhen das Verletzungsrisiko.", how: ["2–3 Sätze pro Übung reichen in der Saison.", "Sprünge und Würfe immer frisch, mit voller Pause.", "Kraft nur bis 1–2 Wdh. vor dem Versagen.", "Die schwerste Einheit mit 2 Tagen Abstand zum Spiel, am Tag davor nichts Schweres."], src: "A"},
   {id: "decel", cat: "training", icon: "🛑", title: "Abbremsen trainieren (Deceleration)", short: "Box-Jump-Downs: landen, Kraft abfangen und sofort wieder hoch. Schützt Knie und Muskeln bei Stopps und Richtungswechseln.", why: "Im Fußball verletzt man sich oft beim Abbremsen und Richtungswechsel. Wer Landungen kontrolliert abfangen kann, ist schneller wieder in Bewegung und belastet Sehnen und Bänder weniger.", how: ["Von einer niedrigen Box herunter steigen, nicht springen.", "Beidbeinig landen, Knie über den Füßen.", "Ohne Pause maximal hoch springen, Bodenkontakt kurz.", "3 × 3 reichen, immer frisch."], src: "A"},
-  {id: "isoover", cat: "training", icon: "🧱", title: "Overcoming Isometrics", short: "3–6 Sekunden mit aller Kraft gegen eine fixierte Stange drücken oder ziehen: maximale Spannung in kürzester Zeit.", why: "Weil sich nichts bewegt, entsteht kaum Muskelkater und kaum Ermüdung. Deshalb passen sie auch kurz vor dem Spiel (MD-1) und als Reiz fürs Nervensystem.", how: ["Stange im Rack unter den Sicherungen fixieren.", "Position wie bei Kniebeuge oder Kreuzheben einnehmen.", "3–6 s maximal drücken bzw. ziehen, 3 Sätze, volle Pause.", "Langsam aufbauen, nicht ruckartig."], src: "A"},
-  {id: "priming", cat: "fussball", icon: "⚡", title: "Priming am Tag vor dem Spiel (MD-1)", short: "Ein kurzer, scharfer Reiz macht das Nervensystem wach, ohne die Beine müde zu machen.", why: "Wenige Sprünge, Würfe oder isometrische Sätze verbessern bei vielen Spielern das Gefühl von Spritzigkeit am nächsten Tag. Wichtig ist, dass du frischer rausgehst, als du reingekommen bist.", how: ["20–40 Minuten, nicht mehr.", "2–3 Sätze Sprünge oder Würfe, volle Pause.", "Etwas Oberkörper locker, keine schweren Beine.", "Nichts bis zur Ermüdung."], src: "A"},
+  {id: "isoover", cat: "training", icon: "🧱", title: "Overcoming Isometrics", short: "3–6 Sekunden mit aller Kraft gegen eine fixierte Stange drücken oder ziehen: maximale Spannung in kürzester Zeit.", why: "Weil sich nichts bewegt, entsteht kaum Muskelkater und kaum Ermüdung. Deshalb passen sie auch am Tag vor dem Spiel und als Reiz fürs Nervensystem.", how: ["Stange im Rack unter den Sicherungen fixieren.", "Position wie bei Kniebeuge oder Kreuzheben einnehmen.", "3–6 s maximal drücken bzw. ziehen, 3 Sätze, volle Pause.", "Langsam aufbauen, nicht ruckartig."], src: "A"},
+  {id: "priming", cat: "fussball", icon: "⚡", title: "Priming am Tag vor dem Spiel", short: "Ein kurzer, scharfer Reiz macht das Nervensystem wach, ohne die Beine müde zu machen.", why: "Wenige Sprünge, Würfe oder isometrische Sätze verbessern bei vielen Spielern das Gefühl von Spritzigkeit am nächsten Tag. Wichtig ist, dass du frischer rausgehst, als du reingekommen bist.", how: ["20–40 Minuten, nicht mehr.", "2–3 Sätze Sprünge oder Würfe, volle Pause.", "Etwas Oberkörper locker, keine schweren Beine.", "Nichts bis zur Ermüdung."], src: "A"},
   {id: "activerec", cat: "erholung", icon: "🚴", title: "Aktive Erholung statt nur Dehnen", short: "Am Tag nach dem Spiel lockeres Rad, Auslaufen oder Mobility statt komplett liegen bleiben.", why: "Leichte Bewegung bringt den Kreislauf in Gang und hilft der Erholung. Reines Dehnen beschleunigt die Erholung laut Studien nicht. Die wichtigsten Säulen bleiben Essen und Schlaf.", how: ["20–30 Min. lockeres Rad oder Auslaufen.", "Hüft-Mobility wie 90/90, Sprunggelenke bewegen.", "Bunter Teller, genug Eiweiß und Kohlenhydrate.", "Früh ins Bett."], src: "A"},
   {id: "visual", cat: "fussball", icon: "🧠", title: "Visualisierung und feste Routinen", short: "Am Abend vor dem Spiel 2–3 typische Situationen im Kopf durchspielen, am Spieltag feste Abläufe.", why: "Feste Routinen sparen mentale Energie, und wer Situationen vorher im Kopf erlebt hat, bleibt im Spiel ruhiger und fokussierter. Und: Trau dir im Spiel Aktionen zu, nur so kommen außergewöhnliche Momente.", how: ["Abends 5 Min. ruhig hinsetzen, Augen zu.", "2–3 Spielsituationen genau durchgehen: Position, Ballannahme, Abschluss.", "Am Spieltag immer gleicher Ablauf: Essen, Trinken, Aufwärmen.", "Im Spiel mutig sein."], src: "A"},
   {id: "eatgood", cat: "ernaehrung", icon: "🥗", title: "Kohlenhydrate sind Treibstoff, „Eat good, feel good“", short: "Ohne Zählen: nährstoffreiche Lebensmittel, bunter Teller, rund ums Spiel mehr Kohlenhydrate.", why: "Kohlenhydrate sind der wichtigste Treibstoff für Sprints und 90 Minuten Fußball. Nach einer Grundorientierung ist striktes Tracking oft nicht nötig, wichtiger ist, was auf dem Teller liegt.", how: ["Gute Quellen: Haferflocken, Sauerteigbrot, Reis, Nudeln, Süßkartoffeln, Kartoffeln mit Schale, Datteln.", "Eiweiß zu jeder Mahlzeit: Eier, Skyr, Magerquark, Lachs, Garnelen, mageres Rind.", "Je bunter der Teller, desto mehr Mikronährstoffe.", "Am Tag vor dem Spiel deutlich mehr Kohlenhydrate."], src: "A"},
